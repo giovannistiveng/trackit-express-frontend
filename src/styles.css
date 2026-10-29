@@ -1,0 +1,134 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --color-monte: #123b2f;
+  --color-monte-claro: #1f5a47;
+  --color-monte-suave: #dce8e2;
+  --color-placa: #f5c518;
+  --color-placa-oscuro: #8a6a00;
+  --color-tinta: #17211c;
+  --color-niebla: #eef2ef;
+  --color-papel: #ffffff;
+  --color-piedra: #56635c;
+  --color-linea: #cfd9d3;
+  --color-alerta: #b42318;
+  --color-alerta-suave: #fdecea;
+  --color-exito: #1e7a46;
+  --color-exito-suave: #e3f4ea;
+  --color-aviso-suave: #fff6d6;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-niebla text-tinta font-sans antialiased;
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+  h1,
+  h2,
+  h3 {
+    font-stretch: 112%;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+  h1 {
+    @apply text-[1.75rem] font-extrabold sm:text-[2.125rem];
+  }
+  h2 {
+    @apply text-xl font-bold;
+  }
+  h3 {
+    @apply text-base font-bold;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-placa);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility contenedor {
+  @apply mx-auto w-full max-w-2xl px-4;
+}
+
+@utility contenedor-ancho {
+  @apply mx-auto w-full max-w-6xl px-4;
+}
+
+@utility btn {
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-5 font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@utility btn-primario {
+  @apply btn bg-monte text-white hover:bg-monte-claro;
+}
+
+@utility btn-acento {
+  @apply btn bg-placa text-tinta hover:brightness-95;
+}
+
+@utility btn-secundario {
+  @apply btn border border-linea bg-papel text-tinta hover:border-monte;
+}
+
+@utility btn-peligro {
+  @apply btn bg-alerta text-white hover:brightness-110;
+}
+
+@utility btn-texto {
+  @apply inline-flex min-h-11 items-center gap-1 font-semibold text-monte underline-offset-4 hover:underline;
+}
+
+@utility campo {
+  @apply block w-full min-h-11 rounded-lg border border-linea bg-papel px-3 py-2 text-tinta placeholder:text-piedra/70 focus:border-monte focus:outline-none focus:ring-2 focus:ring-monte/25;
+}
+
+.campo[aria-invalid='true'] {
+  @apply border-alerta ring-alerta/20;
+}
+
+@utility etiqueta {
+  @apply mb-1 block text-sm font-semibold;
+}
+
+@utility ayuda {
+  @apply mt-1 text-sm text-piedra;
+}
+
+@utility error-campo {
+  @apply mt-1 text-sm font-medium text-alerta;
+}
+
+@utility superficie {
+  @apply rounded-xl border border-linea bg-papel;
+}
+
+@utility numeros {
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only-focusable:not(:focus) {
+  @apply sr-only;
+}
+
+/* La barra de navegación inferior (móvil) es fija: se reserva su alto al final de la página */
+@media (max-width: 639px) {
+  body:has(.nav-movil) {
+    padding-bottom: 3.5rem;
+  }
+}
