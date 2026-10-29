@@ -5,8 +5,21 @@ export const ROL = { ADMIN: '1', CLIENTE: '2', CONDUCTOR: '3' } as const satisfi
   Rol
 >;
 
-export const ESTADOS_ENVIO = ['Pendiente', 'Asignado', 'En Ruta', 'Entregado'] as const;
+export const ESTADOS_ENVIO = [
+  'Pendiente',
+  'Asignado',
+  'En Ruta',
+  'Entregado',
+  'Cancelado',
+] as const;
 export type EstadoEnvio = (typeof ESTADOS_ENVIO)[number];
+/** Recorrido normal de un envío (Cancelado lo interrumpe). */
+export const RECORRIDO_ENVIO = [
+  'Pendiente',
+  'Asignado',
+  'En Ruta',
+  'Entregado',
+] as const satisfies readonly EstadoEnvio[];
 
 export type EstadoAprobacion = 'Pendiente' | 'Aprobado' | 'Rechazado';
 
@@ -66,6 +79,15 @@ export interface Cotizacion {
   tarifaBase: number;
   tarifaTotal: number;
   moneda: 'COP';
+  /** Tiempo estimado del trayecto, en minutos. */
+  duracionMin?: number;
+  /** false si alguna dirección no se encontró y la distancia es aproximada. */
+  distanciaExacta?: boolean;
+}
+
+export interface Coordenadas {
+  lat: number;
+  lon: number;
 }
 
 export interface CambioEstado {
@@ -93,6 +115,109 @@ export interface Envio {
   conductor?: ConductorResumen;
   /** true si el cliente ya lo calificó (el backend lo informa en la trazabilidad y el historial). */
   calificado?: boolean;
+  calificacion?: number | null;
+  comentario?: string | null;
+  distanciaKm?: number | null;
+  /** Indicaciones del cliente para el conductor. */
+  notas?: string | null;
+  motivoCancelacion?: string | null;
+  origenCoords?: Coordenadas | null;
+  destinoCoords?: Coordenadas | null;
+  /** Solo en la vista del conductor: lo que gana por el servicio. */
+  gananciaConductor?: number;
+}
+
+/** Datos para dibujar el mapa de seguimiento. */
+export interface Seguimiento {
+  idEnvio: number;
+  estado: EstadoEnvio;
+  origen: { direccion: string; coords: Coordenadas | null };
+  destino: { direccion: string; coords: Coordenadas | null };
+  ultima: Ubicacion | null;
+  recorrido: Ubicacion[];
+  /** La última posición tiene menos de 2 minutos. */
+  enVivo: boolean;
+  distanciaRestanteKm: number | null;
+  etaMinutos: number | null;
+}
+
+export const TIPOS_NOTIFICACION = [
+  'envio_aceptado',
+  'ruta_iniciada',
+  'envio_entregado',
+  'envio_cancelado',
+  'conductor_aprobado',
+  'conductor_rechazado',
+  'calificacion_recibida',
+] as const;
+export type TipoNotificacion = (typeof TIPOS_NOTIFICACION)[number];
+
+export interface Notificacion {
+  id: number;
+  tipo: TipoNotificacion;
+  titulo: string;
+  mensaje: string;
+  idEnvio: number | null;
+  leida: boolean;
+  fecha: Date;
+}
+
+export interface PerfilUsuario {
+  id: number;
+  nombre: string;
+  correo: string;
+  rol: Rol;
+  nombreRol: string;
+  telefono: string | null;
+  fechaRegistro: Date | null;
+}
+
+export interface ResumenConductor {
+  completados: number;
+  ingresosTotal: number;
+  ingresosMes: number;
+  calificacionPromedio: number | null;
+  totalCalificaciones: number;
+  servicioActivo: number | null;
+}
+
+/** Envío visto desde el panel de administración. */
+export interface EnvioAdmin extends Envio {
+  cliente: { nombre: string; correo: string };
+  conductorNombre: string | null;
+  zona: string;
+}
+
+export interface FiltroEnviosAdmin {
+  estado?: EstadoEnvio;
+  idZona?: number;
+  texto?: string;
+  pagina: number;
+  tamano: number;
+}
+
+export const ASUNTOS_CONTACTO = ['General', 'Empresas', 'Conductores', 'Soporte'] as const;
+export type AsuntoContacto = (typeof ASUNTOS_CONTACTO)[number];
+
+export interface MensajeContacto {
+  nombre: string;
+  correo: string;
+  telefono?: string;
+  asunto: AsuntoContacto;
+  mensaje: string;
+}
+
+export interface MensajeContactoRecibido extends MensajeContacto {
+  id: number;
+  atendido: boolean;
+  fecha: Date;
+}
+
+export interface EstadisticasPublicas {
+  enviosEntregados: number;
+  conductoresActivos: number;
+  zonasCubiertas: number;
+  calificacionPromedio: number;
 }
 
 export interface ConductorResumen {
@@ -143,6 +268,7 @@ export interface MetricasAdmin {
   enviosTotales: number;
   enviosActivos: number;
   entregados: number;
+  cancelados: number;
   ingresosCop: number;
   conductoresAprobados: number;
   conductoresPendientes: number;

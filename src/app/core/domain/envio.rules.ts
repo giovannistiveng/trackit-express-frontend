@@ -1,10 +1,11 @@
 import { Envio, EstadoEnvio } from './models';
 
 const TRANSICIONES: Record<EstadoEnvio, readonly EstadoEnvio[]> = {
-  Pendiente: ['Asignado'],
-  Asignado: ['En Ruta'],
-  'En Ruta': ['Entregado'],
+  Pendiente: ['Asignado', 'Cancelado'],
+  Asignado: ['En Ruta', 'Cancelado'],
+  'En Ruta': ['Entregado', 'Cancelado'],
   Entregado: [],
+  Cancelado: [],
 };
 
 /** Transición permitida entre estados: Pendiente → Asignado → En Ruta → Entregado. */
@@ -13,7 +14,42 @@ export function esTransicionValida(desde: EstadoEnvio, hacia: EstadoEnvio): bool
 }
 
 export function esActivo(estado: EstadoEnvio): boolean {
-  return estado !== 'Entregado';
+  return estado !== 'Entregado' && estado !== 'Cancelado';
+}
+
+export function esFinal(estado: EstadoEnvio): boolean {
+  return !esActivo(estado);
+}
+
+/** El cliente puede cancelar mientras ningún conductor ha tomado el envío. */
+export function puedeCancelarCliente(envio: Pick<Envio, 'estado'>): boolean {
+  return envio.estado === 'Pendiente';
+}
+
+/** El administrador puede cancelar cualquier envío que no haya terminado. */
+export function puedeCancelarAdmin(envio: Pick<Envio, 'estado'>): boolean {
+  return esActivo(envio.estado);
+}
+
+/** "Hace 3 min", "hace 2 h", "hace 4 días": tiempo transcurrido corto. */
+export function haceCuanto(fecha: Date, ahora = new Date()): string {
+  const s = Math.max(0, Math.round((ahora.getTime() - fecha.getTime()) / 1000));
+  if (s < 45) return 'hace un momento';
+  const m = Math.round(s / 60);
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'hace 1 día' : `hace ${d} días`;
+}
+
+/** "25 min", "1 h 10 min". */
+export function formatoDuracion(minutos: number): string {
+  const m = Math.max(1, Math.round(minutos));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const resto = m % 60;
+  return resto ? `${h} h ${resto} min` : `${h} h`;
 }
 
 /** El cliente califica una sola vez, cuando el envío ya fue entregado. */

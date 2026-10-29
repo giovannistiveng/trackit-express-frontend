@@ -22,6 +22,7 @@
     "@angular/service-worker": "^21.2.0",
     "leaflet": "^1.9.4",
     "localforage": "^1.10.0",
+    "lucide-static": "1.49.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },

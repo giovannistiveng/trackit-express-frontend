@@ -173,11 +173,12 @@ describe('CargaArchivoComponent', () => {
     const emitidos: File[] = [];
     f.componentInstance.rechazado.subscribe((r) => rechazos.push(r));
     f.componentInstance.archivo.subscribe((a) => emitidos.push(a));
-    f.componentInstance.procesar(new File(['x'], 'a.txt', { type: 'text/plain' }));
-    const grande = new File(['x'], 'g.jpg', { type: 'image/jpeg' });
+    await f.componentInstance.procesar(new File(['x'], 'a.txt', { type: 'text/plain' }));
+    // Un PDF pesado no se puede comprimir: se rechaza por tamaño
+    const grande = new File(['x'], 'g.pdf', { type: 'application/pdf' });
     Object.defineProperty(grande, 'size', { value: 6 * 1024 * 1024 });
-    f.componentInstance.procesar(grande);
-    f.componentInstance.procesar(null);
+    await f.componentInstance.procesar(grande);
+    await f.componentInstance.procesar(null);
     await f.whenStable();
     expect(rechazos).toEqual(['tipo', 'tamano', 'vacio']);
     expect(emitidos).toEqual([]);
@@ -188,10 +189,10 @@ describe('CargaArchivoComponent', () => {
     const f = TestBed.createComponent(CargaArchivoComponent);
     const emitidos: File[] = [];
     f.componentInstance.archivo.subscribe((a) => emitidos.push(a));
-    f.componentInstance.procesar(new File(['x'], 'cedula.jpg', { type: 'image/jpeg' }));
+    await f.componentInstance.procesar(new File(['x'], 'cedula.jpg', { type: 'image/jpeg' }));
     await f.whenStable();
     expect(q<HTMLImageElement>(f.nativeElement, 'img').src).toBe('blob:previa');
-    f.componentInstance.procesar(new File(['x'], 'soat.pdf', { type: 'application/pdf' }));
+    await f.componentInstance.procesar(new File(['x'], 'soat.pdf', { type: 'application/pdf' }));
     await f.whenStable();
     expect(f.nativeElement.querySelector('img')).toBeNull();
     expect(f.nativeElement.textContent).toContain('soat.pdf');
@@ -218,7 +219,7 @@ describe('CargaArchivoComponent', () => {
     Object.defineProperty(input, 'files', { value: [archivo] });
     input.dispatchEvent(new Event('change'));
     label.dispatchEvent(new Event('dragleave'));
-    expect(emitidos).toHaveLength(2);
+    await vi.waitFor(() => expect(emitidos).toHaveLength(2));
   });
 });
 

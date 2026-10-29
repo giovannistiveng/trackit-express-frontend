@@ -34,10 +34,13 @@ export const MENSAJE_PIN_INCORRECTO =
       <section class="mt-6" aria-labelledby="paso-foto">
         <h3 id="paso-foto" class="mb-2">Foto de la entrega</h3>
         <ti-carga-archivo
-          [tipos]="['image/jpeg', 'image/png']"
-          [capturar]="true"
-          textoAccion="Toma o elige una foto"
-          ayuda="JPG o PNG, hasta 5 MB"
+          [tipos]="['image/jpeg', 'image/png', 'image/webp']"
+          [conCamara]="true"
+          tituloCamara="Foto de la entrega"
+          guiaCamara="entrega"
+          [prefijoFoto]="'entrega-' + idEnvio()"
+          textoAccion="Elige o arrastra una foto"
+          ayuda="JPG, PNG o WebP, hasta 5 MB"
           [deshabilitado]="enviando()"
           (archivo)="alElegirFoto($event)"
         />

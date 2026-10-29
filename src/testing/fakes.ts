@@ -1,9 +1,11 @@
 import { EnvironmentProviders, Provider, makeEnvironmentProviders } from '@angular/core';
 import { AppEnvironment } from '../environments/environment.model';
+import { Notificacion } from '../app/core/domain';
 import { APP_CONFIG } from '../app/core/config/app-config';
 import {
   EventoLog,
   KeyValueStorePort,
+  NotificationsPort,
   LogTransportPort,
   LoggerPort,
   SessionStoragePort,
@@ -86,6 +88,23 @@ export class FakeLogTransport implements LogTransportPort {
   }
 }
 
+/** Notificaciones en memoria (por defecto, ninguna). */
+export class FakeNotifications implements NotificationsPort {
+  items: Notificacion[] = [];
+  async listar() {
+    return { noLeidas: this.items.filter((n) => !n.leida).length, items: this.items };
+  }
+  async noLeidas() {
+    return this.items.filter((n) => !n.leida).length;
+  }
+  async leer(id: number) {
+    this.items = this.items.map((n) => (n.id === id ? { ...n, leida: true } : n));
+  }
+  async leerTodas() {
+    this.items = this.items.map((n) => ({ ...n, leida: true }));
+  }
+}
+
 export class FakeGeolocation implements Geo {
   exito: PositionCallback | null = null;
   fallo: PositionErrorCallback | null | undefined = null;
@@ -115,6 +134,7 @@ export function provideFakesBase(cfg?: AppEnvironment): EnvironmentProviders {
     { provide: LoggerPort, useClass: FakeLogger },
     { provide: LogTransportPort, useClass: FakeLogTransport },
     { provide: GEOLOCALIZACION, useClass: FakeGeolocation },
+    { provide: NotificationsPort, useClass: FakeNotifications },
   ]);
 }
 

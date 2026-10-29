@@ -70,7 +70,20 @@ const REGLAS: { patron: RegExp; mensaje: string }[] = [
     patron: /solo se pueden registrar cuentas/i,
     mensaje: 'Solo puedes crear cuentas de cliente o conductor.',
   },
-  { patron: /la foto debe ser jpg o png/i, mensaje: 'La foto debe ser JPG o PNG.' },
+  { patron: /la foto debe ser jpg/i, mensaje: 'La foto debe ser JPG, PNG o WebP.' },
+  {
+    patron: /solo puedes cancelar un envío mientras/i,
+    mensaje: 'Ya no puedes cancelarlo: un conductor tomó tu envío. Escríbenos si necesitas ayuda.',
+  },
+  { patron: /no se puede cancelar/i, mensaje: 'Este envío ya terminó y no se puede cancelar.' },
+  { patron: /contraseña actual no es correcta/i, mensaje: 'La contraseña actual no es correcta.' },
+  {
+    patron: /nueva contraseña debe ser distinta/i,
+    mensaje: 'La nueva contraseña debe ser distinta de la actual.',
+  },
+  { patron: /teléfono debe tener/i, mensaje: 'El teléfono debe tener entre 7 y 15 dígitos.' },
+  { patron: /tarifa base debe ser/i, mensaje: 'La tarifa debe estar entre $ 0 y $ 1.000.000.' },
+  { patron: /campo motivo/i, mensaje: 'Escribe el motivo (mínimo 3 caracteres).' },
   {
     patron: /supera el tamaño máximo/i,
     mensaje: 'El archivo pesa más de 5 MB. Elige uno más liviano.',

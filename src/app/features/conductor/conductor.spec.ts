@@ -21,6 +21,7 @@ import {
   DriverServicePort,
   EvidenceStoragePort,
   LocationTransportPort,
+  TrackingPort,
   VehiclesPort,
 } from '../../core/ports';
 import { LocationQueue } from '../../core/adapters/local/location-queue';
@@ -32,7 +33,10 @@ import {
 } from './components/entrega-modal.component';
 import { MENSAJE_PLACA_DUPLICADA, PerfilPage } from './perfil.page';
 import { ServicioPage } from './servicio.page';
-import { CompartirUbicacionService } from './state/compartir-ubicacion.service';
+import {
+  CompartirUbicacionService,
+  LATIDO_UBICACION_MS,
+} from './state/compartir-ubicacion.service';
 import { DriverProfileStore } from './state/driver-profile.store';
 import { GEOLOCALIZACION } from './state/geolocalizacion';
 import { INTERVALO_TABLERO_MS, MENSAJE_TOMADO, TableroPage } from './tablero.page';
@@ -178,6 +182,8 @@ describe('CU-003 y CU-004 PerfilPage', () => {
       value: [new File(['x'], 'soat.pdf', { type: 'application/pdf' })],
     });
     input.dispatchEvent(new Event('change'));
+    // procesar() es asíncrono (comprime fotos grandes): se espera a que se suscriba la carga
+    await vi.waitFor(() => expect(eventos.observed).toBe(true));
     eventos.next({ tipo: 'completo', documento: { id: 1, tipo: 'Cédula', urlArchivo: 'u' } });
     await r.estable();
     expect(obtener).toHaveBeenCalledTimes(2);
@@ -495,6 +501,14 @@ describe('ServicioPage', () => {
         perfilPort(),
         { provide: DriverServicePort, useValue: p.servicio },
         { provide: LocationTransportPort, useValue: ubicacionFalsa() },
+        {
+          provide: TrackingPort,
+          useValue: {
+            seguimiento: vi.fn(async () => {
+              throw new ApiError(0, 'x');
+            }),
+          },
+        },
         { provide: EvidenceStoragePort, useValue: { subir: vi.fn() } },
         { provide: DeliveryPort, useValue: { validar: vi.fn() } },
       ],
@@ -514,6 +528,12 @@ describe('ServicioPage', () => {
     botonPorTexto(el, 'Iniciar ruta').click();
     await estable();
     expect(p.servicio.iniciarRuta).toHaveBeenCalledWith(5);
+    // Al iniciar la ruta se comparte la ubicación sin que el conductor lo active a mano
+    expect(q(el, '[role="switch"]').getAttribute('aria-checked')).toBe('true');
+    expect(el.textContent).toContain('El cliente puede ver por dónde vas.');
+    expect(
+      q<HTMLAnchorElement>(el, '[aria-label="Cómo llegar al punto de entrega"]').href,
+    ).toContain('destination=');
     botonPorTexto(el, 'Finalizar entrega').click();
     await estable();
     expect(q(el, '[role="dialog"]')).toBeTruthy();
@@ -614,12 +634,40 @@ describe('CU-008 CompartirUbicacionService', () => {
     s.iniciar(5);
     geo.fallar(1);
     expect(s.estado()).toBe('denegado');
+    expect(geo.limpiado).toEqual([7]);
     s.iniciar(5);
     geo.fallar(2);
     expect(s.estado()).toBe('no-disponible');
+    // Un error pasajero no apaga el seguimiento: al llegar una posición vuelve a "activo"
+    geo.emitir(4.33, -74.36);
+    await vaciarPromesas(10);
+    expect(s.estado()).toBe('activo');
+    geo.fallar(3);
+    expect(s.estado()).toBe('activo');
     window.dispatchEvent(new Event('online'));
     expect(sincronizar).toHaveBeenCalled();
     s.ngOnDestroy();
+  });
+
+  it('debería reenviar la última posición cada 20 s aunque el conductor esté quieto', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    await preparar();
+    const s = TestBed.inject(CompartirUbicacionService);
+    const geo = TestBed.inject(GEOLOCALIZACION) as FakeGeolocation;
+    const registrar = vi.spyOn(TestBed.inject(LocationQueue), 'registrar');
+    s.iniciar(5);
+    expect(s.compartiendo(5)).toBe(true);
+    expect(s.compartiendo(6)).toBe(false);
+    geo.emitir(4.33, -74.36);
+    await vaciarPromesas(10);
+    expect(registrar).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(LATIDO_UBICACION_MS);
+    expect(registrar).toHaveBeenCalledTimes(2);
+    expect(registrar.mock.calls[1][1]).toMatchObject({ lat: 4.33, lon: -74.36 });
+    s.detener();
+    await vi.advanceTimersByTimeAsync(LATIDO_UBICACION_MS * 2);
+    expect(registrar).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 
   it('sin geolocalización debería quedar no disponible', async () => {

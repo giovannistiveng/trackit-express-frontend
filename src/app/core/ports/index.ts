@@ -4,8 +4,17 @@ import {
   ConductorPostulante,
   Cotizacion,
   Envio,
+  EnvioAdmin,
+  EstadisticasPublicas,
   EventoCarga,
   FiltroAuditoria,
+  FiltroEnviosAdmin,
+  MensajeContacto,
+  MensajeContactoRecibido,
+  Notificacion,
+  PerfilUsuario,
+  ResumenConductor,
+  Seguimiento,
   MetricasAdmin,
   Pagina,
   PerfilConductor,
@@ -48,12 +57,21 @@ export interface NuevoEnvio extends SolicitudCotizacion {
   tipoCarga: string;
   /** Vehículo requerido; si se omite, cualquier conductor puede tomarlo. */
   categoria?: CategoriaVehiculo;
+  /** Indicaciones para el conductor (máximo 300 caracteres). */
+  notas?: string;
 }
 
 /** Envíos vistos por el cliente dueño (incluye el PIN). */
 export abstract class ShipmentsPort {
   abstract crear(envio: NuevoEnvio): Promise<Envio>;
   abstract obtener(id: number): Promise<Envio>;
+  /** Solo mientras está Pendiente. */
+  abstract cancelar(id: number, motivo?: string): Promise<Envio>;
+}
+
+/** Mapa en tiempo real: recorrido, señal en vivo y tiempo estimado de llegada. */
+export abstract class TrackingPort {
+  abstract seguimiento(idEnvio: number): Promise<Seguimiento>;
 }
 
 /** Historial de envíos del cliente autenticado. */
@@ -106,7 +124,45 @@ export abstract class RatingPort {
   abstract calificar(
     idEnvio: number,
     puntuacion: number,
+    comentario?: string,
   ): Promise<{ id: number; calificacion: number }>;
+}
+
+/** Resumen y servicios terminados del conductor. */
+export abstract class DriverStatsPort {
+  abstract resumen(): Promise<ResumenConductor>;
+  abstract historial(): Promise<Envio[]>;
+}
+
+/** Avisos dentro de la aplicación. */
+export abstract class NotificationsPort {
+  abstract listar(soloNoLeidas?: boolean): Promise<{ noLeidas: number; items: Notificacion[] }>;
+  abstract noLeidas(): Promise<number>;
+  abstract leer(id: number): Promise<void>;
+  abstract leerTodas(): Promise<void>;
+}
+
+/** Perfil y contraseña del usuario autenticado. */
+export abstract class AccountPort {
+  abstract perfil(): Promise<PerfilUsuario>;
+  abstract actualizar(datos: { nombre: string; telefono: string }): Promise<PerfilUsuario>;
+  abstract cambiarPassword(actual: string, nueva: string): Promise<void>;
+}
+
+/** Datos del sitio público (sin sesión). */
+export abstract class PublicSitePort {
+  abstract estadisticas(): Promise<EstadisticasPublicas>;
+  abstract zonas(): Promise<Zona[]>;
+  abstract contactar(mensaje: MensajeContacto): Promise<void>;
+}
+
+/** Operación del administrador: envíos, tarifas y mensajes de contacto. */
+export abstract class AdminOperationsPort {
+  abstract envios(filtro: FiltroEnviosAdmin): Promise<Pagina<EnvioAdmin>>;
+  abstract cancelar(idEnvio: number, motivo: string): Promise<Envio>;
+  abstract actualizarTarifa(idZona: number, tarifaBase: number): Promise<Zona>;
+  abstract mensajes(pendientes: boolean, pagina: number): Promise<Pagina<MensajeContactoRecibido>>;
+  abstract atenderMensaje(id: number): Promise<void>;
 }
 
 /** Conductores pendientes o rechazados. */

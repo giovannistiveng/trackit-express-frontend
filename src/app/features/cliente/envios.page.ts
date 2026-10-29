@@ -16,6 +16,7 @@ import { EstadoBadgeComponent } from '../../shared/ui/estado-badge.component';
 import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
 import { PlacaComponent } from '../../shared/ui/placa.component';
 import { PinEnvioComponent } from './components/pin-envio.component';
+import { IconoComponent } from '../../shared/ui/icono.component';
 
 type Pestana = 'activos' | 'historial';
 
@@ -31,13 +32,42 @@ type Pestana = 'activos' | 'historial';
     EstadoCargaComponent,
     PinEnvioComponent,
     PlacaComponent,
+    IconoComponent,
   ],
   template: `
-    <div class="contenedor">
+    <div class="contenedor-ancho max-w-4xl">
       <div class="flex flex-wrap items-end justify-between gap-4">
-        <h1>Mis envíos</h1>
-        <a routerLink="/cliente/nuevo-envio" class="btn-primario">Nuevo envío</a>
+        <div>
+          <h1>Mis envíos</h1>
+          <p class="mt-1 text-piedra">Sigue tus envíos en curso y revisa los anteriores.</p>
+        </div>
+        <a routerLink="/cliente/nuevo-envio" class="btn-primario"
+          ><ti-icono nombre="package" /> Nuevo envío</a
+        >
       </div>
+
+      @if (!cargando() && !error() && envios().length > 0) {
+        <dl class="mt-6 grid grid-cols-3 gap-3">
+          <div class="tarjeta p-4">
+            <dt class="flex items-center gap-1.5 text-xs font-semibold text-piedra">
+              <ti-icono nombre="navigation" class="size-4 text-marca" /> En curso
+            </dt>
+            <dd class="numeros mt-1 text-2xl font-extrabold">{{ activos().length }}</dd>
+          </div>
+          <div class="tarjeta p-4">
+            <dt class="flex items-center gap-1.5 text-xs font-semibold text-piedra">
+              <ti-icono nombre="package-check" class="size-4 text-exito" /> Entregados
+            </dt>
+            <dd class="numeros mt-1 text-2xl font-extrabold">{{ totalEntregados() }}</dd>
+          </div>
+          <div class="tarjeta p-4">
+            <dt class="flex items-center gap-1.5 text-xs font-semibold text-piedra">
+              <ti-icono nombre="wallet" class="size-4 text-bosque" /> Invertido
+            </dt>
+            <dd class="numeros mt-1 truncate text-2xl font-extrabold">{{ invertido() | cop }}</dd>
+          </div>
+        </dl>
+      }
 
       <div class="mt-6 flex border-b border-linea" role="tablist" aria-label="Filtrar envíos">
         @for (p of pestanas; track p.id) {
@@ -75,15 +105,18 @@ type Pestana = 'activos' | 'historial';
           [textoVacio]="
             pestana() === 'activos'
               ? 'No tienes envíos en curso.'
-              : 'Aún no tienes envíos entregados.'
+              : 'Aún no tienes envíos terminados.'
           "
           [textoError]="error()"
           (reintentar)="cargar()"
         >
           <a vacio routerLink="/cliente/nuevo-envio" class="btn-texto mt-2">Pedir un envío</a>
-          <ul class="divide-y divide-linea overflow-hidden rounded-xl border border-linea bg-papel">
-            @for (e of visibles(); track e.id) {
-              <li class="p-4 sm:p-5">
+          <ul class="space-y-3">
+            @for (e of visibles(); track e.id; let i = $index) {
+              <li
+                class="tarjeta-interactiva p-4 animate-[var(--animate-aparecer)] sm:p-5"
+                [style.animation-delay.ms]="i * 50"
+              >
                 <div class="flex flex-wrap items-start justify-between gap-3">
                   <div class="min-w-0">
                     <p class="text-sm text-piedra">
@@ -92,8 +125,9 @@ type Pestana = 'activos' | 'historial';
                         <span>· {{ f | fechaLocal }}</span>
                       }
                     </p>
-                    <p class="mt-1 font-semibold">
-                      {{ e.origen }} <span class="text-piedra" aria-label="hacia">→</span>
+                    <p class="mt-1 flex flex-wrap items-center gap-x-2 font-semibold">
+                      {{ e.origen }}
+                      <ti-icono nombre="arrow-right" class="size-4 text-marca" etiqueta="hacia" />
                       {{ e.destino }}
                     </p>
                     <p class="text-sm text-piedra">{{ e.tipoCarga }}</p>
@@ -121,9 +155,12 @@ type Pestana = 'activos' | 'historial';
                   @if (pestana() === 'activos' && e.pin) {
                     <ti-pin-envio [pin]="e.pin" [ocultable]="true" tamano="pequeno" />
                   }
+                  @if (e.estado === 'Cancelado' && e.motivoCancelacion) {
+                    <p class="text-sm text-piedra">Motivo: {{ e.motivoCancelacion }}</p>
+                  }
                   <a [routerLink]="['/cliente/envios', e.id]" class="btn-texto ml-auto"
-                    >Ver seguimiento</a
-                  >
+                    >Ver seguimiento <ti-icono nombre="chevron-right" class="size-4"
+                  /></a>
                 </div>
               </li>
             }
@@ -148,6 +185,14 @@ export class EnviosPage implements OnInit {
 
   protected readonly activos = computed(() => this.envios().filter((e) => esActivo(e.estado)));
   protected readonly entregados = computed(() => this.envios().filter((e) => !esActivo(e.estado)));
+  protected readonly totalEntregados = computed(
+    () => this.envios().filter((e) => e.estado === 'Entregado').length,
+  );
+  protected readonly invertido = computed(() =>
+    this.envios()
+      .filter((e) => e.estado === 'Entregado')
+      .reduce((t, e) => t + e.tarifa, 0),
+  );
   protected readonly visibles = computed(() =>
     this.pestana() === 'activos' ? this.activos() : this.entregados(),
   );

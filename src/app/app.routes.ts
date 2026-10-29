@@ -8,10 +8,22 @@ import { NoEncontradaComponent } from './layout/no-encontrada.component';
 
 export const routes: Routes = [
   {
+    // Visitantes: sitio público. Con sesión iniciada: directo al panel del rol (también al abrir la PWA).
     path: '',
     pathMatch: 'full',
-    canActivate: [() => inject(Router).parseUrl(inject(SessionService).inicioDelRol())],
-    children: [],
+    canActivate: [
+      () => {
+        const session = inject(SessionService);
+        return session.estaAutenticado() ? inject(Router).parseUrl(session.inicioDelRol()) : true;
+      },
+    ],
+    title: 'TrackIt Express · Envíos en Fusagasugá y la región del Sumapaz',
+    loadComponent: () => import('./features/publico/inicio.page').then((m) => m.InicioPage),
+  },
+  {
+    path: 'inicio',
+    title: 'TrackIt Express · Envíos en Fusagasugá y la región del Sumapaz',
+    loadComponent: () => import('./features/publico/inicio.page').then((m) => m.InicioPage),
   },
   {
     path: 'login',
@@ -37,6 +49,18 @@ export const routes: Routes = [
     canActivate: [authGuard, roleGuard([ROL.CONDUCTOR])],
     loadChildren: () =>
       import('./features/conductor/conductor.routes').then((m) => m.CONDUCTOR_ROUTES),
+  },
+  {
+    path: 'cuenta',
+    component: ShellComponent,
+    canActivate: [authGuard],
+    children: [
+      {
+        path: '',
+        title: 'Mi cuenta · TrackIt Express',
+        loadComponent: () => import('./features/cuenta/cuenta.page').then((m) => m.CuentaPage),
+      },
+    ],
   },
   {
     path: 'admin',

@@ -73,3 +73,35 @@ describe('leerExpiracionJwt', () => {
     expect(leerExpiracionJwt(sinExp)).toBeNull();
   });
 });
+
+describe('reglas ampliadas (cancelación y tiempos)', () => {
+  it('distingue activos, finales y quién puede cancelar', async () => {
+    const r = await import('./envio.rules');
+    expect(r.esActivo('En Ruta')).toBe(true);
+    expect(r.esActivo('Cancelado')).toBe(false);
+    expect(r.esFinal('Cancelado')).toBe(true);
+    expect(r.esFinal('Asignado')).toBe(false);
+    expect(r.puedeCancelarCliente({ estado: 'Pendiente' })).toBe(true);
+    expect(r.puedeCancelarCliente({ estado: 'Asignado' })).toBe(false);
+    expect(r.puedeCancelarAdmin({ estado: 'Asignado' })).toBe(true);
+    expect(r.puedeCancelarAdmin({ estado: 'Entregado' })).toBe(false);
+    expect(r.esTransicionValida('Pendiente', 'Cancelado')).toBe(true);
+    expect(r.esTransicionValida('Entregado', 'Cancelado')).toBe(false);
+  });
+
+  it('formatea el tiempo transcurrido y la duración', async () => {
+    const r = await import('./envio.rules');
+    const ahora = new Date('2026-10-29T12:00:00Z');
+    const antes = (s: number) => new Date(ahora.getTime() - s * 1000);
+    expect(r.haceCuanto(antes(10), ahora)).toBe('hace un momento');
+    expect(r.haceCuanto(antes(-60), ahora)).toBe('hace un momento');
+    expect(r.haceCuanto(antes(5 * 60), ahora)).toBe('hace 5 min');
+    expect(r.haceCuanto(antes(3 * 3600), ahora)).toBe('hace 3 h');
+    expect(r.haceCuanto(antes(26 * 3600), ahora)).toBe('hace 1 día');
+    expect(r.haceCuanto(antes(5 * 86400), ahora)).toBe('hace 5 días');
+    expect(r.formatoDuracion(0.2)).toBe('1 min');
+    expect(r.formatoDuracion(25)).toBe('25 min');
+    expect(r.formatoDuracion(60)).toBe('1 h');
+    expect(r.formatoDuracion(70)).toBe('1 h 10 min');
+  });
+});

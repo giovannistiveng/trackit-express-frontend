@@ -91,6 +91,26 @@ src/testing/           Dobles, fixtures (Apéndice A) y helpers de pruebas
 | `/conductor/servicio/:id`              | Conductor     | CU-008, CU-009 |
 | `/admin/conductores`                   | Administrador | CU-011         |
 | `/admin/dashboard`, `/admin/auditoria` | Administrador | E7-HU2         |
+| `/` e `/inicio`                        | Público       | Sitio web      |
+| `/cuenta`                              | Todos         | Mi cuenta      |
+| `/conductor/ganancias`                 | Conductor     | Resumen        |
+| `/admin/envios`, `/admin/zonas`        | Administrador | Operación      |
+| `/admin/mensajes`                      | Administrador | Contacto       |
+
+## Funciones nuevas (v2.1)
+
+- **Sitio web público** en `/`: portada con ilustraciones animadas, cifras reales
+  (`GET /api/publico/estadisticas`), cobertura y tarifas, cómo funciona y formulario de contacto.
+- **Seguimiento en vivo**: mapa con origen, destino, recorrido, marcador del conductor y ETA
+  (`GET /api/envios/:id/seguimiento`). El conductor reenvía su posición cada 20 s aunque no se mueva.
+- **Cámara del dispositivo** al subir documentos y la foto de entrega (`getUserMedia`, cámara trasera,
+  cambio de cámara, respaldo a elegir archivo). Las fotos se comprimen a JPEG ≤ 1600 px antes de subir.
+  Requiere HTTPS o `localhost`.
+- Cancelación de envíos (cliente en Pendiente; admin con motivo), notas para el conductor,
+  calificación con comentario, notificaciones con campana, Mi cuenta (teléfono y contraseña),
+  ganancias del conductor, búsqueda de envíos, edición de tarifas y bandeja de mensajes para el admin.
+- **Sesión entre pestañas**: si se inicia otra cuenta en otra pestaña del mismo navegador, esta pestaña
+  la adopta y avisa. Para probar dos roles a la vez usa otro navegador o una ventana privada.
 
 ## Logs
 

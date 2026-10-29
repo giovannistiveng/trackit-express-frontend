@@ -18,8 +18,8 @@ import { ShellComponent } from './shell.component';
 describe('ShellComponent', () => {
   it.each([
     [CLIENTE, ['Nuevo envío', 'Mis envíos'], 'Cliente'],
-    [CONDUCTOR, ['Servicios', 'Mi perfil'], 'Conductor'],
-    [ADMIN, ['Conductores', 'Métricas', 'Auditoría'], 'Administración'],
+    [CONDUCTOR, ['Servicios', 'Ganancias', 'Mi perfil'], 'Conductor'],
+    [ADMIN, ['Panel', 'Envíos', 'Conductores', 'Zonas', 'Mensajes', 'Auditoría'], 'Administración'],
   ])('debería mostrar el menú del rol (%#)', async (usuario, menu, rol) => {
     const { el } = await montar(ShellComponent, { usuario });
     const enlaces = Array.from(q(el, 'nav[aria-label="Principal"]').querySelectorAll('a')).map(
@@ -30,9 +30,12 @@ describe('ShellComponent', () => {
     expect(el.textContent).toContain(usuario.nombre);
   });
 
-  it('Salir debería cerrar la sesión e ir a /login', async () => {
-    const { el, navegar } = await montar(ShellComponent, { usuario: CLIENTE });
-    botonPorTexto(el, 'Salir').click();
+  it('Cerrar sesión (menú de la cuenta) debería salir e ir a /login', async () => {
+    const { el, navegar, estable } = await montar(ShellComponent, { usuario: CLIENTE });
+    q<HTMLButtonElement>(el, '[aria-controls="menu-usuario"]').click();
+    await estable();
+    expect(q(el, '#menu-usuario').textContent).toContain('Mi cuenta');
+    botonPorTexto(el, 'Cerrar sesión').click();
     expect(TestBed.inject(SessionService).estaAutenticado()).toBe(false);
     expect(navegar).toHaveBeenCalledWith(['/login']);
   });
@@ -70,13 +73,13 @@ describe('NoEncontradaComponent y App', () => {
 });
 
 describe('rutas', () => {
-  it('la raíz debería redirigir al inicio del rol o a /login', async () => {
+  it('la raíz lleva al panel del rol con sesión y muestra el sitio público sin ella', async () => {
     configurar({ usuario: ADMIN });
     const raiz = routes.find((r) => r.path === '')!;
     const guard = raiz.canActivate![0] as () => unknown;
     expect(String(TestBed.runInInjectionContext(guard))).toBe('/admin');
     TestBed.inject(SessionService).cerrar();
-    expect(String(TestBed.runInInjectionContext(guard))).toBe('/login');
+    expect(TestBed.runInInjectionContext(guard)).toBe(true);
   });
 
   it('todas las rutas perezosas deberían cargar su componente', async () => {

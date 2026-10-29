@@ -1,6 +1,8 @@
 import { EnvironmentProviders, makeEnvironmentProviders } from '@angular/core';
 import {
+  AccountPort,
   AdminMetricsPort,
+  AdminOperationsPort,
   ApprovalPort,
   AuthPort,
   ClientShipmentsPort,
@@ -10,15 +12,19 @@ import {
   DriverBoardPort,
   DriverProfilePort,
   DriverServicePort,
+  DriverStatsPort,
   EvidenceStoragePort,
   KeyValueStorePort,
   LocationTransportPort,
   LogTransportPort,
   LoggerPort,
+  NotificationsPort,
+  PublicSitePort,
   QuotePort,
   RatingPort,
   SessionStoragePort,
   ShipmentsPort,
+  TrackingPort,
   VehiclesPort,
   ZonesPort,
 } from '../ports';
@@ -53,5 +59,11 @@ export function providePorts(): EnvironmentProviders {
     { provide: DriverApplicantsPort, useExisting: http.HttpDriverApplicantsAdapter },
     { provide: ApprovalPort, useExisting: http.HttpApprovalAdapter },
     { provide: AdminMetricsPort, useExisting: http.HttpAdminMetricsAdapter },
+    { provide: AdminOperationsPort, useExisting: http.HttpAdminOperationsAdapter },
+    { provide: TrackingPort, useExisting: http.HttpTrackingAdapter },
+    { provide: DriverStatsPort, useExisting: http.HttpDriverStatsAdapter },
+    { provide: NotificationsPort, useExisting: http.HttpNotificationsAdapter },
+    { provide: AccountPort, useExisting: http.HttpAccountAdapter },
+    { provide: PublicSitePort, useExisting: http.HttpPublicSiteAdapter },
   ]);
 }

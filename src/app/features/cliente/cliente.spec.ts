@@ -3,9 +3,10 @@ import { CLIENTE, buildEnvio } from '../../../testing/fixtures';
 import { botonPorTexto, elegir, escribir, q, rechaza } from '../../../testing/fakes';
 import { montar } from '../../../testing/pantallas';
 import { ApiError } from '../../core/http/api-error';
+import { Seguimiento } from '../../core/domain';
 import {
   ClientShipmentsPort,
-  LocationTransportPort,
+  TrackingPort,
   QuotePort,
   RatingPort,
   ShipmentsPort,
@@ -207,17 +208,19 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
 
   it('debería enviar la categoría de vehículo elegida al crear', async () => {
     const { el, p, estable } = await montarNuevo();
-    expect(q<HTMLSelectElement>(el, '#categoria').options[0].textContent).toContain(
-      'Cualquier vehículo',
-    );
+    expect(q<HTMLInputElement>(el, '#categoria').checked).toBe(true);
     await llenarCotizacion(el);
-    elegir(q(el, '#categoria'), 3);
+    const camioneta = Array.from(el.querySelectorAll('fieldset label')).find((l) =>
+      l.textContent?.includes('Camioneta'),
+    );
+    q<HTMLInputElement>(camioneta as HTMLElement, 'input[type=radio]').click();
+    escribir(q(el, '#notas'), '  Portería  ');
     botonPorTexto(el, 'Cotizar').click();
     await estable();
     botonPorTexto(el, 'Confirmar solicitud').click();
     await estable();
     expect(p.envios.crear).toHaveBeenCalledWith(
-      expect.objectContaining({ categoria: 'Camioneta' }),
+      expect.objectContaining({ categoria: 'Camioneta', notas: 'Portería' }),
     );
   });
 });
@@ -290,11 +293,28 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
         crear: vi.fn(),
         obtener: vi.fn(async () => secuencia[Math.min(i++, secuencia.length - 1)]),
       },
-      ubicacion: {
-        enviar: vi.fn(),
-        ultima: vi.fn(async () => ({ lat: 4.3, lon: -74.3, capturadoEn: 'x' })),
+      tracking: {
+        seguimiento: vi.fn(async (): Promise<Seguimiento> => seguimientoDe(true)),
       },
       rating: { calificar: vi.fn(async () => ({ id: 1, calificacion: 4 })) },
+    };
+  }
+
+  function seguimientoDe(enVivo: boolean, eta: number | null = 14): Seguimiento {
+    return {
+      idEnvio: 1,
+      estado: 'En Ruta',
+      origen: { direccion: 'Casco Urbano', coords: { lat: 4.3369, lon: -74.3638 } },
+      destino: { direccion: 'Silvania', coords: { lat: 4.4033, lon: -74.3878 } },
+      ultima: {
+        lat: 4.35,
+        lon: -74.37,
+        capturadoEn: new Date(Date.now() - 5 * 60_000).toISOString(),
+      },
+      recorrido: [],
+      enVivo,
+      distanciaRestanteKm: eta ? 6.2 : null,
+      etaMinutos: eta,
     };
   }
 
@@ -304,7 +324,7 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
       inputs: { id },
       providers: [
         { provide: ShipmentsPort, useValue: p.envios },
-        { provide: LocationTransportPort, useValue: p.ubicacion },
+        { provide: TrackingPort, useValue: p.tracking },
         { provide: RatingPort, useValue: p.rating },
       ],
     });
@@ -349,30 +369,90 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
     r.fixture.destroy();
   });
 
-  it('debería mostrar el mapa En Ruta con la última posición, y avisar si aún no hay', async () => {
+  it('En Ruta debería mostrar el mapa con la llegada estimada, la distancia y la señal en vivo', async () => {
     const p = puertos([buildEnvio({ estado: 'En Ruta' })]);
     const { el, estable, fixture } = await montarDetalle(p);
     await estable();
-    expect(p.ubicacion.ultima).toHaveBeenCalledWith(1);
+    expect(p.tracking.seguimiento).toHaveBeenCalledWith(1);
     expect(el.querySelector('ti-mapa-envio')).toBeTruthy();
-    expect(el.textContent).not.toContain('todavía no comparte');
+    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(texto).toContain('14 min');
+    expect(texto).toContain('6,2 km');
+    expect(texto).toContain('En vivo');
     fixture.destroy();
     TestBed.resetTestingModule();
     const p2 = puertos([buildEnvio({ estado: 'En Ruta' })]);
-    p2.ubicacion.ultima.mockImplementation(async () => null as never);
+    p2.tracking.seguimiento.mockImplementation(async () => seguimientoDe(false, null));
     const r2 = await montarDetalle(p2);
     await r2.estable();
-    expect(r2.el.textContent).toContain('El conductor todavía no comparte su ubicación.');
+    expect(r2.el.textContent).toContain('hace 5 min');
+    expect(r2.el.textContent).not.toContain('En vivo');
     r2.fixture.destroy();
   });
 
-  it('no debería consultar la ubicación de un envío Pendiente o Entregado', async () => {
+  it('si el mapa falla, la pantalla sigue funcionando sin él', async () => {
+    const p = puertos([buildEnvio({ estado: 'Asignado' })]);
+    p.tracking.seguimiento.mockImplementation(rechaza(new ApiError(0, 'x', 'SIN_CONEXION')));
+    const r = await montarDetalle(p);
+    await r.estable();
+    expect(r.el.textContent).toContain('Un conductor tomó tu envío');
+    expect(r.el.textContent).toContain('Sin señal aún');
+    r.fixture.destroy();
+  });
+
+  it('no debería consultar el mapa de un envío Pendiente o Entregado', async () => {
     const p = puertos([buildEnvio({ estado: 'Pendiente' })]);
     const r = await montarDetalle(p);
     await r.estable();
-    expect(p.ubicacion.ultima).not.toHaveBeenCalled();
+    expect(p.tracking.seguimiento).not.toHaveBeenCalled();
     expect(r.el.querySelector('ti-mapa-envio')).toBeNull();
     r.fixture.destroy();
+  });
+
+  it('el cliente puede cancelar un envío Pendiente con motivo', async () => {
+    const p = puertos([buildEnvio({ estado: 'Pendiente' })]);
+    const cancelar = vi.fn(async () => buildEnvio({ estado: 'Cancelado' }));
+    (p.envios as unknown as { cancelar: typeof cancelar }).cancelar = cancelar;
+    const r = await montarDetalle(p);
+    await r.estable();
+    botonPorTexto(r.el, /Cancelar envío/).click();
+    await r.estable();
+    escribir(q(r.el, '#motivo'), 'Ya no lo necesito');
+    p.envios.obtener.mockImplementation(async () =>
+      buildEnvio({ estado: 'Cancelado', motivoCancelacion: 'Ya no lo necesito' }),
+    );
+    botonPorTexto(r.el, 'Sí, cancelar envío').click();
+    await r.estable();
+    expect(cancelar).toHaveBeenCalledWith(1, 'Ya no lo necesito');
+    expect(r.el.textContent).toContain('Este envío fue cancelado');
+    expect(r.el.textContent).toContain('Ya no lo necesito');
+    expect(r.el.textContent).not.toContain('Sí, cancelar envío');
+    r.fixture.destroy();
+  });
+
+  it('no ofrece cancelar cuando ya hay conductor, y muestra el error del backend', async () => {
+    const p = puertos([buildEnvio({ estado: 'Asignado' })]);
+    const r = await montarDetalle(p);
+    await r.estable();
+    expect(r.el.textContent).not.toContain('Cancelar envío');
+    r.fixture.destroy();
+    TestBed.resetTestingModule();
+    const p2 = puertos([buildEnvio({ estado: 'Pendiente' })]);
+    (p2.envios as unknown as { cancelar: unknown }).cancelar = vi.fn(
+      rechaza(
+        new ApiError(400, 'Solo puedes cancelar un envío mientras ningún conductor lo ha tomado'),
+      ),
+    );
+    const r2 = await montarDetalle(p2);
+    await r2.estable();
+    botonPorTexto(r2.el, /Cancelar envío/).click();
+    await r2.estable();
+    botonPorTexto(r2.el, 'Sí, cancelar envío').click();
+    await r2.estable();
+    expect(q(r2.el, '[role="dialog"] [role="alert"]').textContent).toContain(
+      'un conductor tomó tu envío',
+    );
+    r2.fixture.destroy();
   });
 
   it('debería informar id inválido, 404 y envío de otro cliente', async () => {
@@ -432,9 +512,26 @@ describe('CU-010 CalificarModalComponent', () => {
     await estable();
     botonPorTexto(el, 'Enviar calificación').click();
     await estable();
-    expect(rating.calificar).toHaveBeenCalledWith(1, 4);
+    expect(rating.calificar).toHaveBeenCalledWith(1, 4, undefined);
     expect(toast).toHaveBeenCalledWith('¡Gracias por calificar!');
     expect(salidas).toEqual([4]);
+  });
+
+  it('debería armar el comentario con las sugerencias y enviarlo', async () => {
+    const rating = { calificar: vi.fn(async () => ({ id: 1, calificacion: 5 })) };
+    const { el, estable } = await montarModal(rating);
+    expect(el.textContent).not.toContain('¿Qué destacas?');
+    q<HTMLButtonElement>(el, '[aria-label="5 estrellas"]').click();
+    await estable();
+    botonPorTexto(el, 'Puntual').click();
+    botonPorTexto(el, 'Amable').click();
+    botonPorTexto(el, 'Puntual').click();
+    await estable();
+    expect(q<HTMLTextAreaElement>(el, '#comentario').value).toBe('Amable');
+    expect(botonPorTexto(el, 'Amable').getAttribute('aria-pressed')).toBe('true');
+    botonPorTexto(el, 'Enviar calificación').click();
+    await estable();
+    expect(rating.calificar).toHaveBeenCalledWith(1, 5, 'Amable');
   });
 
   it('Dado que ya fue calificado, cuando envío, entonces lo marca y cierra sin volver a ofrecerlo', async () => {

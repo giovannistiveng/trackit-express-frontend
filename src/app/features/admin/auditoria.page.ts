@@ -28,6 +28,12 @@ const ACCIONES = [
   'Documento cargado',
   'Conductor aprobado',
   'Conductor rechazado',
+  'Envío cancelado',
+  'Tarifa actualizada',
+  'Perfil actualizado',
+  'Contraseña cambiada',
+  'Mensaje de contacto',
+  'Contacto atendido',
 ];
 
 /** E7-HU2 Auditoría: tabla paginada con filtros y exportación a CSV. */

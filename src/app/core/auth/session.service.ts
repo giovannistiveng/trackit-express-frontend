@@ -5,7 +5,7 @@ import { LoggerService } from '../logging/logger.service';
 
 export const CLAVE_SESION = 'trackit.session';
 
-export type MotivoCierre = 'manual' | 'expirada' | 'rechazada';
+export type MotivoCierre = 'manual' | 'expirada' | 'rechazada' | 'otra-pestana';
 
 /** Ruta de inicio de cada rol. */
 export const INICIO_POR_ROL: Record<Rol, string> = {
@@ -75,6 +75,37 @@ export class SessionService {
     void limpiarCacheDeDatos();
     if (motivo !== 'manual') this.ultimoCierre.set(motivo);
     if (habia) this.log.info('Sesion', `Cierre de sesión (${motivo})`);
+  }
+
+  /**
+   * Otra pestaña del mismo navegador inició o cerró sesión (localStorage es compartido).
+   * Se adopta ese estado para no mezclar dos cuentas. Devuelve qué cambió.
+   */
+  sincronizarDesdeOtraPestana(ahora = Date.now()): 'sin-cambios' | 'cerrada' | 'otra-cuenta' {
+    const crudo = this.storage.leer(CLAVE_SESION);
+    const actual = this.usuario();
+    if (!crudo) {
+      if (!actual) return 'sin-cambios';
+      this.cerrar('otra-pestana');
+      return 'cerrada';
+    }
+    try {
+      const datos = JSON.parse(crudo) as { user?: Usuario };
+      if (actual && datos.user?.id === actual.id) return 'sin-cambios';
+    } catch {
+      return 'sin-cambios';
+    }
+    this.restaurar(ahora);
+    return this.estaAutenticado() ? 'otra-cuenta' : 'cerrada';
+  }
+
+  /** Refleja en la sesión un cambio de nombre hecho en "Mi cuenta". */
+  actualizarNombre(nombre: string): void {
+    const s = this.sesion();
+    if (!s) return;
+    const usuario = { ...s.usuario, nombre };
+    this.sesion.set({ ...s, usuario });
+    this.storage.guardar(CLAVE_SESION, JSON.stringify({ token: s.token, user: usuario }));
   }
 
   inicioDelRol(): string {
