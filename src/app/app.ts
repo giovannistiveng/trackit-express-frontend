@@ -2,12 +2,11 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { ToastsComponent } from './shared/ui/toast.service';
 import { BannerConexionComponent } from './layout/banner-conexion.component';
-import { InsigniaDemoComponent } from './layout/insignia-demo.component';
 
 @Component({
   selector: 'ti-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, ToastsComponent, BannerConexionComponent, InsigniaDemoComponent],
+  imports: [RouterOutlet, ToastsComponent, BannerConexionComponent],
   template: `
     <a
       href="#contenido"
@@ -17,7 +16,6 @@ import { InsigniaDemoComponent } from './layout/insignia-demo.component';
     <ti-banner-conexion />
     <router-outlet />
     <ti-toasts />
-    <ti-insignia-demo />
   `,
 })
 export class App {}

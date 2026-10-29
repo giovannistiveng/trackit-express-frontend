@@ -45,6 +45,40 @@ const REGLAS: { patron: RegExp; mensaje: string }[] = [
   { patron: /conductor ya ha sido aprobado/i, mensaje: 'Este conductor ya estaba aprobado.' },
   { patron: /no existe el envío/i, mensaje: 'No encontramos ese envío.' },
   { patron: /demasiadas peticiones/i, mensaje: 'Demasiados intentos seguidos. Espera un momento.' },
+  {
+    patron: /ya tienes un servicio activo/i,
+    mensaje: 'Ya tienes un servicio en curso. Termínalo antes de aceptar otro.',
+  },
+  { patron: /requiere un vehículo (.+)$/i, mensaje: 'Este envío requiere otro tipo de vehículo.' },
+  {
+    patron: /cuenta de conductor aún no está aprobada/i,
+    mensaje: 'Tu cuenta de conductor aún no está aprobada.',
+  },
+  { patron: /inicia la ruta antes/i, mensaje: 'Inicia la ruta antes de finalizar la entrega.' },
+  { patron: /no está asignado a ti/i, mensaje: 'Este servicio no está asignado a ti.' },
+  {
+    patron: /no tienes acceso a este envío|solo puedes calificar tus propios/i,
+    mensaje: 'No tienes acceso a este envío.',
+  },
+  { patron: /coordenadas fuera de rango/i, mensaje: 'La ubicación recibida no es válida.' },
+  { patron: /motivo del rechazo es obligatorio/i, mensaje: 'Escribe el motivo del rechazo.' },
+  {
+    patron: /contraseña debe tener/i,
+    mensaje: 'La contraseña debe tener al menos 8 caracteres, una mayúscula y un número.',
+  },
+  {
+    patron: /solo se pueden registrar cuentas/i,
+    mensaje: 'Solo puedes crear cuentas de cliente o conductor.',
+  },
+  { patron: /la foto debe ser jpg o png/i, mensaje: 'La foto debe ser JPG o PNG.' },
+  {
+    patron: /supera el tamaño máximo/i,
+    mensaje: 'El archivo pesa más de 5 MB. Elige uno más liviano.',
+  },
+  {
+    patron: /origen y el destino deben ser distintos/i,
+    mensaje: 'El destino debe ser distinto del origen.',
+  },
 ];
 
 export const MENSAJE_GENERICO = 'Algo salió mal. Inténtalo de nuevo en un momento.';
@@ -60,8 +94,8 @@ export class ErrorMessageMapper {
       return 'El servidor tardó demasiado en responder. Inténtalo de nuevo.';
     const regla = REGLAS.find((r) => r.patron.test(error.message));
     if (regla) return regla.mensaje;
-    if (error.status === 401 || error.status === 403)
-      return 'Tu sesión terminó. Inicia sesión otra vez.';
+    if (error.status === 401) return 'Tu sesión terminó. Inicia sesión otra vez.';
+    if (error.status === 403) return 'No tienes permiso para hacer esto.';
     if (error.status === 404) return 'No encontramos lo que buscas.';
     return MENSAJE_GENERICO;
   }

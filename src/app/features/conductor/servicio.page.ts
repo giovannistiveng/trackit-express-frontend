@@ -9,7 +9,6 @@ import {
   signal,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { DemoModeService } from '../../core/config/demo-mode.service';
 import {
   Envio,
   esIdValido,
@@ -19,13 +18,12 @@ import {
 } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
-import { DriverServicePort, LoggerPort, RouteStartPort } from '../../core/ports';
+import { DriverServicePort, LoggerPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { EstadoBadgeComponent } from '../../shared/ui/estado-badge.component';
 import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
 import { ToastService } from '../../shared/ui/toast.service';
 import { EntregaModalComponent } from './components/entrega-modal.component';
-import { ActiveServiceStore } from './state/active-service.store';
 import { CompartirUbicacionService } from './state/compartir-ubicacion.service';
 import { DriverProfileStore } from './state/driver-profile.store';
 
@@ -92,7 +90,7 @@ import { DriverProfileStore } from './state/driver-profile.store';
                   [attr.aria-checked]="ubicacion.estado() === 'activo'"
                   [disabled]="!puedeCompartir()"
                   class="relative h-8 w-14 shrink-0 rounded-full transition-colors disabled:opacity-40"
-                  [class]="ubicacion.estado() === 'activo' ? 'bg-monte' : 'bg-linea'"
+                  [class]="ubicacion.estado() === 'activo' ? 'bg-marca' : 'bg-linea'"
                   (click)="alternarUbicacion()"
                 >
                   <span
@@ -105,7 +103,7 @@ import { DriverProfileStore } from './state/driver-profile.store';
                 <button type="button" class="btn-acento w-full text-lg" (click)="modal.set(true)">
                   Finalizar entrega
                 </button>
-              } @else if (flags.iniciarRutaEndpoint) {
+              } @else {
                 <p class="text-sm text-piedra">Inicia la ruta para poder finalizar la entrega.</p>
               }
             </section>
@@ -133,14 +131,11 @@ export class ServicioPage implements OnInit, OnDestroy {
   readonly id = input.required<string>();
 
   private readonly servicios = inject(DriverServicePort);
-  private readonly rutas = inject(RouteStartPort);
-  private readonly activo = inject(ActiveServiceStore);
   private readonly perfil = inject(DriverProfileStore);
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
   protected readonly ubicacion = inject(CompartirUbicacionService);
-  protected readonly flags = inject(DemoModeService).flags;
 
   protected readonly envio = signal<Envio | null>(null);
   protected readonly error = signal('');
@@ -151,15 +146,13 @@ export class ServicioPage implements OnInit, OnDestroy {
     this.envio() ? 'listo' : this.error() ? 'error' : 'cargando',
   );
   protected readonly puedeIniciar = computed(
-    () => !!this.envio() && puedeIniciarRuta(this.envio() as Envio, this.flags.iniciarRutaEndpoint),
+    () => !!this.envio() && puedeIniciarRuta(this.envio() as Envio),
   );
   protected readonly puedeFinalizar = computed(
-    () => !!this.envio() && puedeEntregar(this.envio() as Envio, this.flags.iniciarRutaEndpoint),
+    () => !!this.envio() && puedeEntregar(this.envio() as Envio),
   );
   protected readonly puedeCompartir = computed(
-    () =>
-      !!this.envio() &&
-      puedeCompartirUbicacion(this.envio() as Envio, this.flags.iniciarRutaEndpoint),
+    () => !!this.envio() && puedeCompartirUbicacion(this.envio() as Envio),
   );
   protected readonly textoUbicacion = computed(() => {
     switch (this.ubicacion.estado()) {
@@ -198,11 +191,10 @@ export class ServicioPage implements OnInit, OnDestroy {
       }
       this.envio.set(e);
     } catch (e) {
-      this.error.set(
-        e instanceof ApiError && e.status === 404
-          ? 'No encontramos ese servicio.'
-          : this.mapper.traducir(e),
-      );
+      if (e instanceof ApiError && e.status === 404) this.error.set('No encontramos ese servicio.');
+      else if (e instanceof ApiError && e.status === 403)
+        this.error.set('Este servicio no está asignado a ti.');
+      else this.error.set(this.mapper.traducir(e));
     }
   }
 
@@ -211,7 +203,7 @@ export class ServicioPage implements OnInit, OnDestroy {
     if (!e || this.iniciando()) return;
     this.iniciando.set(true);
     try {
-      this.envio.set(await this.rutas.iniciar(e.id));
+      this.envio.set(await this.servicios.iniciarRuta(e.id));
       this.log.info('Servicio', `Ruta iniciada #${e.id}`);
     } catch (err) {
       this.toast.error(this.mapper.traducir(err));
@@ -230,8 +222,6 @@ export class ServicioPage implements OnInit, OnDestroy {
   async alEntregar(): Promise<void> {
     this.modal.set(false);
     this.ubicacion.detener();
-    const id = this.perfil.idConductor();
-    if (id !== null) await this.activo.limpiar(id);
     await this.cargar();
   }
 }

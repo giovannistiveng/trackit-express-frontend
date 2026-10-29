@@ -17,27 +17,19 @@ import {
   Validators,
 } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { SessionService } from '../../core/auth/session.service';
-import { DemoModeService } from '../../core/config/demo-mode.service';
 import {
   CATEGORIAS_VEHICULO,
   CategoriaVehiculo,
   Cotizacion,
   Envio,
+  LUGARES_FRECUENTES,
   TIPOS_CARGA,
   Zona,
   limpiarTexto,
 } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
-import {
-  ClientShipmentsPort,
-  LoggerPort,
-  QuotePort,
-  ShipmentsPort,
-  ZonesPort,
-} from '../../core/ports';
-import { LUGARES_FRECUENTES } from '../../core/adapters/mock/seed-data';
+import { LoggerPort, QuotePort, ShipmentsPort, ZonesPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { mostrarError } from '../../shared/ui/campo-error';
 import { ToastService } from '../../shared/ui/toast.service';
@@ -219,16 +211,23 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
               }
             </div>
           </div>
-          @if (flags.categoriaEnvio) {
-            <div>
-              <label for="categoria" class="etiqueta">Vehículo</label>
-              <select id="categoria" class="campo" formControlName="categoria">
-                @for (c of categorias; track c) {
-                  <option [value]="c">{{ c }}</option>
-                }
-              </select>
-            </div>
-          }
+          <div>
+            <label for="categoria" class="etiqueta">Vehículo</label>
+            <select
+              id="categoria"
+              class="campo"
+              formControlName="categoria"
+              aria-describedby="categoria-ayuda"
+            >
+              <option value="">Cualquier vehículo</option>
+              @for (c of categorias; track c) {
+                <option [value]="c">{{ c }}</option>
+              }
+            </select>
+            <p id="categoria-ayuda" class="ayuda">
+              Si eliges uno, solo lo verán conductores con ese vehículo.
+            </p>
+          </div>
 
           @if (error()) {
             <p
@@ -246,7 +245,7 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
 
         @if (cotizacion(); as c) {
           <section
-            class="mt-8 rounded-2xl bg-monte p-5 text-white sm:p-6"
+            class="mt-8 rounded-2xl bg-marca p-5 text-white sm:p-6"
             aria-labelledby="titulo-cotizacion"
             aria-live="polite"
           >
@@ -294,12 +293,9 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
   private readonly zonesPort = inject(ZonesPort);
   private readonly quotePort = inject(QuotePort);
   private readonly shipments = inject(ShipmentsPort);
-  private readonly historial = inject(ClientShipmentsPort);
-  private readonly session = inject(SessionService);
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
-  protected readonly flags = inject(DemoModeService).flags;
 
   protected readonly lugares = LUGARES_FRECUENTES;
   protected readonly tiposCarga = TIPOS_CARGA;
@@ -312,7 +308,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       idZona: this.fb.control<number | null>(null, Validators.required),
       tipoCarga: [''],
       otroTipo: [''],
-      categoria: this.fb.control<CategoriaVehiculo>('Moto Express'),
+      categoria: this.fb.control<CategoriaVehiculo | ''>(''),
     },
     { validators: [distintosValidator, tipoCargaValidator] },
   );
@@ -395,8 +391,6 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
         origen: limpiarTexto(v.origen),
         destino: limpiarTexto(v.destino),
         idZona: v.idZona as number,
-        tipoCarga: this.tipoCargaFinal(),
-        categoria: this.flags.categoriaEnvio ? v.categoria : undefined,
       });
       this.cotizacion.set(c);
       this.firmaCotizada.set(this.firma(v));
@@ -420,8 +414,6 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     this.form.markAllAsTouched();
     this.form.updateValueAndValidity();
     if (this.form.invalid) return;
-    const usuario = this.session.usuario();
-    if (!usuario) return;
     const v = this.form.getRawValue();
     this.creando.set(true);
     this.error.set('');
@@ -431,10 +423,8 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
         destino: limpiarTexto(v.destino),
         idZona: v.idZona as number,
         tipoCarga: this.tipoCargaFinal(),
-        categoria: this.flags.categoriaEnvio ? v.categoria : undefined,
-        idCliente: usuario.id,
+        categoria: v.categoria || undefined,
       });
-      await this.historial.recordar(usuario.id, envio.id).catch(() => undefined);
       this.log.info('Envios', `Envío creado #${envio.id}`, {
         tarifa: envio.tarifa,
         idZona: envio.idZona,
@@ -466,7 +456,6 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       idZona: number | null;
       tipoCarga: string;
       otroTipo: string;
-      categoria: string;
     }>,
   ): string {
     return JSON.stringify([
@@ -475,7 +464,6 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       v.idZona ?? null,
       v.tipoCarga ?? '',
       v.tipoCarga === OTRO ? limpiarTexto(v.otroTipo ?? '') : '',
-      this.flags.categoriaEnvio ? (v.categoria ?? '') : '',
     ]);
   }
 }

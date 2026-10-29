@@ -86,12 +86,11 @@
             "coverageExclude": [
               "src/app/**/*.spec.ts",
               "src/testing/**",
-              "src/app/core/adapters/mock/seed-data.ts",
               "src/main.ts",
               "src/app/app.config.ts",
               "src/environments/**"
             ],
-            "coverageReporters": ["text-summary", "html", "json-summary"],
+            "coverageReporters": ["text-summary", "html", "json-summary", "lcov"],
             "coverageThresholds": {
               "statements": 80,
               "lines": 80,

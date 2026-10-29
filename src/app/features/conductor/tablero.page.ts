@@ -18,7 +18,6 @@ import { ModalComponent } from '../../shared/ui/modal.component';
 import { ToastService } from '../../shared/ui/toast.service';
 import { Sondeo } from '../../shared/util/sondeo';
 import { AvisoPerfilComponent } from './components/aviso-perfil.component';
-import { ActiveServiceStore } from './state/active-service.store';
 import { DriverProfileStore } from './state/driver-profile.store';
 
 export const INTERVALO_TABLERO_MS = 15_000;
@@ -55,7 +54,7 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
       } @else {
         @if (servicioActivo(); as id) {
           <div
-            class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-monte p-4 text-white"
+            class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-marca p-4 text-white"
             role="status"
           >
             <p class="font-semibold">
@@ -76,7 +75,12 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
                 <li class="rounded-xl border border-linea bg-papel p-4 sm:p-5">
                   <div class="flex flex-wrap items-start justify-between gap-4">
                     <div class="min-w-0 flex-1">
-                      <p class="text-sm text-piedra">#{{ e.id }} · {{ e.tipoCarga }}</p>
+                      <p class="text-sm text-piedra">
+                        #{{ e.id }} · {{ e.tipoCarga }}
+                        @if (e.categoria) {
+                          · {{ e.categoria }}
+                        }
+                      </p>
                       <p class="mt-2 font-semibold">
                         <span class="text-sm font-normal text-piedra">Recoger: </span>{{ e.origen }}
                       </p>
@@ -135,7 +139,6 @@ export class TableroPage implements OnInit, OnDestroy {
   protected readonly perfil = inject(DriverProfileStore);
   private readonly tablero = inject(DriverBoardPort);
   private readonly servicios = inject(DriverServicePort);
-  private readonly activo = inject(ActiveServiceStore);
   private readonly router = inject(Router);
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly toast = inject(ToastService);
@@ -150,9 +153,7 @@ export class TableroPage implements OnInit, OnDestroy {
   protected readonly servicioActivo = signal<number | null>(null);
   private sondeo: Sondeo<Envio[]> | null = null;
 
-  protected readonly habilitado = computed(
-    () => this.perfil.idConductor() !== null && this.perfil.aprobado(),
-  );
+  protected readonly habilitado = computed(() => this.perfil.aprobado());
   protected readonly fase = computed<FaseCarga>(() =>
     !this.cargado()
       ? 'cargando'
@@ -165,8 +166,8 @@ export class TableroPage implements OnInit, OnDestroy {
 
   async ngOnInit(): Promise<void> {
     if (!this.habilitado()) return;
-    const id = this.perfil.idConductor() as number;
-    this.servicioActivo.set(await this.activo.actual(id));
+    const activo = await this.servicios.activo().catch(() => null);
+    this.servicioActivo.set(activo?.id ?? null);
     this.sondeo = new Sondeo(() => this.consultar(), {
       intervaloMs: INTERVALO_TABLERO_MS,
       alResultado: (lista) => {
@@ -191,19 +192,20 @@ export class TableroPage implements OnInit, OnDestroy {
   }
 
   async aceptar(e: Envio): Promise<void> {
-    const idConductor = this.perfil.idConductor();
-    if (idConductor === null || this.aceptando() !== null || this.servicioActivo()) return;
+    if (this.aceptando() !== null || this.servicioActivo()) return;
     this.aceptando.set(e.id);
     try {
-      const envio = await this.servicios.aceptar(e.id, idConductor);
-      await this.activo.guardar(idConductor, envio.id);
+      const envio = await this.servicios.aceptar(e.id);
       this.log.info('Tablero', `Servicio #${envio.id} aceptado`);
       this.porAceptar.set(null);
       this.toast.exito(`Servicio #${envio.id} aceptado`);
       await this.router.navigate(['/conductor/servicio', envio.id]);
     } catch (err) {
       this.porAceptar.set(null);
-      if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
+      const tomado =
+        err instanceof ApiError &&
+        (err.status === 404 || /tomado|no se puede asignar/i.test(err.message));
+      if (tomado) {
         this.toast.error(MENSAJE_TOMADO);
         this.envios.update((l) => l.filter((x) => x.id !== e.id));
         void this.refrescar();

@@ -32,7 +32,7 @@ export function aUsuario(u: ApiUsuarioLogin): Usuario {
   return { id: u.id, nombre: u.nombre, correo: u.correo, rol: aRol(u.rol) };
 }
 
-function aCategoria(v: string | undefined): CategoriaVehiculo | undefined {
+export function aCategoria(v: string | null | undefined): CategoriaVehiculo | undefined {
   return v && (CATEGORIAS_VEHICULO as readonly string[]).includes(v)
     ? (v as CategoriaVehiculo)
     : undefined;
@@ -62,17 +62,19 @@ export function aEnvio(e: ApiEnvio, incluirPin: boolean): Envio {
     idCliente: e.id_cliente,
     idConductor: e.id_conductor ?? null,
     idZona: e.id_zona,
+    categoria: aCategoria(e.categoria) ?? null,
     historial,
   };
+  if (e.fecha_creacion) envio.fechaCreacion = new Date(e.fecha_creacion);
   if (e.fecha_ultimo_cambio) envio.fechaUltimoCambio = new Date(e.fecha_ultimo_cambio);
   if (incluirPin && e.pin_seguridad) envio.pin = e.pin_seguridad;
+  if (e.calificado !== undefined) envio.calificado = e.calificado;
   if (e.conductor) {
     envio.conductor = {
       nombre: e.conductor.nombre,
-      telefono: e.conductor.telefono,
       vehiculo: aCategoria(e.conductor.vehiculo),
-      placa: e.conductor.placa,
-      calificacionPromedio: e.conductor.calificacion_promedio,
+      placa: e.conductor.placa ?? undefined,
+      calificacionPromedio: e.conductor.calificacion_promedio ?? undefined,
     };
   }
   return envio;
@@ -84,6 +86,7 @@ export function aPostulante(c: ApiConductor): ConductorPostulante {
     nombre: c.nombre,
     correo: c.correo,
     estadoAprobacion: aEstadoAprobacion(c.estado_aprobacion),
+    motivoRechazo: c.motivo_rechazo ?? null,
     documentos: (c.documentos ?? []).map((d) => ({
       tipo: aTipoDocumento(d.tipo_documento),
       urlArchivo: d.url_archivo,

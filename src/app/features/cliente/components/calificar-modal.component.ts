@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, inject, input, output, signal } fro
 import { ApiError } from '../../../core/http/api-error';
 import { ErrorMessageMapper } from '../../../core/http/error-message.mapper';
 import { LoggerPort, RatingPort } from '../../../core/ports';
-import { RatedShipments } from '../../../core/adapters/local/local-adapters';
 import { EstrellasComponent } from '../../../shared/ui/estrellas.component';
 import { ModalComponent } from '../../../shared/ui/modal.component';
 import { ToastService } from '../../../shared/ui/toast.service';
@@ -46,7 +45,6 @@ export class CalificarModalComponent {
   readonly calificado = output<number | null>();
 
   private readonly rating = inject(RatingPort);
-  private readonly calificados = inject(RatedShipments);
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
@@ -62,13 +60,11 @@ export class CalificarModalComponent {
     this.error.set('');
     try {
       await this.rating.calificar(this.idEnvio(), valor);
-      await this.calificados.marcar(this.idEnvio());
       this.log.info('Calificacion', `Envío #${this.idEnvio()} calificado`, { puntuacion: valor });
       this.toast.exito('¡Gracias por calificar!');
       this.calificado.emit(valor);
     } catch (e) {
       if (e instanceof ApiError && /ya fue calificado/i.test(e.message)) {
-        await this.calificados.marcar(this.idEnvio());
         this.toast.mostrar('Este envío ya estaba calificado.');
         this.calificado.emit(null);
       } else {

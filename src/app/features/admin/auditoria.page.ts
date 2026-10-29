@@ -7,7 +7,6 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { DemoModeService } from '../../core/config/demo-mode.service';
 import { Pagina, RegistroAuditoria } from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { AdminMetricsPort, LoggerPort } from '../../core/ports';
@@ -16,13 +15,19 @@ import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.co
 import { aCsv, descargarArchivo } from '../../shared/util/csv';
 
 export const TAMANO_PAGINA = 15;
+/** Acciones que registra el backend en la tabla Auditoria. */
 const ACCIONES = [
   'Inicio de sesión',
   'Envío creado',
   'Servicio aceptado',
+  'Ruta iniciada',
   'Entrega validada',
-  'Conductor aprobado',
   'Calificación',
+  'Registro de usuario',
+  'Vehículo registrado',
+  'Documento cargado',
+  'Conductor aprobado',
+  'Conductor rechazado',
 ];
 
 /** E7-HU2 Auditoría: tabla paginada con filtros y exportación a CSV. */
@@ -35,11 +40,6 @@ const ACCIONES = [
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1>Auditoría</h1>
-          @if (!flags.adminDashboard) {
-            <p class="mt-1 text-sm text-piedra">
-              Datos de ejemplo: el backend aún no expone la auditoría.
-            </p>
-          }
         </div>
         <button
           type="button"
@@ -164,7 +164,6 @@ export class AuditoriaPage implements OnInit {
   private readonly puerto = inject(AdminMetricsPort);
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly log = inject(LoggerPort);
-  protected readonly flags = inject(DemoModeService).flags;
   protected readonly acciones = ACCIONES;
 
   protected texto = '';

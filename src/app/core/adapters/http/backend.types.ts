@@ -1,4 +1,4 @@
-/** Formas exactas del JSON del backend (sección 3 / Apéndice A del prompt maestro). */
+/** Formas exactas del JSON del backend (ver /api/docs). */
 
 export interface ApiUsuarioLogin {
   id: number;
@@ -23,16 +23,19 @@ export interface ApiEnvio {
   id_cliente: number;
   id_conductor?: number | null;
   id_zona: number;
+  categoria?: string | null;
+  fecha_creacion?: string;
   ultimo_cambio_estado?: string;
   fecha_ultimo_cambio?: string;
   historial_estado?: ApiCambioEstado[];
+  calificado?: boolean;
+  calificacion?: number | null;
   conductor?: {
     nombre: string;
-    telefono?: string;
-    vehiculo?: string;
-    placa?: string;
-    calificacion_promedio?: number;
-  };
+    vehiculo?: string | null;
+    placa?: string | null;
+    calificacion_promedio?: number | null;
+  } | null;
 }
 
 export interface ApiConductor {
@@ -40,5 +43,6 @@ export interface ApiConductor {
   nombre: string;
   correo: string;
   estado_aprobacion: string;
+  motivo_rechazo?: string | null;
   documentos?: { tipo_documento: string; url_archivo: string }[];
 }

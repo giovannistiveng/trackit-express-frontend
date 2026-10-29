@@ -28,8 +28,8 @@ export const MENSAJES_ARCHIVO: Record<ErrorArchivo, string> = {
     <label
       [for]="idInput"
       class="flex min-h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors"
-      [class.border-monte]="arrastrando()"
-      [class.bg-monte-suave]="arrastrando()"
+      [class.border-marca]="arrastrando()"
+      [class.bg-marca-suave]="arrastrando()"
       [class.border-linea]="!arrastrando()"
       (dragover)="$event.preventDefault(); arrastrando.set(true)"
       (dragleave)="arrastrando.set(false)"

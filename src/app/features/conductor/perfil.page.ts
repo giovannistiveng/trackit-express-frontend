@@ -18,7 +18,6 @@ import { DocumentoCardComponent } from './components/documento-card.component';
 import { DriverProfileStore } from './state/driver-profile.store';
 
 export const MENSAJE_PLACA_DUPLICADA = 'Esa placa ya está registrada en el sistema.';
-export const MENSAJE_SIN_PERFIL = 'Tu perfil de conductor aún no está creado. Contacta a soporte.';
 
 /** CU-003 Registro de vehículo y CU-004 Carga de documentos. */
 @Component({
@@ -102,16 +101,14 @@ export const MENSAJE_SIN_PERFIL = 'Tu perfil de conductor aún no está creado. 
       <section class="mt-10" aria-labelledby="titulo-documentos">
         <h2 id="titulo-documentos">Documentos</h2>
         <p class="mt-1 text-sm text-piedra">Imagen JPG o PNG, o PDF, de hasta 5 MB cada uno.</p>
-        @if (perfil.idConductor(); as id) {
+        @if (perfil.perfil()) {
           <div class="mt-4 grid gap-4 md:grid-cols-3">
             @for (t of tipos; track t) {
-              <ti-documento-card [tipo]="t" [idConductor]="id" />
+              <ti-documento-card [tipo]="t" (subido)="alSubirDocumento()" />
             }
           </div>
         } @else {
-          <p class="mt-4 text-sm text-piedra">
-            Disponible cuando tu perfil de conductor esté creado.
-          </p>
+          <p class="mt-4 text-sm text-piedra">Disponible cuando se cargue tu perfil.</p>
         }
       </section>
     </div>
@@ -140,7 +137,7 @@ export class PerfilPage {
   protected readonly guardando = signal(false);
   protected readonly errorPlaca = signal('');
   protected readonly vehiculo = computed(() => this.perfil.perfil()?.vehiculo ?? null);
-  protected readonly sinPerfil = computed(() => this.perfil.idConductor() === null);
+  protected readonly sinPerfil = computed(() => this.perfil.perfil() === null);
 
   constructor() {
     this.form.controls.placa.valueChanges.subscribe(() => this.errorPlaca.set(''));
@@ -159,18 +156,12 @@ export class PerfilPage {
     this.normalizar();
     this.form.markAllAsTouched();
     if (this.form.invalid || this.guardando()) return;
-    const idConductor = this.perfil.idConductor();
-    if (idConductor === null) {
-      this.errorPlaca.set(MENSAJE_SIN_PERFIL);
-      return;
-    }
     const { placa, categoria } = this.form.getRawValue();
     this.guardando.set(true);
     try {
       const v = await this.vehicles.registrar({
         placa: normalizarPlaca(placa),
         categoria,
-        idConductor,
       });
       this.perfil.registrarVehiculo(v);
       this.log.info('Vehiculos', `Vehículo registrado (${v.categoria})`);
@@ -178,10 +169,14 @@ export class PerfilPage {
     } catch (e) {
       if (e instanceof ApiError && /placa ya está registrada/i.test(e.message))
         this.errorPlaca.set(MENSAJE_PLACA_DUPLICADA);
-      else if (e instanceof ApiError && e.status === 404) this.errorPlaca.set(MENSAJE_SIN_PERFIL);
       else this.errorPlaca.set(this.mapper.traducir(e));
     } finally {
       this.guardando.set(false);
     }
+  }
+
+  /** Al subir un documento, un conductor rechazado vuelve a revisión: se recarga el perfil. */
+  protected alSubirDocumento(): void {
+    if (this.perfil.perfil()?.estadoAprobacion === 'Rechazado') void this.perfil.cargar(true);
   }
 }

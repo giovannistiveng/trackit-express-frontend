@@ -1,11 +1,11 @@
 import { TestBed } from '@angular/core/testing';
-import { botonPorTexto, configPrueba, elegir, escribir, q, rechaza } from '../../../testing/fakes';
+import { botonPorTexto, elegir, escribir, q, rechaza } from '../../../testing/fakes';
 import { ADMIN } from '../../../testing/fixtures';
 import { montar } from '../../../testing/pantallas';
 import { ApiError } from '../../core/http/api-error';
 import { ConductorPostulante } from '../../core/domain';
 import { AdminMetricsPort, ApprovalPort, DriverApplicantsPort } from '../../core/ports';
-import { MockAdminMetricsAdapter } from '../../core/adapters/mock/mock-adapters';
+import { FakeAdminMetrics } from '../../../testing/admin-fake';
 import { ToastService } from '../../shared/ui/toast.service';
 import { AuditoriaPage, TAMANO_PAGINA } from './auditoria.page';
 import { ConductoresPage, esPdf } from './conductores.page';
@@ -47,10 +47,9 @@ describe('CU-011 ConductoresPage', () => {
     };
   }
 
-  async function montarPagina(p = puertos(), features = {}) {
+  async function montarPagina(p = puertos()) {
     const r = await montar(ConductoresPage, {
       usuario: ADMIN,
-      config: configPrueba({ features }),
       providers: [
         { provide: DriverApplicantsPort, useValue: p.lista },
         { provide: ApprovalPort, useValue: p.aprobacion },
@@ -89,12 +88,12 @@ describe('CU-011 ConductoresPage', () => {
     expect(fila(el, 'Camilo')).toBeUndefined();
   });
 
-  it('Dado que rechazo, entonces exige un motivo, avisa que no se guarda y pasa a Rechazado', async () => {
+  it('Dado que rechazo, entonces exige un motivo que verá el conductor y pasa a Rechazado', async () => {
     const { el, p, estable } = await montarPagina();
     botonPorTexto(fila(el, 'Luz'), 'Rechazar').click();
     await estable();
     const dialogo = q(el, '[role="dialog"]');
-    expect(dialogo.textContent).toContain('todavía no se guarda');
+    expect(dialogo.textContent).toContain('El conductor lo verá en su perfil');
     botonPorTexto(dialogo, 'Rechazar').click();
     await estable();
     expect(dialogo.textContent).toContain('Escribe el motivo del rechazo.');
@@ -107,19 +106,13 @@ describe('CU-011 ConductoresPage', () => {
     expect(fila(el, 'Luz').textContent).toContain('Rechazado');
   });
 
-  it('con el flag motivoRechazo no debería mostrar el aviso', async () => {
-    const { el, estable } = await montarPagina(undefined, { motivoRechazo: true });
-    botonPorTexto(fila(el, 'Luz'), 'Rechazar').click();
-    await estable();
-    expect(q(el, '[role="dialog"]').textContent).not.toContain('todavía no se guarda');
-  });
-
   it('Dado que ya estaba aprobado, entonces informa y refresca', async () => {
     const p = puertos();
     p.aprobacion.decidir.mockImplementation(
       rechaza(new ApiError(400, 'Este conductor ya ha sido aprobado previamente')),
     );
     const { el, estable } = await montarPagina(p);
+    p.lista.listarPendientes.mockImplementation(async () => [postulantes()[1]]);
     const toast = vi.spyOn(TestBed.inject(ToastService), 'mostrar');
     botonPorTexto(fila(el, 'Camilo'), 'Aprobar').click();
     await estable();
@@ -130,20 +123,26 @@ describe('CU-011 ConductoresPage', () => {
     expect(fila(el, 'Camilo')).toBeUndefined();
   });
 
-  it.each([
-    [{}, 'dato de ejemplo'],
-    [{ pendientesEndpoint: true }, 'ya no existe'],
-  ])('debería explicar un 404 al decidir (%o)', async (features, texto) => {
+  it('debería explicar un 404 al decidir', async () => {
     const p = puertos();
     p.aprobacion.decidir.mockImplementation(
       rechaza(new ApiError(404, 'No existe el conductor con id 1')),
     );
-    const { el, estable } = await montarPagina(p, features);
+    const { el, estable } = await montarPagina(p);
     botonPorTexto(fila(el, 'Camilo'), 'Aprobar').click();
     await estable();
     botonPorTexto(q(el, '[role="dialog"]'), 'Aprobar').click();
     await estable();
-    expect(q(el, '[role="dialog"] [role="alert"]').textContent).toContain(texto);
+    expect(q(el, '[role="dialog"] [role="alert"]').textContent).toContain('ya no existe');
+  });
+
+  it('debería mostrar el motivo de un rechazo previo', async () => {
+    const p = puertos();
+    p.lista.listarPendientes.mockImplementation(async () => [
+      { ...postulantes()[1], estadoAprobacion: 'Rechazado', motivoRechazo: 'SOAT vencido' },
+    ]);
+    const { el } = await montarPagina(p);
+    expect(fila(el, 'Luz').textContent).toContain('Motivo: SOAT vencido');
   });
 
   it('debería mostrar otros errores, vacío y error de carga', async () => {
@@ -175,7 +174,7 @@ describe('CU-011 ConductoresPage', () => {
 
 describe('E7-HU2 DashboardPage', () => {
   it('debería mostrar KPI y gráficos, y Reintentar ante error', async () => {
-    const m = new MockAdminMetricsAdapter();
+    const m = new FakeAdminMetrics();
     const metricas = vi.fn<() => Promise<unknown>>(rechaza(new ApiError(500, 'x')));
     const { el, estable } = await montar(DashboardPage, {
       usuario: ADMIN,
@@ -191,17 +190,15 @@ describe('E7-HU2 DashboardPage', () => {
     expect(texto).toContain('Envíos totales');
     expect(texto).toContain('248');
     expect(texto).toContain('$ 4.862.000');
-    expect(texto).toContain('Datos de ejemplo');
+    expect(texto).not.toContain('Datos de ejemplo');
     expect(el.querySelectorAll('#titulo-zona + ul li')).toHaveLength(5);
   });
 });
 
 describe('E7-HU2 AuditoriaPage', () => {
   async function montarAuditoria() {
-    const m = new MockAdminMetricsAdapter();
-    const auditoria = vi.fn((f: Parameters<MockAdminMetricsAdapter['auditoria']>[0]) =>
-      m.auditoria(f),
-    );
+    const m = new FakeAdminMetrics();
+    const auditoria = vi.fn((f: Parameters<FakeAdminMetrics['auditoria']>[0]) => m.auditoria(f));
     const r = await montar(AuditoriaPage, {
       usuario: ADMIN,
       providers: [{ provide: AdminMetricsPort, useValue: { metricas: vi.fn(), auditoria } }],

@@ -3,16 +3,16 @@
 @theme {
   --font-sans: 'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
-  --color-monte: #123b2f;
-  --color-monte-claro: #1f5a47;
-  --color-monte-suave: #dce8e2;
+  --color-marca: #c2410c;
+  --color-marca-oscuro: #9a3412;
+  --color-marca-suave: #ffedd5;
   --color-placa: #f5c518;
   --color-placa-oscuro: #8a6a00;
-  --color-tinta: #17211c;
-  --color-niebla: #eef2ef;
+  --color-tinta: #1f1a17;
+  --color-niebla: #f6f3ef;
   --color-papel: #ffffff;
-  --color-piedra: #56635c;
-  --color-linea: #cfd9d3;
+  --color-piedra: #5c534d;
+  --color-linea: #e3dcd4;
   --color-alerta: #b42318;
   --color-alerta-suave: #fdecea;
   --color-exito: #1e7a46;
@@ -48,7 +48,7 @@
     @apply text-base font-bold;
   }
   :focus-visible {
-    outline: 3px solid var(--color-placa);
+    outline: 3px solid var(--color-tinta);
     outline-offset: 2px;
     border-radius: 4px;
   }
@@ -75,7 +75,7 @@
 }
 
 @utility btn-primario {
-  @apply btn bg-monte text-white hover:bg-monte-claro;
+  @apply btn bg-marca text-white hover:bg-marca-oscuro;
 }
 
 @utility btn-acento {
@@ -83,7 +83,7 @@
 }
 
 @utility btn-secundario {
-  @apply btn border border-linea bg-papel text-tinta hover:border-monte;
+  @apply btn border border-linea bg-papel text-tinta hover:border-marca;
 }
 
 @utility btn-peligro {
@@ -91,11 +91,11 @@
 }
 
 @utility btn-texto {
-  @apply inline-flex min-h-11 items-center gap-1 font-semibold text-monte underline-offset-4 hover:underline;
+  @apply inline-flex min-h-11 items-center gap-1 font-semibold text-marca underline-offset-4 hover:underline;
 }
 
 @utility campo {
-  @apply block w-full min-h-11 rounded-lg border border-linea bg-papel px-3 py-2 text-tinta placeholder:text-piedra/70 focus:border-monte focus:outline-none focus:ring-2 focus:ring-monte/25;
+  @apply block w-full min-h-11 rounded-lg border border-linea bg-papel px-3 py-2 text-tinta placeholder:text-piedra/70 focus:border-marca focus:outline-none focus:ring-2 focus:ring-marca/25;
 }
 
 .campo[aria-invalid='true'] {

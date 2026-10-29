@@ -22,8 +22,8 @@ import { NivelLog } from '../../../environments/environment.model';
 
 /*
  * Puertos: una clase abstracta por capacidad, usada como token de inyección.
- * Las pantallas y servicios solo dependen de estos contratos; el adaptador concreto
- * (HTTP, simulado o local) se decide en core/config/ports.providers.ts según los flags.
+ * Las pantallas y servicios solo dependen de estos contratos; los adaptadores HTTP
+ * se registran en core/config/ports.providers.ts (en las pruebas se reemplazan por dobles).
  */
 
 export abstract class AuthPort {
@@ -45,7 +45,9 @@ export abstract class QuotePort {
 }
 
 export interface NuevoEnvio extends SolicitudCotizacion {
-  idCliente: number;
+  tipoCarga: string;
+  /** Vehículo requerido; si se omite, cualquier conductor puede tomarlo. */
+  categoria?: CategoriaVehiculo;
 }
 
 /** Envíos vistos por el cliente dueño (incluye el PIN). */
@@ -54,44 +56,37 @@ export abstract class ShipmentsPort {
   abstract obtener(id: number): Promise<Envio>;
 }
 
-/** Historial de envíos del cliente (brecha 3). */
+/** Historial de envíos del cliente autenticado. */
 export abstract class ClientShipmentsPort {
-  abstract listar(idCliente: number): Promise<Envio[]>;
-  /** Registra un envío recién creado (lo usa el adaptador local). */
-  abstract recordar(idCliente: number, idEnvio: number): Promise<void>;
+  abstract listar(): Promise<Envio[]>;
 }
 
-/** Perfil del conductor autenticado (brecha 1). */
+/** Perfil del conductor autenticado. */
 export abstract class DriverProfilePort {
-  abstract obtener(usuario: Usuario): Promise<PerfilConductor>;
+  abstract obtener(): Promise<PerfilConductor>;
 }
 
 export abstract class VehiclesPort {
-  abstract registrar(datos: {
-    placa: string;
-    categoria: CategoriaVehiculo;
-    idConductor: number;
-  }): Promise<Vehiculo>;
+  abstract registrar(datos: { placa: string; categoria: CategoriaVehiculo }): Promise<Vehiculo>;
 }
 
 export abstract class DocumentsPort {
-  abstract subir(archivo: File, tipo: TipoDocumento, idConductor: number): Observable<EventoCarga>;
+  abstract subir(archivo: File, tipo: TipoDocumento): Observable<EventoCarga>;
 }
 
-/** Tablero de envíos disponibles (brecha 4). */
+/** Tablero de envíos disponibles para el conductor. */
 export abstract class DriverBoardPort {
   abstract disponibles(): Promise<Envio[]>;
 }
 
 /** Operaciones del conductor sobre un servicio. La vista nunca incluye el PIN. */
 export abstract class DriverServicePort {
-  abstract aceptar(idEnvio: number, idConductor: number): Promise<Envio>;
+  abstract aceptar(idEnvio: number): Promise<Envio>;
   abstract obtener(idEnvio: number): Promise<Envio>;
-}
-
-/** Iniciar ruta, Asignado → En Ruta (brecha 5). */
-export abstract class RouteStartPort {
-  abstract iniciar(idEnvio: number): Promise<Envio>;
+  /** Servicio en curso del conductor (RN_OP_002: como máximo uno). */
+  abstract activo(): Promise<Envio | null>;
+  /** Asignado → En Ruta. */
+  abstract iniciarRuta(idEnvio: number): Promise<Envio>;
 }
 
 export abstract class DeliveryPort {
@@ -102,7 +97,7 @@ export abstract class DeliveryPort {
   ): Promise<{ id: number; estado: 'Entregado'; urlFoto: string }>;
 }
 
-/** Almacenamiento de la foto de entrega (brecha 7). */
+/** Subida de la foto de entrega; devuelve su URL. */
 export abstract class EvidenceStoragePort {
   abstract subir(idEnvio: number, foto: File): Promise<string>;
 }
@@ -114,13 +109,13 @@ export abstract class RatingPort {
   ): Promise<{ id: number; calificacion: number }>;
 }
 
-/** Lista de conductores por aprobar (brecha 6). */
+/** Conductores pendientes o rechazados. */
 export abstract class DriverApplicantsPort {
   abstract listarPendientes(): Promise<ConductorPostulante[]>;
 }
 
 export abstract class ApprovalPort {
-  /** El motivo solo se envía si el flag motivoRechazo está activo (brecha 10). */
+  /** Al rechazar, el motivo es obligatorio. */
   abstract decidir(
     idConductor: number,
     aprobado: boolean,
@@ -128,13 +123,13 @@ export abstract class ApprovalPort {
   ): Promise<ConductorPostulante>;
 }
 
-/** Ubicación en tiempo real (brecha 8). */
+/** Ubicación en tiempo real. */
 export abstract class LocationTransportPort {
   abstract enviar(idEnvio: number, ubicacion: Ubicacion): Promise<void>;
   abstract ultima(idEnvio: number): Promise<Ubicacion | null>;
 }
 
-/** Métricas y auditoría (brecha 11). */
+/** Métricas y auditoría del panel administrativo. */
 export abstract class AdminMetricsPort {
   abstract metricas(): Promise<MetricasAdmin>;
   abstract auditoria(filtro: FiltroAuditoria): Promise<Pagina<RegistroAuditoria>>;

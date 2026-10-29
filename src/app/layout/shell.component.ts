@@ -32,7 +32,7 @@ const NOMBRE_ROL: Record<Rol, string> = { '1': 'Administración', '2': 'Cliente'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
-    <header class="bg-monte text-white">
+    <header class="bg-marca text-white">
       <div class="contenedor-ancho flex min-h-16 items-center gap-4">
         <a
           [routerLink]="session.inicioDelRol()"
@@ -86,7 +86,7 @@ const NOMBRE_ROL: Record<Rol, string> = { '1': 'Administración', '2': 'Cliente'
           <li class="flex-1">
             <a
               [routerLink]="e.ruta"
-              routerLinkActive="!text-monte !border-monte"
+              routerLinkActive="!text-marca !border-marca"
               ariaCurrentWhenActive="page"
               class="flex min-h-14 items-center justify-center border-t-[3px] border-transparent px-2 text-sm font-semibold text-piedra"
               >{{ e.texto }}</a

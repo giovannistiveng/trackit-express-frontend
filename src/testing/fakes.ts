@@ -1,5 +1,5 @@
 import { EnvironmentProviders, Provider, makeEnvironmentProviders } from '@angular/core';
-import { AppEnvironment, FeatureFlags } from '../environments/environment.model';
+import { AppEnvironment } from '../environments/environment.model';
 import { APP_CONFIG } from '../app/core/config/app-config';
 import {
   EventoLog,
@@ -12,32 +12,12 @@ import { Geo, GEOLOCALIZACION } from '../app/features/conductor/state/geolocaliz
 
 export const API_BASE = 'http://api.test/api';
 
-export const FLAGS_APAGADOS: FeatureFlags = {
-  conductorMe: false,
-  zonasEndpoint: false,
-  clienteEnviosEndpoint: false,
-  disponiblesEndpoint: false,
-  iniciarRutaEndpoint: false,
-  pendientesEndpoint: false,
-  evidenciaUpload: false,
-  ubicacion: false,
-  reputacion: false,
-  motivoRechazo: false,
-  adminDashboard: false,
-  categoriaEnvio: false,
-};
-
-export function configPrueba(
-  parcial: Partial<Omit<AppEnvironment, 'features'>> & { features?: Partial<FeatureFlags> } = {},
-): AppEnvironment {
+export function configPrueba(parcial: Partial<AppEnvironment> = {}): AppEnvironment {
   return {
     production: false,
     apiBaseUrl: API_BASE,
-    cloudinary: { cloudName: '', uploadPreset: '' },
     logs: { nivelMinimo: 'DEBUG', enviarAlServidor: false, consola: false },
-    demo: { conductores: [{ idUsuario: 2, idConductor: 1, estadoAprobacion: 'Aprobado' }] },
     ...parcial,
-    features: { ...FLAGS_APAGADOS, ...(parcial.features ?? {}) },
   };
 }
 

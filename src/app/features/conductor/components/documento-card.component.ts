@@ -65,7 +65,7 @@ const ETIQUETA: Record<EstadoDocumento, string> = {
           [attr.aria-label]="'Subiendo ' + tipo()"
         >
           <div class="h-2 overflow-hidden rounded-full bg-niebla">
-            <div class="h-full bg-monte transition-[width]" [style.width.%]="progreso()"></div>
+            <div class="h-full bg-marca transition-[width]" [style.width.%]="progreso()"></div>
           </div>
           <p class="numeros mt-1 text-sm text-piedra">{{ progreso() }} %</p>
         </div>
@@ -83,7 +83,6 @@ const ETIQUETA: Record<EstadoDocumento, string> = {
 })
 export class DocumentoCardComponent {
   readonly tipo = input.required<TipoDocumento>();
-  readonly idConductor = input.required<number>();
   readonly deshabilitado = input(false);
   readonly subido = output<DocumentoConductor>();
 
@@ -108,7 +107,7 @@ export class DocumentoCardComponent {
     this.estado.set('subiendo');
     this.progreso.set(0);
     this.error.set('');
-    this.sub = this.docs.subir(archivo, this.tipo(), this.idConductor()).subscribe({
+    this.sub = this.docs.subir(archivo, this.tipo()).subscribe({
       next: (ev) => {
         if (ev.tipo === 'progreso') this.progreso.set(ev.porcentaje);
         else {

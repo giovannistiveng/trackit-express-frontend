@@ -7,7 +7,6 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { DemoModeService } from '../../core/config/demo-mode.service';
 import { ConductorPostulante, DocumentoConductor } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
@@ -79,13 +78,18 @@ export function esPdf(url: string): boolean {
                         "
                         >{{ c.estadoAprobacion }}</span
                       >
+                      @if (c.motivoRechazo) {
+                        <p class="mt-1 max-w-48 text-xs text-piedra">
+                          Motivo: {{ c.motivoRechazo }}
+                        </p>
+                      }
                     </td>
                     <td class="px-4 py-3">
                       <div class="flex flex-wrap gap-2">
                         @for (d of c.documentos; track d.tipo) {
                           <button
                             type="button"
-                            class="flex min-h-11 items-center gap-2 rounded-lg border border-linea px-2 py-1 hover:border-monte"
+                            class="flex min-h-11 items-center gap-2 rounded-lg border border-linea px-2 py-1 hover:border-marca"
                             (click)="visor.set({ conductor: c, documento: d })"
                             [attr.aria-label]="'Ver ' + d.tipo + ' de ' + c.nombre"
                           >
@@ -165,11 +169,7 @@ export function esPdf(url: string): boolean {
             aria-describedby="motivo-ayuda"
           ></textarea>
           <p id="motivo-ayuda" class="ayuda">
-            {{ motivo.trim().length }}/255.
-            @if (!flags.motivoRechazo) {
-              El motivo todavía no se guarda en el sistema; comunícaselo al conductor por otro
-              medio.
-            }
+            {{ motivo.trim().length }}/255. El conductor lo verá en su perfil.
           </p>
           @if (motivoInvalido()) {
             <p class="error-campo">Escribe el motivo del rechazo.</p>
@@ -206,7 +206,6 @@ export class ConductoresPage implements OnInit {
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
-  protected readonly flags = inject(DemoModeService).flags;
 
   protected readonly postulantes = signal<ConductorPostulante[]>([]);
   protected readonly cargando = signal(true);
@@ -298,14 +297,8 @@ export class ConductoresPage implements OnInit {
         this.toast.mostrar('Este conductor ya estaba aprobado.');
         this.decision.set(null);
         await this.cargar();
-        // El listado simulado no conoce la decisión real: se quita igual
-        this.postulantes.update((l) => l.filter((p) => p.idConductor !== d.conductor.idConductor));
       } else if (e instanceof ApiError && e.status === 404) {
-        this.errorDecision.set(
-          this.flags.pendientesEndpoint
-            ? 'Ese conductor ya no existe en el sistema. Refresca la lista.'
-            : 'Ese conductor es un dato de ejemplo y no existe en el backend. Solo se pueden decidir los conductores reales.',
-        );
+        this.errorDecision.set('Ese conductor ya no existe en el sistema. Refresca la lista.');
       } else {
         this.errorDecision.set(this.mapper.traducir(e));
       }
