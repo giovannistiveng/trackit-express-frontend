@@ -1,34 +1,47 @@
 {
   "name": "trackit-express-frontend",
-  "version": "1.0.0",
-  "description": "Frontend de TrackIt Express - Angular 21.2, TypeScript, Tailwind CSS, PWA",
+  "version": "2.0.0",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test --watch=false",
+    "test:coverage": "ng test --watch=false --coverage && node scripts/verificar-cobertura.mjs",
+    "lint": "ng lint",
+    "sonar": "sonar-scanner-npm"
   },
   "private": true,
   "dependencies": {
-    "@angular/animations": "^21.2.0",
     "@angular/common": "^21.2.0",
     "@angular/compiler": "^21.2.0",
     "@angular/core": "^21.2.0",
     "@angular/forms": "^21.2.0",
     "@angular/platform-browser": "^21.2.0",
-    "@angular/platform-browser-dynamic": "^21.2.0",
     "@angular/router": "^21.2.0",
-    "@angular/pwa": "^21.2.0",
+    "@angular/service-worker": "^21.2.0",
+    "leaflet": "^1.9.4",
+    "localforage": "^1.10.0",
     "rxjs": "~7.8.0",
-    "tslib": "^2.3.0",
-    "zone.js": "~0.15.0"
+    "tslib": "^2.3.0"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "^21.2.0",
-    "@angular/cli": "^21.2.0",
+    "@angular/build": "^21.2.29",
+    "@angular/cli": "^21.2.29",
     "@angular/compiler-cli": "^21.2.0",
-    "tailwindcss": "^3.4.0",
-    "typescript": "~5.7.0"
-  }
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/leaflet": "^1.9.20",
+    "@vitest/coverage-v8": "^4.1.12",
+    "angular-eslint": "^21.4.0",
+    "eslint": "^9.39.5",
+    "jsdom": "^28.0.0",
+    "postcss": "^8.5.32",
+    "prettier": "^3.8.1",
+    "sonarqube-scanner": "^5.0.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.2",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^4.0.8"
+  },
+  "description": "Frontend de TrackIt Express - Angular 21.2, TypeScript, Tailwind CSS, PWA"
 }
