@@ -61,7 +61,7 @@ export const MENSAJE_CREDENCIALES = 'Correo o contraseña incorrectos';
             />
             <button
               type="button"
-              class="absolute inset-y-0 right-1 my-auto h-9 rounded-md px-3 text-sm font-semibold text-monte"
+              class="absolute inset-y-0 right-1 my-auto h-9 rounded-md px-3 text-sm font-semibold text-marca"
               [attr.aria-pressed]="verClave()"
               (click)="verClave.set(!verClave())"
             >

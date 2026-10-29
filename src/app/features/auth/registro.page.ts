@@ -35,13 +35,13 @@ export const MENSAJE_CORREO_DUPLICADO =
           <div class="grid grid-cols-2 gap-2">
             @for (op of perfiles; track op.valor) {
               <label
-                class="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 has-[:checked]:border-monte has-[:checked]:bg-monte-suave"
+                class="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 has-[:checked]:border-marca has-[:checked]:bg-marca-suave"
               >
                 <input
                   type="radio"
                   formControlName="rol"
                   [value]="op.valor"
-                  class="size-4 accent-monte"
+                  class="size-4 accent-marca"
                 />
                 <span
                   ><span class="block font-semibold">{{ op.titulo }}</span
@@ -124,7 +124,7 @@ export const MENSAJE_CORREO_DUPLICADO =
             />
             <button
               type="button"
-              class="absolute inset-y-0 right-1 my-auto h-9 rounded-md px-3 text-sm font-semibold text-monte"
+              class="absolute inset-y-0 right-1 my-auto h-9 rounded-md px-3 text-sm font-semibold text-marca"
               [attr.aria-pressed]="verClave()"
               (click)="verClave.set(!verClave())"
             >

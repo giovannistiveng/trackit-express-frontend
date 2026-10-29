@@ -43,7 +43,7 @@ export class ToastService {
           class="pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-lg px-4 py-3 text-sm font-medium shadow-lg"
           [class]="
             t.tipo === 'exito'
-              ? 'bg-monte text-white'
+              ? 'bg-marca text-white'
               : t.tipo === 'error'
                 ? 'bg-alerta text-white'
                 : 'bg-tinta text-white'

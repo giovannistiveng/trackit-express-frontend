@@ -3,7 +3,7 @@ import { SessionService } from '../../../core/auth/session.service';
 import { PerfilConductor, Vehiculo } from '../../../core/domain';
 import { DriverProfilePort, LoggerPort } from '../../../core/ports';
 
-/** Perfil del conductor autenticado (id_conductor, aprobación, vehículo). */
+/** Perfil del conductor autenticado (id, aprobación, motivo de rechazo y vehículo). */
 @Injectable({ providedIn: 'root' })
 export class DriverProfileStore {
   private readonly puerto = inject(DriverProfilePort);
@@ -24,11 +24,9 @@ export class DriverProfileStore {
     this.cargando.set(true);
     this.error.set(false);
     try {
-      const p = await this.puerto.obtener(usuario);
+      const p = await this.puerto.obtener();
       this.perfil.set(p);
       this.usuarioCargado = usuario.id;
-      if (p.idConductor === null)
-        this.log.warn('PerfilConductor', 'El usuario conductor no tiene fila en Conductor');
       return p;
     } catch (e) {
       this.error.set(true);

@@ -9,7 +9,7 @@ import { PlacaComponent } from '../../shared/ui/placa.component';
   template: `
     <div class="grid min-h-dvh lg:grid-cols-[1fr_minmax(28rem,36rem)]">
       <aside
-        class="relative hidden overflow-hidden bg-monte p-12 text-white lg:flex lg:flex-col lg:justify-between"
+        class="relative hidden overflow-hidden bg-marca p-12 text-white lg:flex lg:flex-col lg:justify-between"
       >
         <p class="relative z-10 text-xl font-extrabold" style="font-stretch: 118%">
           TrackIt Express
@@ -26,7 +26,7 @@ import { PlacaComponent } from '../../shared/ui/placa.component';
           </div>
         </div>
         <svg
-          class="pointer-events-none absolute bottom-0 left-0 h-28 w-full text-monte-claro"
+          class="pointer-events-none absolute bottom-0 left-0 h-28 w-full text-marca-oscuro"
           viewBox="0 0 800 200"
           preserveAspectRatio="none"
           aria-hidden="true"
@@ -38,7 +38,7 @@ import { PlacaComponent } from '../../shared/ui/placa.component';
         </svg>
       </aside>
       <main id="contenido" class="flex flex-col justify-center bg-papel px-4 py-10 sm:px-10">
-        <p class="mb-8 font-extrabold text-monte lg:hidden" style="font-stretch: 118%">
+        <p class="mb-8 font-extrabold text-marca lg:hidden" style="font-stretch: 118%">
           TrackIt Express
         </p>
         <div class="mx-auto w-full max-w-md">

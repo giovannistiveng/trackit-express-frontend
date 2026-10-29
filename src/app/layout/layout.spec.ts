@@ -1,19 +1,17 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { ADMIN, CLIENTE, CONDUCTOR } from '../../testing/fixtures';
-import { botonPorTexto, configPrueba, q } from '../../testing/fakes';
+import { botonPorTexto, q } from '../../testing/fakes';
 import { configurar, montar } from '../../testing/pantallas';
 import { App } from '../app';
 import { routes } from '../app.routes';
 import { SessionService } from '../core/auth/session.service';
-import { LoggerService } from '../core/logging/logger.service';
 import { DriverProfilePort } from '../core/ports';
 import { CONDUCTOR_ROUTES } from '../features/conductor/conductor.routes';
 import { CLIENTE_ROUTES } from '../features/cliente/cliente.routes';
 import { ADMIN_ROUTES } from '../features/admin/admin.routes';
 import { BannerConexionComponent } from './banner-conexion.component';
 import { ConexionService } from './conexion.service';
-import { InsigniaDemoComponent } from './insignia-demo.component';
 import { NoEncontradaComponent } from './no-encontrada.component';
 import { ShellComponent } from './shell.component';
 
@@ -56,27 +54,6 @@ describe('BannerConexionComponent', () => {
     await estable();
     expect(el.textContent).not.toContain('Sin conexión');
     TestBed.inject(ConexionService).ngOnDestroy();
-  });
-});
-
-describe('InsigniaDemoComponent', () => {
-  it('debería listar las funciones simuladas y descargar el log', async () => {
-    const { el, estable } = await montar(InsigniaDemoComponent);
-    const descargar = vi
-      .spyOn(TestBed.inject(LoggerService), 'descargar')
-      .mockImplementation(() => undefined);
-    botonPorTexto(el, 'Modo demo').click();
-    await estable();
-    expect(el.querySelectorAll('#panel-demo li')).toHaveLength(12);
-    botonPorTexto(el, 'Descargar log (.txt)').click();
-    expect(descargar).toHaveBeenCalled();
-  });
-
-  it('no debería mostrarse en producción', async () => {
-    const { el } = await montar(InsigniaDemoComponent, {
-      config: configPrueba({ production: true }),
-    });
-    expect(el.textContent?.trim()).toBe('');
   });
 });
 

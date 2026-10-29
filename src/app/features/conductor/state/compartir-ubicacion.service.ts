@@ -1,5 +1,5 @@
 import { Injectable, OnDestroy, inject, signal } from '@angular/core';
-import { LocationQueue } from '../../../core/adapters/local/local-adapters';
+import { LocationQueue } from '../../../core/adapters/local/location-queue';
 import { LoggerPort } from '../../../core/ports';
 import { GEOLOCALIZACION } from './geolocalizacion';
 

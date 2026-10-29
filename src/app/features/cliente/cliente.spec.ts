@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { CLIENTE, buildEnvio } from '../../../testing/fixtures';
-import { botonPorTexto, configPrueba, elegir, escribir, q, rechaza } from '../../../testing/fakes';
+import { botonPorTexto, elegir, escribir, q, rechaza } from '../../../testing/fakes';
 import { montar } from '../../../testing/pantallas';
 import { ApiError } from '../../core/http/api-error';
 import {
@@ -11,8 +11,6 @@ import {
   ShipmentsPort,
   ZonesPort,
 } from '../../core/ports';
-import { RatedShipments } from '../../core/adapters/local/local-adapters';
-import { ZONAS_SEMBRADAS } from '../../core/adapters/mock/seed-data';
 import { ToastService } from '../../shared/ui/toast.service';
 import { CalificarModalComponent } from './components/calificar-modal.component';
 import { PinEnvioComponent } from './components/pin-envio.component';
@@ -27,27 +25,32 @@ const COTIZACION = {
   moneda: 'COP' as const,
 };
 
+const ZONAS = [
+  { id: 1, nombre: 'Casco Urbano', tarifaBase: 5000 },
+  { id: 2, nombre: 'Vereda Pekín', tarifaBase: 7000 },
+  { id: 3, nombre: 'Vereda Novillero', tarifaBase: 7000 },
+  { id: 4, nombre: 'Silvania', tarifaBase: 9000 },
+  { id: 5, nombre: 'Pasca', tarifaBase: 9000 },
+];
+
 function puertosNuevoEnvio() {
   return {
-    zonas: { listar: vi.fn(async () => ZONAS_SEMBRADAS) },
+    zonas: { listar: vi.fn(async () => ZONAS) },
     cotizar: { cotizar: vi.fn(async () => COTIZACION) },
     envios: {
       crear: vi.fn(async () => buildEnvio({ id: 2, pin: '6175', tarifa: 39500 })),
       obtener: vi.fn(),
     },
-    historial: { listar: vi.fn(), recordar: vi.fn(async () => undefined) },
   };
 }
 
-async function montarNuevo(p = puertosNuevoEnvio(), features = {}) {
+async function montarNuevo(p = puertosNuevoEnvio()) {
   const r = await montar(NuevoEnvioPage, {
     usuario: CLIENTE,
-    config: configPrueba({ features }),
     providers: [
       { provide: ZonesPort, useValue: p.zonas },
       { provide: QuotePort, useValue: p.cotizar },
       { provide: ShipmentsPort, useValue: p.envios },
-      { provide: ClientShipmentsPort, useValue: p.historial },
     ],
   });
   await r.estable();
@@ -75,8 +78,6 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
       origen: 'Casco Urbano',
       destino: 'Silvania',
       idZona: 1,
-      tipoCarga: 'Documentos',
-      categoria: undefined,
     });
     const texto = el.textContent?.replace(/\s/g, ' ') ?? '';
     expect(texto).toContain('34.5 km');
@@ -126,7 +127,9 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     escribir(q(el, '#otroTipo'), 'Bicicleta');
     botonPorTexto(el, 'Cotizar').click();
     await estable();
-    expect(p.cotizar.cotizar).toHaveBeenCalledWith(
+    botonPorTexto(el, 'Confirmar solicitud').click();
+    await estable();
+    expect(p.envios.crear).toHaveBeenCalledWith(
       expect.objectContaining({ tipoCarga: 'Bicicleta' }),
     );
   });
@@ -139,9 +142,8 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     botonPorTexto(el, 'Confirmar solicitud').click();
     await estable();
     expect(p.envios.crear).toHaveBeenCalledWith(
-      expect.objectContaining({ idCliente: CLIENTE.id, idZona: 1, tipoCarga: 'Documentos' }),
+      expect.objectContaining({ idZona: 1, tipoCarga: 'Documentos', categoria: undefined }),
     );
-    expect(p.historial.recordar).toHaveBeenCalledWith(CLIENTE.id, 2);
     expect(q(el, '[aria-label="PIN de entrega: 6 1 7 5"]')).toBeTruthy();
     expect(el.textContent).toContain('Entrega este PIN al conductor solo al recibir tu paquete.');
     expect(el.textContent).not.toContain('distinta de la cotizada');
@@ -203,13 +205,18 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     expect(q(el, '[role="alert"]').textContent).toContain('Algo salió mal');
   });
 
-  it('debería mostrar la categoría y enviarla solo con el flag categoriaEnvio', async () => {
-    const { el, p, estable } = await montarNuevo(undefined, { categoriaEnvio: true });
+  it('debería enviar la categoría de vehículo elegida al crear', async () => {
+    const { el, p, estable } = await montarNuevo();
+    expect(q<HTMLSelectElement>(el, '#categoria').options[0].textContent).toContain(
+      'Cualquier vehículo',
+    );
     await llenarCotizacion(el);
-    elegir(q(el, '#categoria'), 2);
+    elegir(q(el, '#categoria'), 3);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
-    expect(p.cotizar.cotizar).toHaveBeenCalledWith(
+    botonPorTexto(el, 'Confirmar solicitud').click();
+    await estable();
+    expect(p.envios.crear).toHaveBeenCalledWith(
       expect.objectContaining({ categoria: 'Camioneta' }),
     );
   });
@@ -231,7 +238,7 @@ describe('E6-HU2 EnviosPage', () => {
       buildEnvio({ id: 2, estado: 'Entregado' }),
     ],
   ) {
-    return { listar: vi.fn(async () => envios), recordar: vi.fn() };
+    return { listar: vi.fn(async () => envios) };
   }
 
   it('debería separar Activos e Historial y ocultar el PIN por defecto', async () => {
@@ -241,7 +248,7 @@ describe('E6-HU2 EnviosPage', () => {
       providers: [{ provide: ClientShipmentsPort, useValue: p }],
     });
     await estable();
-    expect(p.listar).toHaveBeenCalledWith(CLIENTE.id);
+    expect(p.listar).toHaveBeenCalled();
     expect(el.textContent).toContain('Envío #1');
     expect(el.textContent).not.toContain('Envío #2');
     expect(q(el, '[aria-label="PIN oculto: • • • •"]')).toBeTruthy();
@@ -291,11 +298,10 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
     };
   }
 
-  async function montarDetalle(p: ReturnType<typeof puertos>, id = '1', features = {}) {
+  async function montarDetalle(p: ReturnType<typeof puertos>, id = '1') {
     return montar(EnvioDetallePage, {
       usuario: CLIENTE,
       inputs: { id },
-      config: configPrueba({ features }),
       providers: [
         { provide: ShipmentsPort, useValue: p.envios },
         { provide: LocationTransportPort, useValue: p.ubicacion },
@@ -311,10 +317,10 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
     const pasos = Array.from(el.querySelectorAll('ol[aria-label="Recorrido del envío"] li')).map(
       (li) => li.querySelector('p')?.textContent?.replace(' (estado actual)', '').trim(),
     );
-    expect(pasos).toEqual(['Pendiente', 'Asignado', 'Entregado']);
+    expect(pasos).toEqual(['Pendiente', 'Asignado', 'En Ruta', 'Entregado']);
     expect(q(el, '[aria-current="step"]').textContent).toContain('Asignado');
     expect(el.textContent).toContain('Un conductor tomó tu envío');
-    expect(el.textContent).toContain('La ubicación en vivo no está disponible aún');
+    expect(el.querySelector('ti-mapa-envio')).toBeTruthy();
     expect(q(el, '[aria-label="PIN oculto: • • • •"]')).toBeTruthy();
     fixture.destroy();
   });
@@ -334,38 +340,39 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
     fixture.destroy();
   });
 
-  it('no debería ofrecer calificar si ya está calificado ni si no está Entregado', async () => {
-    const p = puertos([buildEnvio({ estado: 'Entregado' })]);
-    TestBed.resetTestingModule();
-    const r = await montar(EnvioDetallePage, {
-      usuario: CLIENTE,
-      inputs: { id: '1' },
-      providers: [
-        { provide: ShipmentsPort, useValue: p.envios },
-        { provide: LocationTransportPort, useValue: p.ubicacion },
-        { provide: RatingPort, useValue: p.rating },
-        {
-          provide: RatedShipments,
-          useValue: { estaCalificado: vi.fn(async () => true), marcar: vi.fn() },
-        },
-      ],
-    });
+  it('no debería ofrecer calificar si el backend dice que ya está calificado', async () => {
+    const p = puertos([buildEnvio({ estado: 'Entregado', calificado: true })]);
+    const r = await montarDetalle(p);
     await r.estable();
     expect(r.el.querySelector('[role="dialog"]')).toBeNull();
     expect(r.el.textContent).toContain('Ya calificaste este envío.');
     r.fixture.destroy();
   });
 
-  it('debería mostrar el mapa con el flag ubicacion y consultar la última posición', async () => {
+  it('debería mostrar el mapa En Ruta con la última posición, y avisar si aún no hay', async () => {
     const p = puertos([buildEnvio({ estado: 'En Ruta' })]);
-    const { el, estable, fixture } = await montarDetalle(p, '1', {
-      ubicacion: true,
-      iniciarRutaEndpoint: true,
-    });
+    const { el, estable, fixture } = await montarDetalle(p);
     await estable();
     expect(p.ubicacion.ultima).toHaveBeenCalledWith(1);
     expect(el.querySelector('ti-mapa-envio')).toBeTruthy();
+    expect(el.textContent).not.toContain('todavía no comparte');
     fixture.destroy();
+    TestBed.resetTestingModule();
+    const p2 = puertos([buildEnvio({ estado: 'En Ruta' })]);
+    p2.ubicacion.ultima.mockImplementation(async () => null as never);
+    const r2 = await montarDetalle(p2);
+    await r2.estable();
+    expect(r2.el.textContent).toContain('El conductor todavía no comparte su ubicación.');
+    r2.fixture.destroy();
+  });
+
+  it('no debería consultar la ubicación de un envío Pendiente o Entregado', async () => {
+    const p = puertos([buildEnvio({ estado: 'Pendiente' })]);
+    const r = await montarDetalle(p);
+    await r.estable();
+    expect(p.ubicacion.ultima).not.toHaveBeenCalled();
+    expect(r.el.querySelector('ti-mapa-envio')).toBeNull();
+    r.fixture.destroy();
   });
 
   it('debería informar id inválido, 404 y envío de otro cliente', async () => {
@@ -381,7 +388,11 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
     expect(r2.el.textContent).toContain('No encontramos ese envío.');
     r2.fixture.destroy();
     TestBed.resetTestingModule();
-    const r3 = await montarDetalle(puertos([buildEnvio({ idCliente: 99 })]));
+    const p403 = puertos([]);
+    p403.envios.obtener.mockImplementation(
+      rechaza(new ApiError(403, 'No tienes permiso para ver este envío')),
+    );
+    const r3 = await montarDetalle(p403);
     await r3.estable();
     expect(r3.el.textContent).toContain('no pertenece a tu cuenta');
     expect(r3.el.textContent).not.toContain('6647');
@@ -424,7 +435,6 @@ describe('CU-010 CalificarModalComponent', () => {
     expect(rating.calificar).toHaveBeenCalledWith(1, 4);
     expect(toast).toHaveBeenCalledWith('¡Gracias por calificar!');
     expect(salidas).toEqual([4]);
-    expect(await TestBed.inject(RatedShipments).estaCalificado(1)).toBe(true);
   });
 
   it('Dado que ya fue calificado, cuando envío, entonces lo marca y cierra sin volver a ofrecerlo', async () => {
@@ -435,7 +445,6 @@ describe('CU-010 CalificarModalComponent', () => {
     botonPorTexto(el, 'Enviar calificación').click();
     await estable();
     expect(salidas).toEqual([null]);
-    expect(await TestBed.inject(RatedShipments).estaCalificado(1)).toBe(true);
   });
 
   it('debería mostrar otros errores sin cerrar', async () => {

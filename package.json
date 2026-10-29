@@ -1,6 +1,6 @@
 {
   "name": "trackit-express-frontend",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
@@ -8,7 +8,8 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test --watch=false",
     "test:coverage": "ng test --watch=false --coverage && node scripts/verificar-cobertura.mjs",
-    "lint": "ng lint"
+    "lint": "ng lint",
+    "sonar": "sonar-scanner-npm"
   },
   "private": true,
   "dependencies": {
@@ -36,6 +37,7 @@
     "jsdom": "^28.0.0",
     "postcss": "^8.5.32",
     "prettier": "^3.8.1",
+    "sonarqube-scanner": "^5.0.2",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.2",
     "typescript-eslint": "^8.72.1",

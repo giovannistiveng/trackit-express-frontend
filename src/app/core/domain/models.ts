@@ -18,6 +18,16 @@ export type TipoDocumento = (typeof TIPOS_DOCUMENTO)[number];
 
 export const TIPOS_CARGA = ['Documentos', 'Mercancía General', 'Carga Pesada', 'Acarreo'] as const;
 
+/** Sugerencias para origen y destino (sin autocompletado de terceros). */
+export const LUGARES_FRECUENTES = [
+  'Casco Urbano',
+  'Vereda Pekín',
+  'Vereda Novillero',
+  'Silvania',
+  'Pasca',
+  'Bogotá',
+];
+
 export interface Usuario {
   id: number;
   nombre: string;
@@ -49,8 +59,6 @@ export interface SolicitudCotizacion {
   origen: string;
   destino: string;
   idZona: number;
-  tipoCarga: string;
-  categoria?: CategoriaVehiculo;
 }
 
 export interface Cotizacion {
@@ -77,15 +85,18 @@ export interface Envio {
   idZona: number;
   /** Solo presente en las vistas del cliente dueño del envío. */
   pin?: string;
+  categoria?: CategoriaVehiculo | null;
+  fechaCreacion?: Date;
   fechaUltimoCambio?: Date;
   /** Cronológico: del más antiguo al más reciente. */
   historial: CambioEstado[];
   conductor?: ConductorResumen;
+  /** true si el cliente ya lo calificó (el backend lo informa en la trazabilidad y el historial). */
+  calificado?: boolean;
 }
 
 export interface ConductorResumen {
   nombre: string;
-  telefono?: string;
   vehiculo?: CategoriaVehiculo;
   placa?: string;
   calificacionPromedio?: number;
@@ -98,8 +109,9 @@ export interface Vehiculo {
 }
 
 export interface PerfilConductor {
-  idConductor: number | null;
+  idConductor: number;
   estadoAprobacion: EstadoAprobacion;
+  motivoRechazo?: string | null;
   vehiculo?: Vehiculo;
 }
 
@@ -117,6 +129,7 @@ export interface ConductorPostulante {
   nombre: string;
   correo: string;
   estadoAprobacion: EstadoAprobacion;
+  motivoRechazo?: string | null;
   documentos: DocumentoConductor[];
 }
 

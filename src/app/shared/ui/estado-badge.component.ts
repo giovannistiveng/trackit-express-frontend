@@ -3,8 +3,8 @@ import { EstadoEnvio } from '../../core/domain';
 
 const ESTILOS: Record<EstadoEnvio, string> = {
   Pendiente: 'bg-aviso-suave text-placa-oscuro border-placa/60',
-  Asignado: 'bg-monte-suave text-monte border-monte/30',
-  'En Ruta': 'bg-monte text-white border-monte',
+  Asignado: 'bg-marca-suave text-marca border-marca/30',
+  'En Ruta': 'bg-marca text-white border-marca',
   Entregado: 'bg-exito-suave text-exito border-exito/30',
 };
 

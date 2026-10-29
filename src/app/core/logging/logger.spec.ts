@@ -145,28 +145,6 @@ describe('LoggerService', () => {
     expect(e.url).toBe(location.pathname);
   });
 
-  it('debería generar el .txt con una línea por evento y descargarlo', () => {
-    const { log } = preparar({ enviarAlServidor: false });
-    log.info('A', 'uno');
-    log.warn('B', 'dos', { x: 1 });
-    const lineas = log.comoTexto().split('\n');
-    expect(lineas).toHaveLength(2);
-    expect(lineas[1]).toMatch(/^\[.+\] \[WARN \] \[B\] dos \{"x":1\}$/);
-    const click = vi
-      .spyOn(HTMLAnchorElement.prototype, 'click')
-      .mockImplementation(() => undefined);
-    URL.createObjectURL = vi.fn(() => 'blob:x');
-    URL.revokeObjectURL = vi.fn();
-    log.descargar();
-    expect(click).toHaveBeenCalled();
-  });
-
-  it('no debería guardar eventos en memoria en producción', () => {
-    const { log } = preparar({ enviarAlServidor: false }, true);
-    log.info('A', 'x');
-    expect(log.eventosRecientes()).toHaveLength(0);
-  });
-
   it('debería escribir en consola solo con consola activa', () => {
     const { log } = preparar({ enviarAlServidor: false, consola: true });
     const spies = ['error', 'warn', 'info', 'debug'].map((m) =>

@@ -9,16 +9,18 @@ import { PerfilConductor } from '../../../core/domain';
   imports: [RouterLink],
   template: `
     <div class="rounded-2xl border border-placa/60 bg-aviso-suave p-5" role="status">
-      @if (!perfil() || perfil()?.idConductor === null) {
-        <p class="font-bold">Tu perfil de conductor aún no está creado</p>
-        <p class="mt-1 text-sm">
-          Sin perfil no puedes registrar vehículo, subir documentos ni tomar servicios. Contacta a
-          soporte para activarlo.
-        </p>
+      @if (!perfil()) {
+        <p class="font-bold">No pudimos cargar tu perfil de conductor</p>
+        <p class="mt-1 text-sm">Revisa tu conexión y vuelve a intentarlo en un momento.</p>
       } @else if (perfil()?.estadoAprobacion === 'Rechazado') {
         <p class="font-bold">Tu solicitud fue rechazada</p>
+        @if (perfil()?.motivoRechazo) {
+          <p class="mt-1 text-sm">
+            <span class="font-semibold">Motivo:</span> {{ perfil()?.motivoRechazo }}
+          </p>
+        }
         <p class="mt-1 text-sm">
-          Revisa y vuelve a subir tus documentos; el equipo los revisará otra vez.
+          Corrige y vuelve a subir tus documentos; al hacerlo, tu cuenta vuelve a revisión.
         </p>
         @if (conEnlace()) {
           <a routerLink="/conductor/perfil" class="btn-texto mt-2">Ir a mis documentos</a>

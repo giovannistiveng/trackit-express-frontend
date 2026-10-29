@@ -131,16 +131,28 @@ describe('authInterceptor', () => {
     );
   });
 
-  it.each([401, 403])('debería cerrar sesión y llevar a /login ante un %s', async (status) => {
+  it('debería cerrar sesión y llevar a /login ante un 401', async () => {
     const nav = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     session.iniciar(CLIENTE, jwtVigente());
     const p = firstValueFrom(http.get(`${API_BASE}/clientes/envios`)).catch((e: unknown) => e);
     ctrl
       .expectOne(`${API_BASE}/clientes/envios`)
-      .flush({ error: 'No autorizado' }, { status, statusText: 'x' });
+      .flush({ error: 'Token inválido o expirado' }, { status: 401, statusText: 'x' });
     await p;
     expect(session.estaAutenticado()).toBe(false);
     expect(nav).toHaveBeenCalledWith(['/login'], { queryParams: { motivo: 'sesion' } });
+  });
+
+  it('no debería cerrar sesión ante un 403 (falta de permiso, no sesión vencida)', async () => {
+    const nav = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    session.iniciar(CLIENTE, jwtVigente());
+    const p = firstValueFrom(http.get(`${API_BASE}/envios/9`)).catch((e: unknown) => e);
+    ctrl
+      .expectOne(`${API_BASE}/envios/9`)
+      .flush({ error: 'No tienes permiso' }, { status: 403, statusText: 'x' });
+    expect(await p).toMatchObject({ status: 403 });
+    expect(session.estaAutenticado()).toBe(true);
+    expect(nav).not.toHaveBeenCalled();
   });
 
   it('no debería cerrar sesión por un 401 en el login', async () => {

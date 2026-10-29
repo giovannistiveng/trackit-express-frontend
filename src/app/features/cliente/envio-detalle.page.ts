@@ -9,13 +9,10 @@ import {
   signal,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { RatedShipments } from '../../core/adapters/local/local-adapters';
-import { SessionService } from '../../core/auth/session.service';
-import { DemoModeService } from '../../core/config/demo-mode.service';
 import { Envio, Ubicacion, esIdValido, puedeCalificar } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
-import { LocationTransportPort, LoggerPort, ShipmentsPort } from '../../core/ports';
+import { LocationTransportPort, ShipmentsPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { FechaLocalPipe } from '../../shared/pipes/fecha-local.pipe';
 import { EstadoBadgeComponent } from '../../shared/ui/estado-badge.component';
@@ -85,20 +82,14 @@ export const INTERVALO_TRAZABILIDAD_MS = 10_000;
           <div class="mt-8 grid gap-8 md:grid-cols-[1fr_16rem]">
             <section aria-labelledby="titulo-recorrido">
               <h2 id="titulo-recorrido" class="mb-4">Recorrido</h2>
-              <ti-linea-tiempo
-                [historial]="e.historial"
-                [estadoActual]="e.estado"
-                [conEnRuta]="flags.iniciarRutaEndpoint"
-              />
-              @if (flags.ubicacion) {
+              <ti-linea-tiempo [historial]="e.historial" [estadoActual]="e.estado" />
+              @if (e.estado === 'Asignado' || e.estado === 'En Ruta') {
                 <div class="mt-6">
                   <ti-mapa-envio [ubicacion]="ubicacion()" />
                   @if (!ubicacion()) {
                     <p class="ayuda">El conductor todavía no comparte su ubicación.</p>
                   }
                 </div>
-              } @else if (e.estado !== 'Entregado') {
-                <p class="mt-6 text-sm text-piedra">La ubicación en vivo no está disponible aún.</p>
               }
             </section>
             <aside aria-labelledby="titulo-detalle" class="space-y-4">
@@ -162,11 +153,7 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
 
   private readonly shipments = inject(ShipmentsPort);
   private readonly ubicaciones = inject(LocationTransportPort);
-  private readonly calificados = inject(RatedShipments);
-  private readonly session = inject(SessionService);
   private readonly mapper = inject(ErrorMessageMapper);
-  private readonly log = inject(LoggerPort);
-  protected readonly flags = inject(DemoModeService).flags;
 
   protected readonly envio = signal<Envio | null>(null);
   protected readonly ubicacion = signal<Ubicacion | null>(null);
@@ -202,7 +189,6 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
       this.error.set('Ese número de envío no es válido.');
       return;
     }
-    this.calificado.set(await this.calificados.estaCalificado(Number(id)));
     this.sondeo = new Sondeo(() => this.consultar(Number(id)), {
       intervaloMs: INTERVALO_TRAZABILIDAD_MS,
       detenerSi: (e) => e.estado === 'Entregado',
@@ -229,23 +215,15 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
 
   private async consultar(id: number): Promise<Envio> {
     const envio = await this.shipments.obtener(id);
-    if (this.flags.ubicacion && envio.estado !== 'Pendiente') {
+    if (envio.estado === 'Asignado' || envio.estado === 'En Ruta') {
       this.ubicacion.set(await this.ubicaciones.ultima(id).catch(() => this.ubicacion()));
     }
     return envio;
   }
 
   private alResultado(e: Envio): void {
-    const usuario = this.session.usuario();
-    if (usuario && e.idCliente !== usuario.id) {
-      // El backend aún no restringe por dueño: no se muestra un envío ajeno ni su PIN
-      this.sondeo?.detener();
-      this.envio.set(null);
-      this.error.set('Este envío no pertenece a tu cuenta.');
-      this.log.warn('Trazabilidad', `Intento de ver el envío #${e.id} de otro cliente`);
-      return;
-    }
     this.error.set('');
+    if (e.calificado) this.calificado.set(true);
     this.envio.set(e);
     this.cargando.set(false);
     if (puedeCalificar(e, this.calificado()) && !this.autoAbierto) {
@@ -256,9 +234,12 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
 
   private alError(e: unknown): void {
     this.cargando.set(false);
-    if (e instanceof ApiError && e.status === 404) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
       this.sondeo?.detener();
-      this.error.set('No encontramos ese envío.');
+      this.envio.set(null);
+      this.error.set(
+        e.status === 404 ? 'No encontramos ese envío.' : 'Este envío no pertenece a tu cuenta.',
+      );
     } else if (!this.envio()) {
       this.error.set(this.mapper.traducir(e));
     }

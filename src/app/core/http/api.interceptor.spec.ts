@@ -1,4 +1,4 @@
-import { HttpClient, HttpContext, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
@@ -6,7 +6,6 @@ import { API_BASE, FakeLogger, provideFakesBase } from '../../../testing/fakes';
 import { LoggerPort } from '../ports';
 import { apiInterceptor, TIEMPO_MAXIMO_MS } from './api.interceptor';
 import { ApiError, SIN_CONEXION, TIEMPO_AGOTADO } from './api-error';
-import { SILENCIAR_404 } from './http-context';
 
 describe('apiInterceptor', () => {
   let http: HttpClient;
@@ -91,14 +90,7 @@ describe('apiInterceptor', () => {
     expect(await p).toMatchObject({ status: 408, codigoInterno: TIEMPO_AGOTADO });
   });
 
-  it('debería registrar como DEBUG los 404 marcados con SILENCIAR_404 y las respuestas exitosas', async () => {
-    const p = firstValueFrom(
-      http.get(`${API_BASE}/envios/3`, { context: new HttpContext().set(SILENCIAR_404, true) }),
-    );
-    ctrl
-      .expectOne(`${API_BASE}/envios/3`)
-      .flush({ error: 'No existe' }, { status: 404, statusText: 'x' });
-    await p.catch(() => undefined);
+  it('debería registrar como DEBUG las respuestas exitosas sin la query', async () => {
     const ok = firstValueFrom(http.get(`${API_BASE}/zonas?x=1`));
     ctrl.expectOne(`${API_BASE}/zonas?x=1`).flush([]);
     await ok;

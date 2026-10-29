@@ -9,7 +9,6 @@ import { Observable, catchError, retry, tap, throwError, timeout, TimeoutError, 
 import { APP_CONFIG } from '../config/app-config';
 import { LoggerPort } from '../ports';
 import { ApiError, SIN_CONEXION, TIEMPO_AGOTADO } from './api-error';
-import { SILENCIAR_404 } from './http-context';
 
 export const TIEMPO_MAXIMO_MS = 15_000;
 
@@ -70,8 +69,7 @@ export const apiInterceptor: HttpInterceptorFn = (req, next) => {
     catchError((e: unknown) => {
       const err = aApiError(e);
       const msg = `${ruta} → ${err.status} ${err.message} (${Date.now() - inicio} ms)`;
-      if (err.status === 404 && req.context.get(SILENCIAR_404)) log.debug('HTTP', msg);
-      else if (err.status >= 400 && err.status < 500 && err.status !== 408) log.warn('HTTP', msg);
+      if (err.status >= 400 && err.status < 500 && err.status !== 408) log.warn('HTTP', msg);
       else log.error('HTTP', msg);
       return throwError(() => err);
     }),

@@ -16,7 +16,6 @@ import { routes } from './app.routes';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { SessionService } from './core/auth/session.service';
 import { providePorts } from './core/config/ports.providers';
-import { DemoModeService } from './core/config/demo-mode.service';
 import { apiInterceptor } from './core/http/api.interceptor';
 import { GlobalErrorHandler } from './core/logging/global-error-handler';
 import { LoggerPort } from './core/ports';
@@ -38,10 +37,7 @@ export const appConfig: ApplicationConfig = {
     providePorts(),
     provideAppInitializer(() => {
       inject(SessionService).restaurar();
-      const demo = inject(DemoModeService)
-        .simulados()
-        .map((s) => s.flag);
-      inject(LoggerPort).info('App', 'Aplicación iniciada', { flagsApagados: demo });
+      inject(LoggerPort).info('App', 'Aplicación iniciada');
     }),
     provideServiceWorker('ngsw-worker.js', {
       enabled: !isDevMode(),

@@ -15,7 +15,7 @@ import { ChangeDetectionStrategy, Component, computed, input, model } from '@ang
       @for (i of posiciones; track i) {
         <span
           class="numeros grid size-14 place-items-center rounded-lg border-2 text-3xl font-extrabold"
-          [class.border-monte]="i === valor().length"
+          [class.border-marca]="i === valor().length"
           [class.border-linea]="i !== valor().length"
           aria-hidden="true"
           >{{ i < valor().length ? '•' : '' }}</span

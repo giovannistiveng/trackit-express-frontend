@@ -7,7 +7,6 @@ import {
   signal,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { SessionService } from '../../core/auth/session.service';
 import { Envio, esActivo, fechaCreacion } from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { ClientShipmentsPort } from '../../core/ports';
@@ -51,7 +50,7 @@ type Pestana = 'activos' | 'historial';
             [tabindex]="pestana() === p.id ? 0 : -1"
             class="-mb-px min-h-11 border-b-[3px] px-4 font-semibold"
             [class]="
-              pestana() === p.id ? 'border-monte text-monte' : 'border-transparent text-piedra'
+              pestana() === p.id ? 'border-marca text-marca' : 'border-transparent text-piedra'
             "
             (click)="pestana.set(p.id)"
             (keydown.arrowRight)="pestana.set('historial')"
@@ -136,7 +135,6 @@ type Pestana = 'activos' | 'historial';
 })
 export class EnviosPage implements OnInit {
   private readonly puerto = inject(ClientShipmentsPort);
-  private readonly session = inject(SessionService);
   private readonly mapper = inject(ErrorMessageMapper);
 
   protected readonly pestanas: { id: Pestana; texto: string }[] = [
@@ -168,12 +166,10 @@ export class EnviosPage implements OnInit {
   }
 
   async cargar(): Promise<void> {
-    const usuario = this.session.usuario();
-    if (!usuario) return;
     this.cargando.set(true);
     this.error.set('');
     try {
-      this.envios.set(await this.puerto.listar(usuario.id));
+      this.envios.set(await this.puerto.listar());
     } catch (e) {
       this.error.set(this.mapper.traducir(e));
     } finally {

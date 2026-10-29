@@ -12,12 +12,11 @@ export const INTERVALO_ENVIO_MS = 10_000;
 export const UMBRAL_LOTE = 20;
 export const MAX_LOTE = 50;
 export const MAX_COLA = 300;
-export const MAX_MEMORIA = 500;
 
 /**
  * Logger del frontend. Acumula eventos y los envía por lotes a POST /api/logs/frontend,
  * que los escribe en logs/frontend-AAAA-MM-DD.txt. Sin conexión los guarda en LocalForage
- * y los reenvía al volver la red. En desarrollo conserva los últimos 500 para descargarlos como .txt.
+ * y los reenvía al volver la red.
  */
 @Injectable({ providedIn: 'root' })
 export class LoggerService implements LoggerPort, OnDestroy {
@@ -26,7 +25,6 @@ export class LoggerService implements LoggerPort, OnDestroy {
   private readonly almacen = inject(KeyValueStorePort);
 
   private pendientes: EventoLog[] = [];
-  private readonly memoria: EventoLog[] = [];
   private enviando = false;
   private pausaHasta = 0;
   private usuario: number | undefined;
@@ -74,32 +72,6 @@ export class LoggerService implements LoggerPort, OnDestroy {
 
   establecerUsuario(id: number | undefined): void {
     this.usuario = id;
-  }
-
-  /** Eventos en memoria (solo se usan para la descarga en desarrollo). */
-  eventosRecientes(): readonly EventoLog[] {
-    return this.memoria;
-  }
-
-  /** Texto del archivo .txt descargable: una línea por evento. */
-  comoTexto(): string {
-    return this.memoria
-      .map(
-        (e) =>
-          `[${e.fecha}] [${e.nivel.padEnd(5)}] [${e.contexto}] ${e.mensaje}${e.meta !== undefined ? ' ' + JSON.stringify(e.meta) : ''}`,
-      )
-      .join('\n');
-  }
-
-  /** Descarga trackit-frontend-AAAA-MM-DD.txt con los eventos en memoria. */
-  descargar(): void {
-    const blob = new Blob([this.comoTexto() + '\n'], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `trackit-frontend-${new Date().toISOString().slice(0, 10)}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   /** Envía lo pendiente. Se llama por intervalo, por tamaño de lote o ante un ERROR. */
@@ -153,11 +125,6 @@ export class LoggerService implements LoggerPort, OnDestroy {
       usuario: this.usuario,
       ...(meta !== undefined ? { meta: sanitizar(meta) } : {}),
     };
-
-    if (!this.config.production) {
-      this.memoria.push(evento);
-      if (this.memoria.length > MAX_MEMORIA) this.memoria.shift();
-    }
     if (logs.consola) this.aConsola(evento);
     if (!logs.enviarAlServidor) return;
 

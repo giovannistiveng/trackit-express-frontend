@@ -3,9 +3,7 @@ import { Subject } from 'rxjs';
 import { CONDUCTOR, buildEnvio } from '../../../testing/fixtures';
 import {
   FakeGeolocation,
-  FakeLocalForage,
   botonPorTexto,
-  configPrueba,
   elegir,
   escribir,
   q,
@@ -22,28 +20,32 @@ import {
   DriverProfilePort,
   DriverServicePort,
   EvidenceStoragePort,
-  KeyValueStorePort,
   LocationTransportPort,
-  RouteStartPort,
   VehiclesPort,
 } from '../../core/ports';
-import { LocationQueue } from '../../core/adapters/local/local-adapters';
-import { MockLocationAdapter } from '../../core/adapters/mock/mock-adapters';
+import { LocationQueue } from '../../core/adapters/local/location-queue';
 import { ToastService } from '../../shared/ui/toast.service';
 import { DocumentoCardComponent } from './components/documento-card.component';
 import {
   EntregaModalComponent,
   MENSAJE_PIN_INCORRECTO,
 } from './components/entrega-modal.component';
-import { MENSAJE_PLACA_DUPLICADA, MENSAJE_SIN_PERFIL, PerfilPage } from './perfil.page';
+import { MENSAJE_PLACA_DUPLICADA, PerfilPage } from './perfil.page';
 import { ServicioPage } from './servicio.page';
-import { ActiveServiceStore } from './state/active-service.store';
 import { CompartirUbicacionService } from './state/compartir-ubicacion.service';
 import { DriverProfileStore } from './state/driver-profile.store';
 import { GEOLOCALIZACION } from './state/geolocalizacion';
 import { INTERVALO_TABLERO_MS, MENSAJE_TOMADO, TableroPage } from './tablero.page';
 
-const APROBADO: PerfilConductor = { idConductor: 1, estadoAprobacion: 'Aprobado' };
+const APROBADO: PerfilConductor = {
+  idConductor: 1,
+  estadoAprobacion: 'Aprobado',
+  motivoRechazo: null,
+};
+
+function ubicacionFalsa() {
+  return { enviar: vi.fn(async () => undefined), ultima: vi.fn(async () => null) };
+}
 
 function perfilPort(p: PerfilConductor = APROBADO) {
   return { provide: DriverProfilePort, useValue: { obtener: vi.fn(async () => p) } };
@@ -104,11 +106,7 @@ describe('CU-003 y CU-004 PerfilPage', () => {
     elegir(q(el, '#categoria'), 1);
     botonPorTexto(el, 'Registrar vehículo').click();
     await estable();
-    expect(v.registrar).toHaveBeenCalledWith({
-      placa: 'ABC12D',
-      categoria: 'Motocarro',
-      idConductor: 1,
-    });
+    expect(v.registrar).toHaveBeenCalledWith({ placa: 'ABC12D', categoria: 'Motocarro' });
     expect(q(el, '[aria-label="Placa del vehículo: A B C 1 2 D"]')).toBeTruthy();
     expect(el.textContent).toContain('Vehículo registrado');
   });
@@ -124,7 +122,7 @@ describe('CU-003 y CU-004 PerfilPage', () => {
 
   it.each([
     [new ApiError(400, 'La placa ya está registrada'), MENSAJE_PLACA_DUPLICADA],
-    [new ApiError(404, 'No existe un conductor con id 1'), MENSAJE_SIN_PERFIL],
+    [new ApiError(403, 'Esta acción requiere el rol Conductor'), 'No tienes permiso'],
     [new ApiError(500, 'x'), 'Algo salió mal'],
   ])('debería mostrar el error del backend (%#)', async (error, mensaje) => {
     const v = vehiculos();
@@ -136,22 +134,57 @@ describe('CU-003 y CU-004 PerfilPage', () => {
     expect(q(el, '#placa-ayuda').textContent).toContain(mensaje);
   });
 
-  it('sin perfil de conductor debería explicar el bloqueo y no permitir registrar ni subir', async () => {
-    const { el, v } = await montarPerfil(vehiculos(), {
-      idConductor: null,
-      estadoAprobacion: 'Pendiente',
+  it('sin perfil cargado debería bloquear el registro y no mostrar documentos', async () => {
+    const r = await montar(PerfilPage, {
+      usuario: CONDUCTOR,
+      providers: [
+        {
+          provide: DriverProfilePort,
+          useValue: { obtener: vi.fn(rechaza(new ApiError(0, 'x', 'SIN_CONEXION'))) },
+        },
+        { provide: VehiclesPort, useValue: vehiculos() },
+        { provide: DocumentsPort, useValue: { subir: vi.fn() } },
+      ],
     });
-    expect(el.textContent).toContain('Tu perfil de conductor aún no está creado');
-    expect(botonPorTexto(el, 'Registrar vehículo').disabled).toBe(true);
-    expect(el.querySelector('ti-documento-card')).toBeNull();
-    expect(v.registrar).not.toHaveBeenCalled();
+    await cargarPerfil();
+    await r.estable();
+    expect(botonPorTexto(r.el, 'Registrar vehículo').disabled).toBe(true);
+    expect(r.el.querySelector('ti-documento-card')).toBeNull();
+    expect(r.el.textContent).toContain('Disponible cuando se cargue tu perfil.');
+  });
+
+  it('debería mostrar el motivo del rechazo y recargar el perfil al subir un documento', async () => {
+    const obtener = vi.fn(async () => ({
+      ...APROBADO,
+      estadoAprobacion: 'Rechazado' as const,
+      motivoRechazo: 'SOAT vencido',
+    }));
+    const eventos = new Subject<EventoCarga>();
+    const r = await montar(PerfilPage, {
+      usuario: CONDUCTOR,
+      providers: [
+        { provide: DriverProfilePort, useValue: { obtener } },
+        { provide: VehiclesPort, useValue: vehiculos() },
+        { provide: DocumentsPort, useValue: { subir: () => eventos } },
+      ],
+    });
+    await cargarPerfil();
+    await r.estable();
+    expect(r.el.textContent).toContain('SOAT vencido');
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+    const input = q<HTMLInputElement>(r.el, 'ti-documento-card input[type=file]');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['x'], 'soat.pdf', { type: 'application/pdf' })],
+    });
+    input.dispatchEvent(new Event('change'));
+    eventos.next({ tipo: 'completo', documento: { id: 1, tipo: 'Cédula', urlArchivo: 'u' } });
+    await r.estable();
+    expect(obtener).toHaveBeenCalledTimes(2);
   });
 
   it('debería mostrar tres tarjetas de documentos y el aviso de revisión si no está aprobado', async () => {
-    const { el } = await montarPerfil(vehiculos(), {
-      idConductor: 1,
-      estadoAprobacion: 'Pendiente',
-    });
+    const { el } = await montarPerfil(vehiculos(), { ...APROBADO, estadoAprobacion: 'Pendiente' });
     expect(el.querySelectorAll('ti-documento-card')).toHaveLength(3);
     expect(el.textContent).toContain('Tu cuenta está en revisión');
   });
@@ -162,7 +195,7 @@ describe('CU-004 DocumentoCardComponent', () => {
     const eventos = new Subject<EventoCarga>();
     const subir = vi.fn(() => eventos.asObservable());
     const { el, c, estable } = await montar(DocumentoCardComponent, {
-      inputs: { tipo: 'Cédula', idConductor: 1 },
+      inputs: { tipo: 'Cédula' },
       providers: [{ provide: DocumentsPort, useValue: { subir } }],
     });
     const archivo = new File(['x'], 'cedula.jpg', { type: 'image/jpeg' });
@@ -171,7 +204,7 @@ describe('CU-004 DocumentoCardComponent', () => {
     c.subir(archivo);
     eventos.next({ tipo: 'progreso', porcentaje: 40 });
     await estable();
-    expect(subir).toHaveBeenCalledWith(archivo, 'Cédula', 1);
+    expect(subir).toHaveBeenCalledWith(archivo, 'Cédula');
     expect(q(el, '[role="progressbar"]').getAttribute('aria-valuenow')).toBe('40');
     eventos.next({
       tipo: 'completo',
@@ -185,7 +218,7 @@ describe('CU-004 DocumentoCardComponent', () => {
   it('debería mostrar el error traducido de multer', async () => {
     const eventos = new Subject<EventoCarga>();
     const { el, c, estable } = await montar(DocumentoCardComponent, {
-      inputs: { tipo: 'SOAT', idConductor: 1 },
+      inputs: { tipo: 'SOAT' },
       providers: [{ provide: DocumentsPort, useValue: { subir: () => eventos } }],
     });
     c.subir(new File(['x'], 's.pdf', { type: 'application/pdf' }));
@@ -198,7 +231,7 @@ describe('CU-004 DocumentoCardComponent', () => {
   it('Dado un formato no permitido, cuando lo elijo, entonces se rechaza en el cliente sin llamar a la API', async () => {
     const subir = vi.fn();
     const { el, estable } = await montar(DocumentoCardComponent, {
-      inputs: { tipo: 'Licencia', idConductor: 1 },
+      inputs: { tipo: 'Licencia' },
       providers: [{ provide: DocumentsPort, useValue: { subir } }],
     });
     const input = q<HTMLInputElement>(el, 'input[type=file]');
@@ -228,18 +261,19 @@ describe('CU-007 TableroPage', () => {
           buildEnvio({ id, estado: 'Asignado', pin: undefined }),
         ),
         obtener: vi.fn(async () => buildEnvio({ id: 5, estado: 'Asignado' })),
+        activo: vi.fn<() => Promise<ReturnType<typeof buildEnvio> | null>>(async () => null),
+        iniciarRuta: vi.fn(),
       },
     };
   }
 
-  async function montarTablero(p = puertos(), perfil = APROBADO, extra: object[] = []) {
+  async function montarTablero(p = puertos(), perfil = APROBADO) {
     const r = await montar(TableroPage, {
       usuario: CONDUCTOR,
       providers: [
         perfilPort(perfil),
         { provide: DriverBoardPort, useValue: p.tablero },
         { provide: DriverServicePort, useValue: p.servicio },
-        ...(extra as never[]),
       ],
     });
     await cargarPerfil();
@@ -250,7 +284,7 @@ describe('CU-007 TableroPage', () => {
 
   it('Dado un conductor no aprobado, entonces no muestra el tablero y explica por qué', async () => {
     const { el, p } = await montarTablero(undefined, {
-      idConductor: 1,
+      ...APROBADO,
       estadoAprobacion: 'Pendiente',
     });
     expect(el.textContent).toContain('Tu cuenta está en revisión');
@@ -260,10 +294,12 @@ describe('CU-007 TableroPage', () => {
 
   it('debería explicar un rechazo', async () => {
     const { el } = await montarTablero(undefined, {
-      idConductor: 1,
+      ...APROBADO,
       estadoAprobacion: 'Rechazado',
+      motivoRechazo: 'Licencia vencida',
     });
     expect(el.textContent).toContain('Tu solicitud fue rechazada');
+    expect(el.textContent).toContain('Licencia vencida');
   });
 
   it('Dado servicios disponibles, cuando acepto y confirmo, entonces abre /conductor/servicio/:id', async () => {
@@ -275,9 +311,8 @@ describe('CU-007 TableroPage', () => {
     expect(dialogo.textContent).toContain('¿Aceptar este servicio?');
     botonPorTexto(dialogo, 'Aceptar servicio').click();
     await estable();
-    expect(p.servicio.aceptar).toHaveBeenCalledWith(7, 1);
+    expect(p.servicio.aceptar).toHaveBeenCalledWith(7);
     expect(navegar).toHaveBeenCalledWith(['/conductor/servicio', 7]);
-    expect(await TestBed.inject(KeyValueStorePort).get(ActiveServiceStore.clave(1))).toBe(7);
   });
 
   it('Dado que otro conductor lo tomó, cuando acepto, entonces avisa y refresca la lista', async () => {
@@ -286,6 +321,7 @@ describe('CU-007 TableroPage', () => {
       rechaza(new ApiError(400, 'Este envío ya fue tomado por otro conductor')),
     );
     const { el, estable } = await montarTablero(p);
+    p.tablero.disponibles.mockImplementation(async () => [buildEnvio({ id: 8, pin: undefined })]);
     const toast = vi.spyOn(TestBed.inject(ToastService), 'error');
     botonPorTexto(el, 'Aceptar servicio').click();
     await estable();
@@ -293,6 +329,7 @@ describe('CU-007 TableroPage', () => {
     await estable();
     expect(toast).toHaveBeenCalledWith(MENSAJE_TOMADO);
     expect(p.tablero.disponibles).toHaveBeenCalledTimes(2);
+    expect(el.textContent).not.toContain('Vereda Pekín');
   });
 
   it('debería mostrar otros errores al aceptar', async () => {
@@ -307,12 +344,10 @@ describe('CU-007 TableroPage', () => {
     expect(toast.mock.calls[0][0]).toContain('No hay conexión');
   });
 
-  it('Dado un servicio activo, entonces bloquea aceptar otro (RN_OP_002)', async () => {
-    const almacen = new FakeLocalForage();
-    almacen.datos.set(ActiveServiceStore.clave(1), 5);
-    const { el } = await montarTablero(undefined, APROBADO, [
-      { provide: KeyValueStorePort, useValue: almacen },
-    ]);
+  it('Dado un servicio activo en el backend, entonces bloquea aceptar otro (RN_OP_002)', async () => {
+    const p = puertos();
+    p.servicio.activo.mockImplementation(async () => buildEnvio({ id: 5, estado: 'En Ruta' }));
+    const { el } = await montarTablero(p);
     expect(el.textContent).toContain('Tienes el servicio #5 en curso');
     expect(botonPorTexto(el, 'Aceptar servicio').disabled).toBe(true);
   });
@@ -443,23 +478,23 @@ describe('CU-009 EntregaModalComponent', () => {
 describe('ServicioPage', () => {
   function puertos(envio = buildEnvio({ id: 5, estado: 'Asignado', pin: undefined })) {
     return {
-      servicio: { aceptar: vi.fn(), obtener: vi.fn(async () => envio) },
-      ruta: {
-        iniciar: vi.fn(async () => buildEnvio({ id: 5, estado: 'En Ruta', pin: undefined })),
+      servicio: {
+        aceptar: vi.fn(),
+        activo: vi.fn(),
+        obtener: vi.fn(async () => envio),
+        iniciarRuta: vi.fn(async () => buildEnvio({ id: 5, estado: 'En Ruta', pin: undefined })),
       },
     };
   }
 
-  async function montarServicio(p = puertos(), features = {}, id = '5') {
+  async function montarServicio(p = puertos(), id = '5') {
     const r = await montar(ServicioPage, {
       usuario: CONDUCTOR,
       inputs: { id },
-      config: configPrueba({ features }),
       providers: [
         perfilPort(),
         { provide: DriverServicePort, useValue: p.servicio },
-        { provide: RouteStartPort, useValue: p.ruta },
-        { provide: LocationTransportPort, useClass: MockLocationAdapter },
+        { provide: LocationTransportPort, useValue: ubicacionFalsa() },
         { provide: EvidenceStoragePort, useValue: { subir: vi.fn() } },
         { provide: DeliveryPort, useValue: { validar: vi.fn() } },
       ],
@@ -470,30 +505,24 @@ describe('ServicioPage', () => {
     return { ...r, p };
   }
 
-  it('nunca debería mostrar el PIN y debería permitir finalizar desde Asignado sin el flag de ruta', async () => {
-    const { el, estable } = await montarServicio(
+  it('nunca debería mostrar el PIN y desde Asignado debería pedir iniciar la ruta', async () => {
+    const { el, p, estable } = await montarServicio(
       puertos(buildEnvio({ id: 5, estado: 'Asignado', pin: '6647' })),
     );
     expect(el.textContent).not.toContain('6647');
-    expect(el.textContent).not.toContain('Iniciar ruta');
+    expect(el.textContent).toContain('Inicia la ruta para poder finalizar');
+    botonPorTexto(el, 'Iniciar ruta').click();
+    await estable();
+    expect(p.servicio.iniciarRuta).toHaveBeenCalledWith(5);
     botonPorTexto(el, 'Finalizar entrega').click();
     await estable();
     expect(q(el, '[role="dialog"]')).toBeTruthy();
   });
 
-  it('con el flag iniciarRutaEndpoint debería iniciar ruta antes de entregar', async () => {
-    const { el, p, estable } = await montarServicio(undefined, { iniciarRutaEndpoint: true });
-    expect(el.textContent).toContain('Inicia la ruta para poder finalizar');
-    botonPorTexto(el, 'Iniciar ruta').click();
-    await estable();
-    expect(p.ruta.iniciar).toHaveBeenCalledWith(5);
-    expect(botonPorTexto(el, 'Finalizar entrega')).toBeTruthy();
-  });
-
   it('debería mostrar un error si iniciar ruta falla', async () => {
     const p = puertos();
-    p.ruta.iniciar.mockImplementation(rechaza(new ApiError(500, 'x')));
-    const { el, estable } = await montarServicio(p, { iniciarRutaEndpoint: true });
+    p.servicio.iniciarRuta.mockImplementation(rechaza(new ApiError(500, 'x')));
+    const { el, estable } = await montarServicio(p);
     const toast = vi.spyOn(TestBed.inject(ToastService), 'error');
     botonPorTexto(el, 'Iniciar ruta').click();
     await estable();
@@ -513,27 +542,26 @@ describe('ServicioPage', () => {
     expect(sw.getAttribute('aria-checked')).toBe('false');
   });
 
-  it('al entregar debería limpiar el servicio activo y mostrar el cierre', async () => {
+  it('al entregar debería recargar y mostrar el cierre', async () => {
     const p = puertos();
     const { el, c, estable } = await montarServicio(p);
-    await TestBed.inject(ActiveServiceStore).guardar(1, 5);
     p.servicio.obtener.mockImplementation(async () =>
       buildEnvio({ id: 5, estado: 'Entregado', pin: undefined }),
     );
     await c.alEntregar();
     await estable();
     expect(el.textContent).toContain('Entrega completada');
-    expect(await TestBed.inject(KeyValueStorePort).get(ActiveServiceStore.clave(1))).toBeNull();
   });
 
   it.each([
     ['abc', null, 'no es válido'],
     ['9', new ApiError(404, 'No existe el envío con id 9'), 'No encontramos ese servicio'],
+    ['9', new ApiError(403, 'No tienes permiso'), 'no está asignado a ti'],
     ['9', new ApiError(500, 'x'), 'Algo salió mal'],
   ])('debería informar errores al cargar (%s)', async (id, error, texto) => {
     const p = puertos();
     if (error) p.servicio.obtener.mockImplementation(rechaza(error));
-    const { el } = await montarServicio(p, {}, id);
+    const { el } = await montarServicio(p, id);
     expect(el.textContent).toContain(texto);
   });
 
@@ -545,31 +573,11 @@ describe('ServicioPage', () => {
   });
 });
 
-describe('ActiveServiceStore', () => {
-  it('debería devolver el activo solo si sigue activo y es del conductor', async () => {
-    const obtener = vi.fn();
-    configurar({ providers: [{ provide: DriverServicePort, useValue: { obtener } }] });
-    const s = TestBed.inject(ActiveServiceStore);
-    expect(await s.actual(1)).toBeNull();
-    await s.guardar(1, 5);
-    obtener.mockImplementation(async () =>
-      buildEnvio({ id: 5, estado: 'En Ruta', idConductor: 1 }),
-    );
-    expect(await s.actual(1)).toBe(5);
-    obtener.mockImplementation(rechaza(new ApiError(0, 'x')));
-    expect(await s.actual(1)).toBe(5);
-    obtener.mockImplementation(async () =>
-      buildEnvio({ id: 5, estado: 'Entregado', idConductor: 1 }),
-    );
-    expect(await s.actual(1)).toBeNull();
-  });
-});
-
 describe('CU-008 CompartirUbicacionService', () => {
   async function preparar(extra: object[] = []) {
     configurar({
       providers: [
-        { provide: LocationTransportPort, useClass: MockLocationAdapter },
+        { provide: LocationTransportPort, useValue: ubicacionFalsa() },
         ...(extra as never[]),
       ],
     });

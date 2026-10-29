@@ -9,10 +9,10 @@ import { EventoCarga } from '../../domain';
 import * as http from './http-adapters';
 import { aEnvio, aEstado, aEstadoAprobacion, aPostulante, aRol } from './mappers';
 
-function preparar(features = {}, extra: Partial<ReturnType<typeof configPrueba>> = {}) {
+function preparar() {
   TestBed.configureTestingModule({
     providers: [
-      provideFakesBase(configPrueba({ features, ...extra })),
+      provideFakesBase(configPrueba()),
       provideHttpClient(withInterceptors([apiInterceptor])),
       provideHttpClientTesting(),
     ],
@@ -87,8 +87,6 @@ describe('Adaptadores HTTP', () => {
         origen: 'A',
         destino: 'B',
         idZona: 1,
-        tipoCarga: 'Documentos',
-        categoria: 'Motocarro',
       });
       const req = await esperar(ctrl, 'POST', `${API_BASE}/cotizar/cotizar`);
       expect(req.request.body).toEqual({ origen: 'A', destino: 'B', id_zona: 1 });
@@ -101,27 +99,12 @@ describe('Adaptadores HTTP', () => {
       });
     });
 
-    it('debería incluir la categoría solo con el flag categoriaEnvio', async () => {
-      ctrl = preparar({ categoriaEnvio: true });
-      void TestBed.inject(http.HttpQuoteAdapter).cotizar({
-        origen: 'A',
-        destino: 'B',
-        idZona: 1,
-        tipoCarga: 'x',
-        categoria: 'Motocarro',
-      });
-      const req = await esperar(ctrl, 'POST', `${API_BASE}/cotizar/cotizar`);
-      expect(req.request.body.categoria).toBe('Motocarro');
-      req.flush(API.cotizar);
-    });
-
     it('debería convertir un 404 de zona en ApiError', async () => {
       ctrl = preparar();
       const p = TestBed.inject(http.HttpQuoteAdapter).cotizar({
         origen: 'A',
         destino: 'B',
         idZona: 99,
-        tipoCarga: 'x',
       });
       (await esperar(ctrl, 'POST', `${API_BASE}/cotizar/cotizar`)).flush(
         { error: 'Zona no encontrada' },
@@ -140,14 +123,12 @@ describe('Adaptadores HTTP', () => {
         destino: 'Silvania',
         tipoCarga: 'Documentos',
         idZona: 1,
-        idCliente: 1,
       });
       const req = await esperar(ctrl, 'POST', `${API_BASE}/envios/crear`);
       expect(req.request.body).toEqual({
         origen: 'Casco Urbano',
         destino: 'Silvania',
         tipo_carga: 'Documentos',
-        id_cliente: 1,
         id_zona: 1,
       });
       req.flush(API.crear, { status: 201, statusText: 'Created' });
@@ -160,6 +141,19 @@ describe('Adaptadores HTTP', () => {
         idConductor: null,
         tipoCarga: 'Documentos',
       });
+    });
+
+    it('debería enviar la categoría solo cuando el cliente la elige', async () => {
+      void TestBed.inject(http.HttpShipmentsAdapter).crear({
+        origen: 'a',
+        destino: 'b',
+        tipoCarga: 'c',
+        idZona: 1,
+        categoria: 'Motocarro',
+      });
+      const req = await esperar(ctrl, 'POST', `${API_BASE}/envios/crear`);
+      expect(req.request.body.categoria).toBe('Motocarro');
+      req.flush(API.crear);
     });
 
     it('debería obtener la trazabilidad con historial cronológico y fechas', async () => {
@@ -183,7 +177,6 @@ describe('Adaptadores HTTP', () => {
         destino: 'b',
         tipoCarga: 'c',
         idZona: 1,
-        idCliente: 1,
       });
       (await esperar(ctrl, 'POST', `${API_BASE}/envios/crear`)).flush(
         { error: 'Error interno del servidor' },
@@ -196,10 +189,10 @@ describe('Adaptadores HTTP', () => {
   describe('HttpDriverServiceAdapter', () => {
     beforeEach(() => (ctrl = preparar()));
 
-    it('debería aceptar con id_envio e id_conductor y descartar el PIN', async () => {
-      const p = TestBed.inject(http.HttpDriverServiceAdapter).aceptar(1, 1);
+    it('debería aceptar con id_envio (el conductor sale del token) y descartar el PIN', async () => {
+      const p = TestBed.inject(http.HttpDriverServiceAdapter).aceptar(1);
       const req = await esperar(ctrl, 'POST', `${API_BASE}/envios/aceptar`);
-      expect(req.request.body).toEqual({ id_envio: 1, id_conductor: 1 });
+      expect(req.request.body).toEqual({ id_envio: 1 });
       req.flush(API.aceptar);
       const e = await p;
       expect(e.estado).toBe('Asignado');
@@ -214,28 +207,54 @@ describe('Adaptadores HTTP', () => {
     });
 
     it('debería propagar el 400 de servicio ya tomado', async () => {
-      const p = TestBed.inject(http.HttpDriverServiceAdapter).aceptar(1, 1);
+      const p = TestBed.inject(http.HttpDriverServiceAdapter).aceptar(1);
       (await esperar(ctrl, 'POST', `${API_BASE}/envios/aceptar`)).flush(
         { error: 'Este envío ya fue tomado por otro conductor' },
         { status: 400, statusText: 'x' },
       );
       await expect(p).rejects.toMatchObject({ status: 400 });
     });
+
+    it('debería consultar el servicio activo sin PIN, o null si no hay', async () => {
+      const a = TestBed.inject(http.HttpDriverServiceAdapter);
+      const p1 = a.activo();
+      (await esperar(ctrl, 'GET', `${API_BASE}/conductores/envios/activo`)).flush({
+        envio: apiEnvio({ estado: 'Asignado' }),
+      });
+      const e = await p1;
+      expect(e?.estado).toBe('Asignado');
+      expect(e?.pin).toBeUndefined();
+      const p2 = a.activo();
+      (await esperar(ctrl, 'GET', `${API_BASE}/conductores/envios/activo`)).flush({ envio: null });
+      expect(await p2).toBeNull();
+    });
+
+    it('debería iniciar la ruta con POST /envios/:id/iniciar-ruta', async () => {
+      const p = TestBed.inject(http.HttpDriverServiceAdapter).iniciarRuta(1);
+      (await esperar(ctrl, 'POST', `${API_BASE}/envios/1/iniciar-ruta`)).flush({
+        envio: apiEnvio({ estado: 'En Ruta' }),
+      });
+      expect((await p).estado).toBe('En Ruta');
+    });
+
+    it('debería rechazar ids inválidos sin llamar a la API', async () => {
+      const a = TestBed.inject(http.HttpDriverServiceAdapter);
+      await expect(a.aceptar(0)).rejects.toMatchObject({ status: 400 });
+      await expect(a.iniciarRuta(-1)).rejects.toMatchObject({ status: 400 });
+    });
   });
 
   describe('HttpVehiclesAdapter', () => {
-    it('debería registrar en /vehicles/register con placa, categoria e id_conductor', async () => {
+    it('debería registrar en /vehicles/register con placa y categoria', async () => {
       ctrl = preparar();
       const p = TestBed.inject(http.HttpVehiclesAdapter).registrar({
         placa: 'ABC12D',
         categoria: 'Moto Express',
-        idConductor: 4,
       });
       const req = await esperar(ctrl, 'POST', `${API_BASE}/vehicles/register`);
       expect(req.request.body).toEqual({
         placa: 'ABC12D',
         categoria: 'Moto Express',
-        id_conductor: 4,
       });
       req.flush(
         { message: 'ok', vehicle: { id: 3, placa: 'ABC12D', categoria: 'Moto Express' } },
@@ -246,17 +265,17 @@ describe('Adaptadores HTTP', () => {
   });
 
   describe('HttpDocumentsAdapter', () => {
-    it('debería enviar multipart con archivo, tipo_documento (con tilde) e id_conductor, y reportar progreso', async () => {
+    it('debería enviar multipart con archivo, tipo_documento (con tilde) y reportar progreso', async () => {
       ctrl = preparar();
       const eventos: EventoCarga[] = [];
       const archivo = new File(['x'], 'cedula.jpg', { type: 'image/jpeg' });
       TestBed.inject(http.HttpDocumentsAdapter)
-        .subir(archivo, 'Cédula', 5)
+        .subir(archivo, 'Cédula')
         .subscribe((e) => eventos.push(e));
       const req = ctrl.expectOne(`${API_BASE}/documentos/upload`);
       const form = req.request.body as FormData;
       expect(form.get('tipo_documento')).toBe('Cédula');
-      expect(form.get('id_conductor')).toBe('5');
+      expect(form.get('id_conductor')).toBeNull();
       expect((form.get('archivo') as File).name).toBe('cedula.jpg');
       expect(req.request.reportProgress).toBe(true);
       req.event({ type: HttpEventType.UploadProgress, loaded: 50, total: 100 });
@@ -317,16 +336,8 @@ describe('Adaptadores HTTP', () => {
       });
     });
 
-    it('no debería enviar el motivo con el flag motivoRechazo apagado', async () => {
+    it('debería enviar observation al rechazar', async () => {
       ctrl = preparar();
-      void TestBed.inject(http.HttpApprovalAdapter).decidir(1, false, 'SOAT vencido');
-      const req = await esperar(ctrl, 'POST', `${API_BASE}/conductores/aprobar`);
-      expect(req.request.body).toEqual({ driverId: 1, approved: false });
-      req.flush({ driver: { ...API.aprobar.driver, estado_aprobacion: 'Rechazado' } });
-    });
-
-    it('debería enviar observation con el flag motivoRechazo encendido', async () => {
-      ctrl = preparar({ motivoRechazo: true });
       void TestBed.inject(http.HttpApprovalAdapter).decidir(1, false, 'SOAT vencido');
       const req = await esperar(ctrl, 'POST', `${API_BASE}/conductores/aprobar`);
       expect(req.request.body).toEqual({
@@ -369,7 +380,7 @@ describe('Adaptadores HTTP', () => {
     });
   });
 
-  describe('contratos propuestos (brechas)', () => {
+  describe('resto de contratos', () => {
     beforeEach(() => (ctrl = preparar()));
 
     it('GET /conductores/me', async () => {
@@ -382,6 +393,7 @@ describe('Adaptadores HTTP', () => {
       expect(await p).toEqual({
         idConductor: 3,
         estadoAprobacion: 'Aprobado',
+        motivoRechazo: null,
         vehiculo: { id: 1, placa: 'ABC123', categoria: 'Camioneta' },
       });
     });
@@ -405,7 +417,6 @@ describe('Adaptadores HTTP', () => {
 
     it('GET /clientes/envios conserva el PIN y mapea el conductor', async () => {
       const a = TestBed.inject(http.HttpClientShipmentsAdapter);
-      await a.recordar();
       const p = a.listar();
       (await esperar(ctrl, 'GET', `${API_BASE}/clientes/envios`)).flush({
         envios: [
@@ -423,7 +434,6 @@ describe('Adaptadores HTTP', () => {
       expect(e.pin).toBe('6647');
       expect(e.conductor).toEqual({
         nombre: 'Con',
-        telefono: undefined,
         vehiculo: 'Moto Express',
         placa: 'ABC12D',
         calificacionPromedio: 4.8,
@@ -436,14 +446,6 @@ describe('Adaptadores HTTP', () => {
         envios: [apiEnvio({ estado: 'Pendiente' })],
       });
       expect((await p)[0].pin).toBeUndefined();
-    });
-
-    it('POST /envios/:id/iniciar-ruta', async () => {
-      const p = TestBed.inject(http.HttpRouteStartAdapter).iniciar(1);
-      (await esperar(ctrl, 'POST', `${API_BASE}/envios/1/iniciar-ruta`)).flush({
-        envio: apiEnvio({ estado: 'En Ruta' }),
-      });
-      expect((await p).estado).toBe('En Ruta');
     });
 
     it('GET /conductores/pendientes', async () => {
@@ -463,6 +465,7 @@ describe('Adaptadores HTTP', () => {
           nombre: 'Con',
           correo: 'c@t.co',
           estadoAprobacion: 'Pendiente',
+          motivoRechazo: null,
           documentos: [{ tipo: 'SOAT', urlArchivo: 'u' }],
         },
       ]);
@@ -532,30 +535,6 @@ describe('Adaptadores HTTP', () => {
         tamano: 10,
       });
       expect((await p2).items[0].fecha).toBeInstanceOf(Date);
-    });
-  });
-
-  describe('CloudinaryEvidenceAdapter', () => {
-    it('debería subir con upload_preset sin firma y devolver secure_url', async () => {
-      ctrl = preparar({}, { cloudinary: { cloudName: 'demo', uploadPreset: 'sin-firma' } });
-      const p = TestBed.inject(http.CloudinaryEvidenceAdapter).subir(
-        4,
-        new File(['x'], 'f.jpg', { type: 'image/jpeg' }),
-      );
-      const req = await esperar(ctrl, 'POST', 'https://api.cloudinary.com/v1_1/demo/image/upload');
-      expect((req.request.body as FormData).get('upload_preset')).toBe('sin-firma');
-      req.flush({ secure_url: 'https://res.cloudinary.com/demo/f.jpg' });
-      expect(await p).toBe('https://res.cloudinary.com/demo/f.jpg');
-    });
-
-    it('debería convertir un fallo en ApiError', async () => {
-      ctrl = preparar({}, { cloudinary: { cloudName: 'demo', uploadPreset: 'p' } });
-      const p = TestBed.inject(http.CloudinaryEvidenceAdapter).subir(4, new File(['x'], 'f.jpg'));
-      (await esperar(ctrl, 'POST', 'https://api.cloudinary.com/v1_1/demo/image/upload')).flush(
-        {},
-        { status: 400, statusText: 'x' },
-      );
-      await expect(p).rejects.toBeInstanceOf(ApiError);
     });
   });
 });

@@ -7,7 +7,6 @@ import {
   signal,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { DemoModeService } from '../../core/config/demo-mode.service';
 import { MetricasAdmin } from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { AdminMetricsPort } from '../../core/ports';
@@ -22,11 +21,6 @@ import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.co
   template: `
     <div class="contenedor-ancho">
       <h1>Métricas de operación</h1>
-      @if (!flags.adminDashboard) {
-        <p class="mt-2 text-sm text-piedra">
-          Datos de ejemplo: el backend aún no expone estas métricas.
-        </p>
-      }
       <div class="mt-6">
         <ti-estado-carga [fase]="fase()" [textoError]="error()" (reintentar)="cargar()">
           @if (m(); as m) {
@@ -55,7 +49,7 @@ import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.co
                       </div>
                       <div class="mt-1 h-3 rounded-full bg-niebla" aria-hidden="true">
                         <div
-                          class="h-full rounded-full bg-monte"
+                          class="h-full rounded-full bg-marca"
                           [style.width.%]="(z.envios / maxZona()) * 100"
                         ></div>
                       </div>
@@ -83,7 +77,7 @@ import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.co
                               ? 'bg-exito'
                               : e.estado === 'Pendiente'
                                 ? 'bg-placa'
-                                : 'bg-monte-claro'
+                                : 'bg-marca-oscuro'
                           "
                           [style.width.%]="(e.envios / maxEstado()) * 100"
                         ></div>
@@ -102,7 +96,6 @@ import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.co
 export class DashboardPage implements OnInit {
   private readonly puerto = inject(AdminMetricsPort);
   private readonly mapper = inject(ErrorMessageMapper);
-  protected readonly flags = inject(DemoModeService).flags;
   private readonly cop = new CopPipe();
 
   protected readonly m = signal<MetricasAdmin | null>(null);

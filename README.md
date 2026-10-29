@@ -15,7 +15,7 @@ Fusagasugá y alrededores, con cotización por zona, seguimiento y PIN de entreg
 
 ## Requisitos
 
-- Node.js 20.19 o superior (probado con Node 22)
+- Node.js 22.12 o superior (lo pide el escáner de SonarQube; Angular funciona desde 20.19)
 - El backend `trackit-express-backend` corriendo en `http://localhost:3000`
 
 ## Instalación y arranque
@@ -34,28 +34,25 @@ Scripts:
 | `npm test`              | Pruebas unitarias                                                                              |
 | `npm run test:coverage` | Pruebas con cobertura y umbrales (80 % global, 75 % ramas, 90 % en dominio y adaptadores HTTP) |
 | `npm run lint`          | Linter                                                                                         |
+| `npm run sonar`         | Análisis de SonarQube (ver abajo)                                                              |
 
 ## Configuración
 
 `src/environments/environment.development.ts` (desarrollo) y `environment.ts` (producción):
 
-| Clave              | Uso                                                                                            |
-| ------------------ | ---------------------------------------------------------------------------------------------- |
-| `apiBaseUrl`       | URL base de la API (por defecto `http://localhost:3000/api`)                                   |
-| `features`         | Un flag por brecha del backend. Ver [docs/brechas-backend.md](docs/brechas-backend.md)         |
-| `cloudinary`       | `cloudName` y `uploadPreset` **sin firma** para subir la foto de entrega. Vacío = URL simulada |
-| `logs`             | `nivelMinimo`, `enviarAlServidor`, `consola`                                                   |
-| `demo.conductores` | Relación usuario → conductor mientras no exista `GET /api/conductores/me`                      |
+| Clave        | Uso                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------- |
+| `apiBaseUrl` | URL base de la API. Desarrollo: `http://localhost:3000/api`. Producción: `/api` (ver abajo) |
+| `logs`       | `nivelMinimo`, `enviarAlServidor`, `consola`                                                |
 
-## Probar contra el backend real
+Todo el frontend habla con el backend real: no hay datos simulados.
 
-1. En `trackit-express-backend`: `npm install`, copiar `.env.example` a `.env`, crear la base de datos, ejecutar `database/schema.sql` y `database/seed.sql`, y `npm run dev`.
-2. En este repositorio: `npm start`.
-3. Registra un cliente y un conductor desde `/registro`.
-4. Crea la fila del conductor y relaciónala en `environment.development.ts` siguiendo [docs/demo-conductor.sql](docs/demo-conductor.sql). Ahí también está cómo crear un administrador.
+## Probar de punta a punta
 
-Recorrido completo probado: registro → cotización → envío con PIN → tablero del conductor →
-aceptar → entrega con PIN y foto → calificación → historial, y panel de administración.
+1. En `trackit-express-backend`: `npm install`, copiar `.env.example` a `.env`, `npm run db:setup` (o `npm run db:migrate` si la base ya existía) y `npm run dev`.
+2. En este repositorio: `npm start` y abre http://localhost:4200.
+3. Registra un cliente y un conductor desde `/registro`. El administrador viene en la semilla: `admin@trackit.com.co` / `Admin2026*` (cámbiala en producción).
+4. Recorrido: el conductor registra su vehículo y documentos → el administrador lo aprueba → el cliente cotiza y crea el envío → el conductor lo acepta, inicia la ruta y comparte su ubicación → el cliente lo sigue en el mapa → el conductor entrega con PIN y foto → el cliente califica.
 
 ## Estructura
 
@@ -65,15 +62,14 @@ src/app/
 │   ├── domain/        Modelos y reglas puras (validadores, transiciones, JWT)
 │   ├── ports/         Contratos (clases abstractas usadas como tokens)
 │   ├── adapters/
-│   │   ├── http/      Backend real y contratos propuestos (único lugar con snake_case)
-│   │   ├── mock/      Simulados en memoria con datos semilla
-│   │   └── local/     LocalForage: caché de envíos, colas, calificados, sondeo del tablero
+│   │   ├── http/      Adaptadores del backend (único lugar con snake_case)
+│   │   └── local/     Almacenamiento del navegador y cola de ubicaciones sin conexión
 │   ├── auth/          Sesión, guards, interceptor de autenticación
 │   ├── http/          Interceptor de errores/tiempo/reintento, ApiError, traductor de mensajes
 │   ├── logging/       LoggerService (logs al backend), ErrorHandler global
-│   └── config/        Flags y elección de adaptadores
+│   └── config/        Configuración y registro de adaptadores
 ├── shared/            UI (modal, toasts, estrellas, teclado PIN, carga de archivo, placa), pipes, utilidades
-├── layout/            Shell por rol, banner sin conexión, insignia Modo demo, 404
+├── layout/            Shell por rol, banner sin conexión, 404
 └── features/
     ├── auth/          CU-001 Registro, CU-002 Login
     ├── cliente/       CU-005, CU-006, CU-008, CU-010, historial
@@ -100,14 +96,28 @@ src/testing/           Dobles, fixtures (Apéndice A) y helpers de pruebas
 
 Los eventos del frontend (errores no capturados, fallos HTTP, acciones clave) se envían por
 lotes a `POST /api/logs/frontend` y el backend los guarda en `logs/frontend-AAAA-MM-DD.txt`.
-Nunca se registran contraseñas, PIN, tokens ni cuerpos de peticiones. En desarrollo, la
-insignia **Modo demo** ofrece "Descargar log (.txt)".
+Nunca se registran contraseñas, PIN, tokens ni cuerpos de peticiones.
+
+## Calidad con SonarQube
+
+1. Levanta SonarQube (Docker): `docker run -d --name sonarqube -p 9000:9000 sonarqube:community`
+2. Entra a http://localhost:9000 (admin/admin), crea el proyecto `trackit-express-frontend` y genera un token.
+3. Ejecuta:
+   ```bash
+   npm run test:coverage
+   npm run sonar -- -Dsonar.host.url=http://localhost:9000 -Dsonar.token=TU_TOKEN
+   ```
+
+## Despliegue
+
+1. `npm ci && npm run build`. El resultado queda en `dist/trackit-express-frontend/browser`.
+2. Sírvelo como sitio estático con _fallback_ a `index.html` (rutas de Angular) y HTTPS (lo exige el Service Worker y la geolocalización).
+3. La compilación de producción llama a `/api`: publica el backend en el mismo dominio (proxy inverso de `/api` y `/uploads` al backend) o cambia `apiBaseUrl` en `src/environments/environment.ts` por la URL pública de la API y agrega el dominio del frontend a `CORS_ORIGINS` del backend.
 
 ## Documentación
 
-- [docs/brechas-backend.md](docs/brechas-backend.md): los 12 flags, su contrato propuesto y qué pantalla depende de cada uno
-- [docs/decisiones.md](docs/decisiones.md): contradicciones resueltas y supuestos
-- [docs/demo-conductor.sql](docs/demo-conductor.sql): datos para probar el rol conductor y crear un administrador
+- [docs/decisiones.md](docs/decisiones.md): contradicciones entre documentos y backend, y cómo se resolvieron
+- Contrato de la API: Swagger del backend en `http://localhost:3000/api/docs`
 
 ## Ramas
 
