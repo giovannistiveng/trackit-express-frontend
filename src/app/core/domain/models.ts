@@ -31,7 +31,7 @@ export type TipoDocumento = (typeof TIPOS_DOCUMENTO)[number];
 
 export const TIPOS_CARGA = ['Documentos', 'Mercancía General', 'Carga Pesada', 'Acarreo'] as const;
 
-/** Sugerencias para origen y destino (sin autocompletado de terceros). */
+/** Sugerencias rápidas para origen y destino (además del buscador del mapa). */
 export const LUGARES_FRECUENTES = [
   'Casco Urbano',
   'Vereda Pekín',
@@ -62,20 +62,79 @@ export interface RegistroUsuario {
   rol: Extract<Rol, '2' | '3'>;
 }
 
+/** Zona de cobertura: círculo en el mapa con un recargo fijo. */
 export interface Zona {
   id: number;
   nombre: string;
+  /** Recargo de la zona en COP (antes "tarifa base"). */
   tarifaBase: number;
+  centro?: Coordenadas | null;
+  radioKm?: number;
+  activa?: boolean;
+  descripcion?: string | null;
+}
+
+export type DatosZona = Pick<
+  Zona,
+  'nombre' | 'tarifaBase' | 'centro' | 'radioKm' | 'descripcion'
+> & {
+  activa?: boolean;
+};
+
+/** Precio de un vehículo: banderazo + km × porKm + minutos × porMinuto, nunca menos del mínimo. */
+export interface TarifaVehiculo {
+  categoria: CategoriaVehiculo;
+  banderazo: number;
+  porKm: number;
+  porMinuto: number;
+  minimo: number;
+}
+
+export interface TarifasPublicas {
+  tarifas: TarifaVehiculo[];
+  /** Fracción, p. ej. 0,2 = 20 %. */
+  recargoNocturno: number;
+  horarioNocturno: string;
+}
+
+/** Partidas del precio de un envío, en COP. */
+export interface DesgloseTarifa {
+  categoria: CategoriaVehiculo;
+  banderazo: number;
+  distancia: number;
+  tiempo: number;
+  recargoZona: number;
+  recargoNocturno: number;
+  minimoAplicado: boolean;
+  total: number;
+}
+
+export interface OpcionVehiculo {
+  categoria: CategoriaVehiculo;
+  tarifaTotal: number;
+  minimoAplicado: boolean;
+}
+
+/** Resultado del buscador de direcciones (OpenStreetMap). */
+export interface SugerenciaDireccion {
+  nombre: string;
+  detalle: string;
+  coords: Coordenadas;
 }
 
 export interface SolicitudCotizacion {
   origen: string;
   destino: string;
-  idZona: number;
+  /** Solo hace falta si el destino no tiene coordenadas. */
+  idZona?: number | null;
+  categoria?: CategoriaVehiculo;
+  origenCoords?: Coordenadas | null;
+  destinoCoords?: Coordenadas | null;
 }
 
 export interface Cotizacion {
   distanciaKm: number;
+  /** Recargo de zona aplicado. */
   tarifaBase: number;
   tarifaTotal: number;
   moneda: 'COP';
@@ -83,6 +142,15 @@ export interface Cotizacion {
   duracionMin?: number;
   /** false si alguna dirección no se encontró y la distancia es aproximada. */
   distanciaExacta?: boolean;
+  categoria?: CategoriaVehiculo;
+  zona?: { id: number; nombre: string };
+  zonaOrigen?: { id: number; nombre: string } | null;
+  desglose?: DesgloseTarifa;
+  /** Precio del mismo viaje con cada vehículo. */
+  opciones?: OpcionVehiculo[];
+  nocturno?: boolean;
+  origenCoords?: Coordenadas | null;
+  destinoCoords?: Coordenadas | null;
 }
 
 export interface Coordenadas {
@@ -125,6 +193,8 @@ export interface Envio {
   destinoCoords?: Coordenadas | null;
   /** Solo en la vista del conductor: lo que gana por el servicio. */
   gananciaConductor?: number;
+  duracionMin?: number | null;
+  desglose?: DesgloseTarifa | null;
 }
 
 /** Datos para dibujar el mapa de seguimiento. */
@@ -149,6 +219,7 @@ export const TIPOS_NOTIFICACION = [
   'conductor_aprobado',
   'conductor_rechazado',
   'calificacion_recibida',
+  'nuevo_servicio',
 ] as const;
 export type TipoNotificacion = (typeof TIPOS_NOTIFICACION)[number];
 

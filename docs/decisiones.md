@@ -58,3 +58,16 @@ CU-001 a CU-011, (3) historias de usuario, (4) README.
   para que no llenen los logs.
 - **App móvil:** la PWA ya es instalable. Para tiendas, la vía recomendada es Capacitor (mismo código);
   el GPS en segundo plano del conductor necesita un plugin nativo.
+
+## Decisiones v2.2 (tarifas y zonas)
+
+- **Causa del tablero vacío:** el backend exigía que la categoría del pedido coincidiera exactamente con la del
+  vehículo; un conductor con Motocarro no veía pedidos de Moto Express. Ahora un vehículo atiende su categoría y las
+  menores.
+- **Causa de las tarifas exageradas:** Nominatim ubicaba nombres como "Vereda Pekín" en otro país (4.344 km) y la
+  tarifa era "base + $1.000 × km". Ahora la búsqueda se limita a la región (máx. 80 km de Fusagasugá) y el precio es
+  banderazo + km + minutos por vehículo con mínimo, más un recargo pequeño por zona.
+- **Zonas como círculos:** más simple de administrar que polígonos y suficiente para municipios y veredas; un punto
+  pertenece a la zona más pequeña que lo contiene.
+- **La fórmula vive en el backend.** El frontend solo replica `precioEstimado` para ejemplos y la calculadora pública;
+  el precio cobrado siempre es el del servidor.

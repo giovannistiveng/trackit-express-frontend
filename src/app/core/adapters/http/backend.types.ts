@@ -37,6 +37,8 @@ export interface ApiEnvio {
   origen_coords?: { lat: number; lon: number } | null;
   destino_coords?: { lat: number; lon: number } | null;
   ganancia_conductor?: number;
+  duracion_min?: number | null;
+  desglose?: ApiDesglose | null;
   conductor?: {
     nombre: string;
     vehiculo?: string | null;
@@ -107,4 +109,50 @@ export interface ApiContacto {
   mensaje: string;
   atendido: boolean;
   fecha: string;
+}
+
+export interface ApiZona {
+  id_zona: number;
+  nombre_zona: string;
+  tarifa_base: number | string;
+  recargo?: number | string;
+  centro?: { lat: number; lon: number } | null;
+  radio_km?: number | string;
+  activa?: boolean;
+  descripcion?: string | null;
+}
+
+export interface ApiDesglose {
+  categoria: string;
+  banderazo: number;
+  distancia: number;
+  tiempo: number;
+  recargo_zona: number;
+  recargo_nocturno: number;
+  minimo_aplicado: boolean;
+  total: number;
+}
+
+export interface ApiTarifaVehiculo {
+  categoria: string;
+  banderazo: number | string;
+  por_km: number | string;
+  por_minuto: number | string;
+  minimo: number | string;
+}
+
+export interface ApiCotizacion {
+  distancia_km: number;
+  tarifa_base: number;
+  tarifa_total: number;
+  duracion_estimada_min?: number;
+  distancia_exacta?: boolean;
+  categoria?: string;
+  zona?: { id_zona: number; nombre_zona: string };
+  zona_origen?: { id_zona: number; nombre_zona: string } | null;
+  desglose?: ApiDesglose;
+  opciones?: { categoria: string; tarifa_total: number; minimo_aplicado: boolean }[];
+  recargo_nocturno_activo?: boolean;
+  origen_coords?: { lat: number; lon: number } | null;
+  destino_coords?: { lat: number; lon: number } | null;
 }

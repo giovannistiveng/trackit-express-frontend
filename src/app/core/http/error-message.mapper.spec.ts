@@ -51,10 +51,33 @@ describe('ErrorMessageMapper', () => {
       'Demasiadas peticiones, intenta más tarde',
       'Demasiados intentos seguidos. Espera un momento.',
     ],
+    [
+      'La dirección de origen está fuera de nuestra zona de cobertura. Revisa la dirección o elígela en el mapa',
+      'Esa dirección está fuera de nuestra zona de cobertura. Revísala o márcala en el mapa.',
+    ],
+    [
+      'No encontramos la dirección de destino. Elígela en el mapa o selecciona la zona',
+      'No encontramos la dirección de destino. Márcala en el mapa o elige su zona.',
+    ],
+    ['El origen y el destino son el mismo lugar', 'El origen y el destino son el mismo lugar.'],
+    [
+      'El recargo de la zona debe ser un valor entre 0 y 200.000 COP',
+      'El recargo debe estar entre $ 0 y $ 200.000.',
+    ],
+    ['Indica el centro de la zona en el mapa', 'Toca el mapa para ubicar el centro de la zona.'],
+    ['Ya existe una zona con ese nombre', 'Ya existe una zona con ese nombre.'],
+    ['La búsqueda es demasiado larga', 'Escribe una dirección más corta.'],
   ])('debería traducir "%s"', (backend, esperado) => expect(t(400, backend)).toBe(esperado));
 
   it('debería usar el genérico para mensajes desconocidos o errores que no son ApiError', () => {
     expect(t(500, 'Error interno del servidor')).toBe(MENSAJE_GENERICO);
+    // Un 400 legible sin regla propia se muestra tal cual; uno técnico no
+    expect(t(400, 'El envío debe tener un tipo de carga')).toBe(
+      'El envío debe tener un tipo de carga.',
+    );
+    expect(t(409, 'Ya está asignado.')).toBe('Ya está asignado.');
+    expect(t(400, 'El campo "radio_km" debe ser un número entre 0.2 y 60')).toBe(MENSAJE_GENERICO);
+    expect(t(400, 'invalid input syntax')).toBe(MENSAJE_GENERICO);
     expect(m.traducir(new Error('x'))).toBe(MENSAJE_GENERICO);
   });
 

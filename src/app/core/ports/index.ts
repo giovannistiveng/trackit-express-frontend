@@ -2,7 +2,9 @@ import { Observable } from 'rxjs';
 import {
   CategoriaVehiculo,
   ConductorPostulante,
+  Coordenadas,
   Cotizacion,
+  DatosZona,
   Envio,
   EnvioAdmin,
   EstadisticasPublicas,
@@ -21,6 +23,9 @@ import {
   RegistroAuditoria,
   RegistroUsuario,
   SolicitudCotizacion,
+  SugerenciaDireccion,
+  TarifaVehiculo,
+  TarifasPublicas,
   TipoDocumento,
   Ubicacion,
   Usuario,
@@ -51,6 +56,12 @@ export abstract class ZonesPort {
 
 export abstract class QuotePort {
   abstract cotizar(solicitud: SolicitudCotizacion): Promise<Cotizacion>;
+}
+
+/** Buscador de direcciones dentro de la región (OpenStreetMap, a través del backend). */
+export abstract class GeoPort {
+  abstract buscar(texto: string): Promise<SugerenciaDireccion[]>;
+  abstract inversa(punto: Coordenadas): Promise<SugerenciaDireccion | null>;
 }
 
 export interface NuevoEnvio extends SolicitudCotizacion {
@@ -153,14 +164,21 @@ export abstract class AccountPort {
 export abstract class PublicSitePort {
   abstract estadisticas(): Promise<EstadisticasPublicas>;
   abstract zonas(): Promise<Zona[]>;
+  abstract tarifas(): Promise<TarifasPublicas>;
   abstract contactar(mensaje: MensajeContacto): Promise<void>;
 }
 
-/** Operación del administrador: envíos, tarifas y mensajes de contacto. */
+/** Operación del administrador: envíos, zonas, tarifas y mensajes de contacto. */
 export abstract class AdminOperationsPort {
   abstract envios(filtro: FiltroEnviosAdmin): Promise<Pagina<EnvioAdmin>>;
   abstract cancelar(idEnvio: number, motivo: string): Promise<Envio>;
   abstract actualizarTarifa(idZona: number, tarifaBase: number): Promise<Zona>;
+  /** Todas las zonas, incluidas las desactivadas. */
+  abstract zonas(): Promise<Zona[]>;
+  abstract crearZona(datos: DatosZona): Promise<Zona>;
+  abstract actualizarZona(idZona: number, cambios: Partial<DatosZona>): Promise<Zona>;
+  abstract tarifasVehiculo(): Promise<TarifaVehiculo[]>;
+  abstract actualizarTarifaVehiculo(t: TarifaVehiculo): Promise<TarifaVehiculo>;
   abstract mensajes(pendientes: boolean, pagina: number): Promise<Pagina<MensajeContactoRecibido>>;
   abstract atenderMensaje(id: number): Promise<void>;
 }

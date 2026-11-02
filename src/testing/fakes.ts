@@ -1,9 +1,10 @@
 import { EnvironmentProviders, Provider, makeEnvironmentProviders } from '@angular/core';
 import { AppEnvironment } from '../environments/environment.model';
-import { Notificacion } from '../app/core/domain';
+import { Coordenadas, Notificacion, SugerenciaDireccion } from '../app/core/domain';
 import { APP_CONFIG } from '../app/core/config/app-config';
 import {
   EventoLog,
+  GeoPort,
   KeyValueStorePort,
   NotificationsPort,
   LogTransportPort,
@@ -125,6 +126,21 @@ export class FakeGeolocation implements Geo {
   }
 }
 
+/** Buscador de direcciones falso: devuelve `resultados` y nombra cualquier punto como "Calle falsa". */
+export class FakeGeo implements GeoPort {
+  resultados: SugerenciaDireccion[] = [];
+  fallo: unknown = null;
+  readonly buscar = vi.fn(async (texto: string) => {
+    void texto;
+    if (this.fallo) throw this.fallo;
+    return this.resultados;
+  });
+  readonly inversa = vi.fn(async (p: Coordenadas): Promise<SugerenciaDireccion | null> => {
+    if (this.fallo) throw this.fallo;
+    return { nombre: 'Calle falsa 123', detalle: 'Calle falsa 123, Fusagasugá', coords: p };
+  });
+}
+
 /** Dobles de infraestructura comunes a casi todas las pruebas. */
 export function provideFakesBase(cfg?: AppEnvironment): EnvironmentProviders {
   return makeEnvironmentProviders([
@@ -135,6 +151,7 @@ export function provideFakesBase(cfg?: AppEnvironment): EnvironmentProviders {
     { provide: LogTransportPort, useClass: FakeLogTransport },
     { provide: GEOLOCALIZACION, useClass: FakeGeolocation },
     { provide: NotificationsPort, useClass: FakeNotifications },
+    { provide: GeoPort, useClass: FakeGeo },
   ]);
 }
 

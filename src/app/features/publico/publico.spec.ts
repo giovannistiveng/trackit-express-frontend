@@ -4,7 +4,7 @@ import { montar } from '../../../testing/pantallas';
 import { ApiError } from '../../core/http/api-error';
 import { EstadisticasPublicas } from '../../core/domain';
 import { PublicSitePort } from '../../core/ports';
-import { InicioPage } from './inicio.page';
+import { InicioPage, TARIFAS_REFERENCIA } from './inicio.page';
 import { SitioCabeceraComponent } from './sitio-cabecera.component';
 
 const ZONAS = [
@@ -22,6 +22,11 @@ function sitio(estadisticas: Partial<EstadisticasPublicas> = {}) {
       ...estadisticas,
     })),
     zonas: vi.fn(async () => ZONAS),
+    tarifas: vi.fn(async () => ({
+      tarifas: TARIFAS_REFERENCIA,
+      recargoNocturno: 0.2,
+      horarioNocturno: '20:00 a 5:59',
+    })),
     contactar: vi.fn(async () => undefined),
   };
 }
@@ -76,19 +81,34 @@ describe('InicioPage (sitio público)', () => {
     expect(el.textContent).toContain('Las tarifas no están disponibles');
   });
 
-  it('la calculadora suma la tarifa base de la zona y $1.000 por km', async () => {
+  it('la calculadora usa la tarifa del vehículo, la distancia, el tiempo y el recargo de la zona', async () => {
     const { el, estable } = await montarInicio();
     const texto = () => q(el, '#tarifas').textContent?.replace(/\s+/g, ' ') ?? '';
-    expect(texto()).toContain('$ 13.000'); // 5.000 + 8 km
-    const select = q<HTMLSelectElement>(el, '#calc-zona');
-    select.value = select.options[1].value;
-    select.dispatchEvent(new Event('change'));
+    // Moto: 2.000 + 5 km × 700 + 10 min × 50 = 6.000 + recargo 5.000
+    expect(texto()).toContain('$ 11.000');
+    const zona = q<HTMLSelectElement>(el, '#calc-zona');
+    zona.value = zona.options[1].value;
+    zona.dispatchEvent(new Event('change'));
     const km = q<HTMLInputElement>(el, '#calc-km');
     km.value = '20';
     km.dispatchEvent(new Event('input'));
     await estable();
-    expect(texto()).toContain('$ 32.000'); // 12.000 + 20 km
-    expect(texto()).toContain('Silvania');
+    // 2.000 + 14.000 + 40 min × 50 = 18.000 + recargo 12.000
+    expect(texto()).toContain('$ 30.000');
+    const vehiculo = q<HTMLSelectElement>(el, '#calc-vehiculo');
+    vehiculo.value = 'Camioneta';
+    vehiculo.dispatchEvent(new Event('change'));
+    await estable();
+    // 10.000 + 32.000 + 4.800 = 46.800 + 12.000
+    expect(texto()).toContain('$ 58.800');
+    expect(texto()).toContain('recargo $ 12.000');
+  });
+
+  it('si las tarifas no cargan usa las de referencia', async () => {
+    const s = sitio();
+    s.tarifas.mockImplementation(rechaza(new ApiError(0, 'x')));
+    const { el } = await montarInicio(s);
+    expect(q(el, '#tarifas').textContent?.replace(/\s+/g, ' ')).toContain('$ 11.000');
   });
 
   it('el formulario de contacto valida, envía y confirma', async () => {

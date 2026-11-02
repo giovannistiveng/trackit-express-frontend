@@ -1,11 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { CLIENTE, buildEnvio } from '../../../testing/fixtures';
-import { botonPorTexto, elegir, escribir, q, rechaza } from '../../../testing/fakes';
+import { FakeGeo, botonPorTexto, elegir, escribir, q, rechaza } from '../../../testing/fakes';
 import { montar } from '../../../testing/pantallas';
 import { ApiError } from '../../core/http/api-error';
-import { Seguimiento } from '../../core/domain';
+import { Cotizacion, Seguimiento, SolicitudCotizacion } from '../../core/domain';
 import {
   ClientShipmentsPort,
+  GeoPort,
   TrackingPort,
   QuotePort,
   RatingPort,
@@ -17,29 +18,60 @@ import { CalificarModalComponent } from './components/calificar-modal.component'
 import { PinEnvioComponent } from './components/pin-envio.component';
 import { EnvioDetallePage, INTERVALO_TRAZABILIDAD_MS } from './envio-detalle.page';
 import { EnviosPage } from './envios.page';
-import { NuevoEnvioPage, VIGENCIA_COTIZACION_MS } from './nuevo-envio.page';
+import { ESPERA_AUTOCOTIZAR_MS, NuevoEnvioPage, VIGENCIA_COTIZACION_MS } from './nuevo-envio.page';
+import { ESPERA_BUSQUEDA_MS } from '../../shared/ui/campo-direccion.component';
 
-const COTIZACION = {
+const DESGLOSE = {
+  categoria: 'Moto Express' as const,
+  banderazo: 2000,
+  distancia: 24150,
+  tiempo: 3450,
+  recargoZona: 2000,
+  recargoNocturno: 0,
+  minimoAplicado: false,
+  total: 31600,
+};
+
+const COTIZACION: Cotizacion = {
   distanciaKm: 34.5,
-  tarifaBase: 5000,
-  tarifaTotal: 39500,
-  moneda: 'COP' as const,
+  tarifaBase: 2000,
+  tarifaTotal: 31600,
+  moneda: 'COP',
+  duracionMin: 69,
+  distanciaExacta: false,
+  categoria: 'Moto Express',
+  zona: { id: 4, nombre: 'Silvania' },
+  zonaOrigen: null,
+  desglose: DESGLOSE,
+  opciones: [
+    { categoria: 'Moto Express', tarifaTotal: 31600, minimoAplicado: false },
+    { categoria: 'Motocarro', tarifaTotal: 44300, minimoAplicado: false },
+    { categoria: 'Camioneta', tarifaTotal: 75500, minimoAplicado: false },
+  ],
+  nocturno: false,
+  origenCoords: null,
+  destinoCoords: null,
 };
 
 const ZONAS = [
-  { id: 1, nombre: 'Casco Urbano', tarifaBase: 5000 },
-  { id: 2, nombre: 'Vereda Pekín', tarifaBase: 7000 },
-  { id: 3, nombre: 'Vereda Novillero', tarifaBase: 7000 },
-  { id: 4, nombre: 'Silvania', tarifaBase: 9000 },
-  { id: 5, nombre: 'Pasca', tarifaBase: 9000 },
+  { id: 1, nombre: 'Casco Urbano', tarifaBase: 0 },
+  { id: 2, nombre: 'Vereda Pekín', tarifaBase: 1500 },
+  { id: 3, nombre: 'Vereda Novillero', tarifaBase: 2000 },
+  { id: 4, nombre: 'Silvania', tarifaBase: 2000 },
+  { id: 5, nombre: 'Pasca', tarifaBase: 2000 },
 ];
+
+const FUSA = { lat: 4.3369, lon: -74.3638 };
+const SILVANIA = { lat: 4.4036, lon: -74.3881 };
 
 function puertosNuevoEnvio() {
   return {
     zonas: { listar: vi.fn(async () => ZONAS) },
-    cotizar: { cotizar: vi.fn(async () => COTIZACION) },
+    cotizar: {
+      cotizar: vi.fn(async (s: SolicitudCotizacion): Promise<Cotizacion> => (void s, COTIZACION)),
+    },
     envios: {
-      crear: vi.fn(async () => buildEnvio({ id: 2, pin: '6175', tarifa: 39500 })),
+      crear: vi.fn(async () => buildEnvio({ id: 2, pin: '6175', tarifa: 31600 })),
       obtener: vi.fn(),
     },
   };
@@ -55,36 +87,58 @@ async function montarNuevo(p = puertosNuevoEnvio()) {
     ],
   });
   await r.estable();
-  return { ...r, p };
+  return { ...r, p, geo: TestBed.inject(GeoPort) as FakeGeo };
 }
 
 async function llenarCotizacion(el: HTMLElement, tipo = 1) {
   escribir(q(el, '#origen'), '  Casco   Urbano ');
   escribir(q(el, '#destino'), 'Silvania');
-  elegir(q(el, '#zona'), 1);
   elegir(q(el, '#tipoCarga'), tipo);
 }
+
+const confirmar = (el: HTMLElement) => botonPorTexto(el, /Confirmar por/);
 
 describe('CU-005 y CU-006 NuevoEnvioPage', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('Dado datos válidos, cuando cotizo, entonces muestra distancia estimada, tarifa base y total sin recalcular', async () => {
+  it('Dado direcciones escritas a mano, cuando cotizo, entonces muestra el precio, el desglose y el precio de cada vehículo', async () => {
     const { el, p, estable } = await montarNuevo();
     expect(el.querySelectorAll('#zona option')).toHaveLength(6);
-    expect(el.querySelectorAll('#lugares option')).toHaveLength(6);
+    expect(q(el, '#zona option').textContent).toContain('Detectar automáticamente');
     await llenarCotizacion(el);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
     expect(p.cotizar.cotizar).toHaveBeenCalledWith({
       origen: 'Casco Urbano',
       destino: 'Silvania',
-      idZona: 1,
+      idZona: null,
+      categoria: undefined,
+      origenCoords: null,
+      destinoCoords: null,
     });
     const texto = el.textContent?.replace(/\s/g, ' ') ?? '';
     expect(texto).toContain('34.5 km');
-    expect(texto).toContain('$ 5.000');
-    expect(texto).toContain('$ 39.500');
-    expect(texto).toContain('La distancia es una estimación');
+    expect(texto).toContain('1 h 9 min');
+    expect(texto).toContain('$ 31.600');
+    expect(texto).toContain('Silvania');
+    expect(texto).toContain('Banderazo (Moto Express)');
+    expect(texto).toContain('Recargo de zona · Silvania');
+    expect(texto).toContain('la distancia es aproximada');
+    // Cada tarjeta de vehículo muestra su precio; "Cualquiera" se cobra como moto
+    const precios = Array.from(el.querySelectorAll('fieldset label .numeros')).map((x) =>
+      x.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    expect(precios).toEqual(['$ 31.600', '$ 31.600', '$ 44.300', '$ 75.500']);
+    expect(confirmar(el).textContent).toMatch(/\$\s31\.600/);
+  });
+
+  it('Dado que el destino no se encuentra, envía la zona elegida a mano', async () => {
+    const { el, p, estable } = await montarNuevo();
+    await llenarCotizacion(el);
+    elegir(q(el, '#zona'), 4);
+    botonPorTexto(el, 'Cotizar').click();
+    await estable();
+    expect(p.cotizar.cotizar).toHaveBeenCalledWith(expect.objectContaining({ idZona: 4 }));
   });
 
   it('Dado una zona inexistente (404), cuando cotizo, entonces muestra el error y no calcula', async () => {
@@ -95,7 +149,24 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     botonPorTexto(el, 'Cotizar').click();
     await estable();
     expect(q(el, '[role="alert"]').textContent).toContain('La zona elegida no existe');
-    expect(el.textContent).not.toContain('Confirmar solicitud');
+    expect(el.textContent).not.toContain('Confirmar por');
+  });
+
+  it('Dado un destino fuera de cobertura, muestra un mensaje claro', async () => {
+    const p = puertosNuevoEnvio();
+    p.cotizar.cotizar.mockImplementation(
+      rechaza(
+        new ApiError(
+          400,
+          'La dirección de destino está fuera de nuestra zona de cobertura. Revisa la dirección o elígela en el mapa',
+        ),
+      ),
+    );
+    const { el, estable } = await montarNuevo(p);
+    await llenarCotizacion(el);
+    botonPorTexto(el, 'Cotizar').click();
+    await estable();
+    expect(q(el, '[role="alert"]').textContent).toContain('fuera de nuestra zona de cobertura');
   });
 
   it('Dado origen igual al destino, cuando cotizo, entonces lo señala y no llama a la API', async () => {
@@ -108,16 +179,15 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     expect(p.cotizar.cotizar).not.toHaveBeenCalled();
   });
 
-  it('Dado que falta el tipo de carga, cuando intento cotizar, entonces no se crea la solicitud y se señala el campo', async () => {
+  it('Dado que falta el tipo de carga, cuando confirmo, entonces no se crea la solicitud y se señala el campo', async () => {
     const { el, p, estable } = await montarNuevo();
     escribir(q(el, '#origen'), 'Casco Urbano');
     escribir(q(el, '#destino'), 'Silvania');
-    elegir(q(el, '#zona'), 1);
-    q(el, '#tipoCarga').dispatchEvent(new Event('blur'));
     botonPorTexto(el, 'Cotizar').click();
     await estable();
+    confirmar(el).click();
+    await estable();
     expect(q(el, '#tipo-error').textContent).toContain('tipo de carga');
-    expect(p.cotizar.cotizar).not.toHaveBeenCalled();
     expect(p.envios.crear).not.toHaveBeenCalled();
   });
 
@@ -128,22 +198,27 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     escribir(q(el, '#otroTipo'), 'Bicicleta');
     botonPorTexto(el, 'Cotizar').click();
     await estable();
-    botonPorTexto(el, 'Confirmar solicitud').click();
+    confirmar(el).click();
     await estable();
     expect(p.envios.crear).toHaveBeenCalledWith(
       expect.objectContaining({ tipoCarga: 'Bicicleta' }),
     );
   });
 
-  it('Dado una cotización vigente, cuando confirmo, entonces crea el envío y muestra el PIN grande con el aviso', async () => {
+  it('Dado una cotización vigente, cuando confirmo, entonces crea el envío y muestra el PIN grande', async () => {
     const { el, p, estable } = await montarNuevo();
     await llenarCotizacion(el);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
-    botonPorTexto(el, 'Confirmar solicitud').click();
+    confirmar(el).click();
     await estable();
     expect(p.envios.crear).toHaveBeenCalledWith(
-      expect.objectContaining({ idZona: 1, tipoCarga: 'Documentos', categoria: undefined }),
+      expect.objectContaining({
+        idZona: null,
+        tipoCarga: 'Documentos',
+        categoria: undefined,
+        origenCoords: null,
+      }),
     );
     expect(q(el, '[aria-label="PIN de entrega: 6 1 7 5"]')).toBeTruthy();
     expect(el.textContent).toContain('Entrega este PIN al conductor solo al recibir tu paquete.');
@@ -157,7 +232,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     await llenarCotizacion(el);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
-    botonPorTexto(el, 'Confirmar solicitud').click();
+    confirmar(el).click();
     await estable();
     expect(el.textContent).toContain('distinta de la cotizada');
     botonPorTexto(el, 'Pedir otro envío').click();
@@ -165,15 +240,15 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     expect(el.textContent).toContain('Nuevo envío');
   });
 
-  it('debería invalidar la cotización si cambia un campo', async () => {
+  it('debería invalidar la cotización si cambia una dirección', async () => {
     const { el, estable } = await montarNuevo();
     await llenarCotizacion(el);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
-    expect(botonPorTexto(el, 'Confirmar solicitud').disabled).toBe(false);
+    expect(confirmar(el).disabled).toBe(false);
     escribir(q(el, '#destino'), 'Pasca');
     await estable();
-    expect(botonPorTexto(el, 'Confirmar solicitud').disabled).toBe(true);
+    expect(confirmar(el).disabled).toBe(true);
     expect(el.textContent).toContain('Cotización vencida');
   });
 
@@ -184,10 +259,10 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     botonPorTexto(el, 'Cotizar').click();
     await vi.advanceTimersByTimeAsync(0);
     fixture.detectChanges();
-    expect(botonPorTexto(el, 'Confirmar solicitud').disabled).toBe(false);
+    expect(confirmar(el).disabled).toBe(false);
     await vi.advanceTimersByTimeAsync(VIGENCIA_COTIZACION_MS);
     fixture.detectChanges();
-    expect(botonPorTexto(el, 'Confirmar solicitud').disabled).toBe(true);
+    expect(confirmar(el).disabled).toBe(true);
   });
 
   it('debería mostrar el error de creación y permitir reintentar la carga de zonas', async () => {
@@ -198,30 +273,84 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     expect(el.textContent).toContain('No se pudieron cargar las zonas');
     botonPorTexto(el, 'Reintentar').click();
     await estable();
+    expect(el.querySelectorAll('#zona option')).toHaveLength(6);
     await llenarCotizacion(el);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
-    botonPorTexto(el, 'Confirmar solicitud').click();
+    confirmar(el).click();
     await estable();
     expect(q(el, '[role="alert"]').textContent).toContain('Algo salió mal');
   });
 
-  it('debería enviar la categoría de vehículo elegida al crear', async () => {
-    const { el, p, estable } = await montarNuevo();
+  it('al cambiar de vehículo recotiza solo y crea con la categoría y las notas', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { el, p, fixture } = await montarNuevo();
+    const paso = async (ms = 0) => {
+      await vi.advanceTimersByTimeAsync(ms);
+      fixture.detectChanges();
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.detectChanges();
+    };
     expect(q<HTMLInputElement>(el, '#categoria').checked).toBe(true);
     await llenarCotizacion(el);
+    botonPorTexto(el, 'Cotizar').click();
+    await paso();
     const camioneta = Array.from(el.querySelectorAll('fieldset label')).find((l) =>
       l.textContent?.includes('Camioneta'),
     );
     q<HTMLInputElement>(camioneta as HTMLElement, 'input[type=radio]').click();
+    await paso(ESPERA_AUTOCOTIZAR_MS);
+    expect(p.cotizar.cotizar).toHaveBeenCalledTimes(2);
+    expect(p.cotizar.cotizar).toHaveBeenLastCalledWith(
+      expect.objectContaining({ categoria: 'Camioneta' }),
+    );
+    expect(confirmar(el).textContent).toMatch(/\$\s75\.500/);
     escribir(q(el, '#notas'), '  Portería  ');
-    botonPorTexto(el, 'Cotizar').click();
-    await estable();
-    botonPorTexto(el, 'Confirmar solicitud').click();
-    await estable();
+    await paso();
+    confirmar(el).click();
+    await paso();
     expect(p.envios.crear).toHaveBeenCalledWith(
       expect.objectContaining({ categoria: 'Camioneta', notas: 'Portería' }),
     );
+  });
+
+  it('con las dos direcciones elegidas de las sugerencias cotiza solo, con coordenadas y vista del mapa', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { el, p, fixture, geo } = await montarNuevo();
+    const paso = async (ms = 0) => {
+      await vi.advanceTimersByTimeAsync(ms);
+      fixture.detectChanges();
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.detectChanges();
+    };
+    geo.resultados = [
+      {
+        nombre: 'Parque principal, Fusagasugá',
+        detalle: 'Parque principal, Fusagasugá, Cundinamarca',
+        coords: FUSA,
+      },
+    ];
+    escribir(q(el, '#origen'), 'Parque');
+    await paso(ESPERA_BUSQUEDA_MS);
+    expect(geo.buscar).toHaveBeenCalledWith('Parque');
+    (el.querySelector('[role="option"]') as HTMLElement).click();
+    await paso();
+    expect(q<HTMLInputElement>(el, '#origen').value).toBe('Parque principal, Fusagasugá');
+    expect(el.textContent).toContain('Ubicada en el mapa');
+    expect(p.cotizar.cotizar).not.toHaveBeenCalled();
+
+    geo.resultados = [{ nombre: 'Silvania', detalle: 'Silvania, Cundinamarca', coords: SILVANIA }];
+    escribir(q(el, '#destino'), 'Silvania');
+    await paso(ESPERA_BUSQUEDA_MS);
+    (el.querySelectorAll('[role="option"]')[0] as HTMLElement).click();
+    await paso(ESPERA_AUTOCOTIZAR_MS);
+    expect(p.cotizar.cotizar).toHaveBeenCalledWith(
+      expect.objectContaining({ origenCoords: FUSA, destinoCoords: SILVANIA, idZona: null }),
+    );
+    // Con el destino ubicado ya no se pide la zona, y aparece la vista previa del trayecto
+    expect(el.querySelector('#zona')).toBeNull();
+    expect(el.querySelector('ti-mapa-envio')).toBeTruthy();
+    expect(confirmar(el).disabled).toBe(false);
   });
 });
 

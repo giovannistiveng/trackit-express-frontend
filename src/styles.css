@@ -304,6 +304,22 @@
 .leaflet-container {
   font-family: inherit;
 }
+/* Nombre de la zona dentro de su círculo (editor y mapa de cobertura) */
+.leaflet-tooltip.etiqueta-zona {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: #1f6f4a;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-shadow:
+    0 0 3px #fff,
+    0 0 3px #fff,
+    0 0 3px #fff;
+}
+.leaflet-tooltip.etiqueta-zona::before {
+  display: none;
+}
 
 /* Transición entre pantallas (router con withViewTransitions) */
 ::view-transition-old(root),

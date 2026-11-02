@@ -8,7 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { Envio } from '../../core/domain';
+import { Envio, categoriasAtendibles } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { DriverBoardPort, DriverServicePort, LoggerPort } from '../../core/ports';
@@ -50,6 +50,14 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
                 ><span class="relative inline-flex size-2.5 rounded-full bg-exito"></span
               ></span>
               Se actualiza cada 15 segundos.
+            </p>
+            <p class="mt-1 text-sm text-piedra">
+              @if (vehiculo(); as v) {
+                Con tu {{ v }} ves pedidos de {{ atendibles() }} y los que no exigen vehículo.
+              } @else {
+                Solo ves pedidos sin vehículo definido.
+                <a routerLink="/conductor/perfil" class="btn-texto">Registra tu vehículo</a>
+              }
             </p>
           }
         </div>
@@ -220,6 +228,13 @@ export class TableroPage implements OnInit, OnDestroy {
   private sondeo: Sondeo<Envio[]> | null = null;
 
   protected readonly habilitado = computed(() => this.perfil.aprobado());
+  protected readonly vehiculo = computed(() => this.perfil.perfil()?.vehiculo?.categoria ?? null);
+  protected readonly atendibles = computed(() => {
+    const lista = categoriasAtendibles(this.vehiculo());
+    return lista.length > 1
+      ? `${lista.slice(0, -1).join(', ')} y ${lista.at(-1)}`
+      : (lista[0] ?? '');
+  });
   protected readonly fase = computed<FaseCarga>(() =>
     !this.cargado()
       ? 'cargando'

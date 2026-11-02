@@ -4,8 +4,10 @@ import {
   OnDestroy,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
@@ -20,24 +22,32 @@ import { RouterLink } from '@angular/router';
 import {
   CATEGORIAS_VEHICULO,
   CategoriaVehiculo,
+  Coordenadas,
   Cotizacion,
   Envio,
-  LUGARES_FRECUENTES,
+  Seguimiento,
   TIPOS_CARGA,
   Zona,
+  formatoDuracion,
   limpiarTexto,
 } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { LoggerPort, QuotePort, ShipmentsPort, ZonesPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
+import { CampoDireccionComponent } from '../../shared/ui/campo-direccion.component';
 import { mostrarError } from '../../shared/ui/campo-error';
-import { ToastService } from '../../shared/ui/toast.service';
-import { PinEnvioComponent } from './components/pin-envio.component';
 import { IconoComponent, NombreIcono } from '../../shared/ui/icono.component';
-import { formatoDuracion } from '../../core/domain';
+import { MapaEnvioComponent } from '../../shared/ui/mapa-envio.component';
+import { ToastService } from '../../shared/ui/toast.service';
+import { DesgloseTarifaComponent } from './components/desglose-tarifa.component';
+import { PinEnvioComponent } from './components/pin-envio.component';
 
 export const VIGENCIA_COTIZACION_MS = 15 * 60_000;
+/** Pausa antes de recotizar sola tras un cambio (dirección elegida, vehículo, zona). */
+export const ESPERA_AUTOCOTIZAR_MS = 500;
+/** Vehículo con el que se cotiza cuando el cliente elige "Cualquiera". */
+export const VEHICULO_POR_DEFECTO: CategoriaVehiculo = 'Moto Express';
 const OTRO = 'Otro';
 
 const textoValidator =
@@ -61,11 +71,20 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
   return otro.length >= 1 && otro.length <= 80 ? null : { tipoCarga: true };
 };
 
-/** CU-005 Cotización (paso 1) y CU-006 Solicitud de envío (paso 2). */
+/** CU-005 Cotización y CU-006 Solicitud de envío. */
 @Component({
   selector: 'ti-nuevo-envio',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, RouterLink, CopPipe, PinEnvioComponent, IconoComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    CopPipe,
+    PinEnvioComponent,
+    IconoComponent,
+    CampoDireccionComponent,
+    MapaEnvioComponent,
+    DesgloseTarifaComponent,
+  ],
   template: `
     <div class="contenedor-ancho max-w-5xl">
       @if (creado(); as envio) {
@@ -81,7 +100,8 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
           <p class="mt-5 font-semibold text-exito">Solicitud enviada</p>
           <h1 id="titulo-creado" class="mt-1">Tu envío #{{ envio.id }} está esperando conductor</h1>
           <p class="mt-3 text-piedra">
-            Te avisaremos cuando un conductor lo acepte. Mientras tanto, guarda tu PIN.
+            Avisamos a los conductores disponibles. Te notificaremos cuando uno lo acepte; mientras
+            tanto, guarda tu PIN.
           </p>
           <div class="tarjeta mx-auto mt-8 max-w-md border-2 border-tinta p-6 text-left">
             <p class="flex items-center gap-2 font-semibold">
@@ -98,8 +118,8 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
               role="status"
             >
               La tarifa final es {{ envio.tarifa | cop }}, distinta de la cotizada ({{
-                cotizacion()?.tarifaTotal | cop
-              }}), porque la distancia se recalculó al crear el envío.
+                precioElegido() | cop
+              }}), porque la ruta o el horario cambiaron al crear el envío.
             </p>
           }
           <dl
@@ -111,6 +131,8 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
             <dd class="font-medium">{{ envio.destino }}</dd>
             <dt class="text-piedra">Carga</dt>
             <dd class="font-medium">{{ envio.tipoCarga }}</dd>
+            <dt class="text-piedra">Vehículo</dt>
+            <dd class="font-medium">{{ envio.categoria ?? 'Cualquiera' }}</dd>
             <dt class="text-piedra">Tarifa</dt>
             <dd class="numeros font-bold">{{ envio.tarifa | cop }}</dd>
           </dl>
@@ -124,24 +146,20 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
       } @else {
         <h1>Nuevo envío</h1>
         <p class="mt-2 text-piedra">
-          Cotiza primero; la solicitud solo se confirma con una cotización vigente.
+          Busca las direcciones o márcalas en el mapa: el precio se calcula solo, según la distancia
+          real, el vehículo y la zona.
         </p>
 
-        <div class="mt-8 grid items-start gap-6 lg:grid-cols-[1fr_22rem]">
+        <div class="mt-8 grid items-start gap-6 lg:grid-cols-[1fr_23rem]">
           <form
             [formGroup]="form"
             (ngSubmit)="cotizar()"
             novalidate
             class="tarjeta space-y-5 p-5 sm:p-7"
           >
-            <datalist id="lugares">
-              @for (l of lugares; track l) {
-                <option [value]="l"></option>
-              }
-            </datalist>
             <div class="relative space-y-5 pl-9">
               <span
-                class="absolute bottom-10 left-[13px] top-10 w-0.5 border-l-2 border-dashed border-linea"
+                class="absolute bottom-16 left-[13px] top-10 w-0.5 border-l-2 border-dashed border-linea"
                 aria-hidden="true"
               ></span>
               <div class="relative">
@@ -151,16 +169,16 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                   ><ti-icono nombre="package" class="size-4"
                 /></span>
                 <label for="origen" class="etiqueta">Recoger en</label>
-                <input
-                  id="origen"
-                  class="campo"
+                <ti-campo-direccion
+                  idCampo="origen"
+                  etiqueta="recogida"
                   formControlName="origen"
-                  list="lugares"
-                  autocomplete="off"
-                  maxlength="200"
-                  placeholder="Dirección o lugar de recogida"
-                  [attr.aria-invalid]="err('origen')"
-                  [attr.aria-describedby]="err('origen') ? 'origen-error' : null"
+                  placeholder="Dirección, barrio o lugar de recogida"
+                  [conUbicacion]="true"
+                  [(coords)]="origenCoords"
+                  [zonas]="zonas()"
+                  [invalido]="err('origen')"
+                  [idError]="err('origen') ? 'origen-error' : null"
                 />
                 @if (err('origen')) {
                   <p id="origen-error" class="error-campo">Escribe entre 3 y 200 caracteres.</p>
@@ -173,16 +191,15 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                   ><ti-icono nombre="map-pin" class="size-4"
                 /></span>
                 <label for="destino" class="etiqueta">Entregar en</label>
-                <input
-                  id="destino"
-                  class="campo"
+                <ti-campo-direccion
+                  idCampo="destino"
+                  etiqueta="entrega"
                   formControlName="destino"
-                  list="lugares"
-                  autocomplete="off"
-                  maxlength="200"
-                  placeholder="Dirección o lugar de entrega"
-                  [attr.aria-invalid]="err('destino') || iguales()"
-                  [attr.aria-describedby]="err('destino') || iguales() ? 'destino-error' : null"
+                  placeholder="Dirección, barrio o lugar de entrega"
+                  [(coords)]="destinoCoords"
+                  [zonas]="zonas()"
+                  [invalido]="err('destino') || iguales()"
+                  [idError]="err('destino') || iguales() ? 'destino-error' : null"
                 />
                 @if (iguales()) {
                   <p id="destino-error" class="error-campo">
@@ -193,37 +210,47 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                 }
               </div>
             </div>
+
+            @if (rutaEnMapa(); as ruta) {
+              <ti-mapa-envio [seguimiento]="ruta" />
+            }
+
             <div class="grid gap-5 sm:grid-cols-2">
-              <div>
-                <label for="zona" class="etiqueta">Zona de tarifa</label>
-                <select
-                  id="zona"
-                  class="campo"
-                  formControlName="idZona"
-                  [attr.aria-invalid]="err('idZona')"
-                  [attr.aria-describedby]="err('idZona') ? 'zona-error' : 'zona-ayuda'"
-                >
-                  <option [ngValue]="null" disabled>
-                    {{ zonasCargando() ? 'Cargando zonas…' : 'Elige una zona' }}
-                  </option>
-                  @for (z of zonas(); track z.id) {
-                    <option [ngValue]="z.id">{{ z.nombre }} · base {{ z.tarifaBase | cop }}</option>
-                  }
-                </select>
-                @if (err('idZona')) {
-                  <p id="zona-error" class="error-campo">Elige la zona del envío.</p>
-                } @else {
-                  <p id="zona-ayuda" class="ayuda">Define la tarifa base.</p>
-                }
-                @if (errorZonas()) {
-                  <p class="error-campo">
-                    No se pudieron cargar las zonas.
-                    <button type="button" class="btn-texto" (click)="cargarZonas()">
-                      Reintentar
-                    </button>
+              @if (!destinoCoords()) {
+                <div>
+                  <label for="zona" class="etiqueta"
+                    >Zona del destino
+                    <span class="font-normal text-piedra">(si no aparece en el mapa)</span></label
+                  >
+                  <select
+                    id="zona"
+                    class="campo"
+                    formControlName="idZona"
+                    aria-describedby="zona-ayuda"
+                  >
+                    <option [ngValue]="null">
+                      {{ zonasCargando() ? 'Cargando zonas…' : 'Detectar automáticamente' }}
+                    </option>
+                    @for (z of zonas(); track z.id) {
+                      <option [ngValue]="z.id">
+                        {{ z.nombre
+                        }}{{ z.tarifaBase > 0 ? ' · recargo ' + (z.tarifaBase | cop) : '' }}
+                      </option>
+                    }
+                  </select>
+                  <p id="zona-ayuda" class="ayuda">
+                    Solo se usa si no encontramos la dirección de destino.
                   </p>
-                }
-              </div>
+                  @if (errorZonas()) {
+                    <p class="error-campo">
+                      No se pudieron cargar las zonas.
+                      <button type="button" class="btn-texto" (click)="cargarZonas()">
+                        Reintentar
+                      </button>
+                    </p>
+                  }
+                </div>
+              }
               <div>
                 <label for="tipoCarga" class="etiqueta">Tipo de carga</label>
                 <select
@@ -260,7 +287,7 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
               <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 @for (op of opcionesVehiculo; track op.valor) {
                   <label
-                    class="flex min-h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 p-2 text-center text-sm font-semibold transition-colors"
+                    class="flex min-h-20 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border-2 p-2 text-center text-sm font-semibold transition-colors"
                     [class]="
                       valores().categoria === op.valor
                         ? 'border-marca bg-marca-suave text-marca'
@@ -276,10 +303,18 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                     />
                     <ti-icono [nombre]="op.icono" class="size-6" />
                     {{ op.texto }}
+                    @if (precioDe(op.valor); as p) {
+                      <span class="numeros text-xs font-bold text-tinta">{{ p | cop }}</span>
+                    } @else {
+                      <span class="text-xs font-normal text-piedra">{{ op.ayuda }}</span>
+                    }
                   </label>
                 }
               </div>
-              <p class="ayuda">Si eliges uno, solo lo verán conductores con ese vehículo.</p>
+              <p class="ayuda">
+                Un vehículo más grande también puede llevar tu pedido. "Cualquiera" se cobra como
+                Moto Express.
+              </p>
             </fieldset>
             <div>
               <label for="notas" class="etiqueta"
@@ -322,46 +357,57 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                 aria-labelledby="titulo-cotizacion"
                 aria-live="polite"
               >
-                <div class="p-5 sm:p-6">
-                  <h2 id="titulo-cotizacion" class="text-white">
-                    {{ vigente() ? 'Cotización' : 'Cotización vencida' }}
+                <div class="p-5 sm:p-6" [class.opacity-60]="!vigente() || cotizando()">
+                  <p class="flex items-center justify-between text-sm text-white/80">
+                    <span>{{ vehiculoCotizado() }}</span>
+                    @if (c.zona) {
+                      <span class="insignia bg-white/15 text-white"
+                        ><ti-icono nombre="map-pin" class="size-3.5" /> {{ c.zona.nombre }}</span
+                      >
+                    }
+                  </p>
+                  <h2 id="titulo-cotizacion" class="mt-1 text-white">
+                    {{ vigente() ? 'Tu precio' : 'Cotización vencida' }}
                   </h2>
+                  <p class="numeros mt-1 text-4xl font-extrabold" style="font-stretch: 112%">
+                    {{ precioElegido() | cop }}
+                  </p>
+                  <p class="mt-1 flex flex-wrap gap-x-4 text-sm text-white/85">
+                    <span class="inline-flex items-center gap-1"
+                      ><ti-icono nombre="route" class="size-4" /> {{ c.distanciaKm }} km</span
+                    >
+                    @if (c.duracionMin) {
+                      <span class="inline-flex items-center gap-1"
+                        ><ti-icono nombre="timer" class="size-4" />
+                        {{ duracion(c.duracionMin) }}</span
+                      >
+                    }
+                    @if (c.nocturno) {
+                      <span class="inline-flex items-center gap-1"
+                        ><ti-icono nombre="moon" class="size-4" /> Horario nocturno</span
+                      >
+                    }
+                  </p>
                   @if (!vigente()) {
-                    <p class="mt-1 text-sm text-white/80">
+                    <p class="mt-2 text-sm text-white/80">
                       Cambiaste los datos o pasaron 15 minutos. Vuelve a cotizar para confirmar.
                     </p>
                   }
-                  <dl
-                    class="numeros mt-4 grid grid-cols-[1fr_auto] gap-y-2"
-                    [class.opacity-60]="!vigente()"
-                  >
-                    <dt class="flex items-center gap-2 text-white/80">
-                      <ti-icono nombre="route" class="size-4" /> Distancia estimada
-                    </dt>
-                    <dd class="text-right">{{ c.distanciaKm }} km</dd>
-                    @if (c.duracionMin) {
-                      <dt class="flex items-center gap-2 text-white/80">
-                        <ti-icono nombre="timer" class="size-4" /> Tiempo del trayecto
-                      </dt>
-                      <dd class="text-right">{{ duracion(c.duracionMin) }}</dd>
-                    }
-                    <dt class="flex items-center gap-2 text-white/80">
-                      <ti-icono nombre="map-pin" class="size-4" /> Tarifa base de la zona
-                    </dt>
-                    <dd class="text-right">{{ c.tarifaBase | cop }}</dd>
-                    <dt class="border-t border-white/20 pt-3 font-bold">Total</dt>
-                    <dd
-                      class="border-t border-white/20 pt-3 text-right text-3xl font-extrabold"
-                      style="font-stretch: 112%"
-                    >
-                      {{ c.tarifaTotal | cop }}
-                    </dd>
-                  </dl>
-                  <p class="mt-3 text-sm text-white/75">
+                  @if (c.desglose) {
+                    <ti-desglose-tarifa
+                      class="mt-4 block"
+                      [desglose]="c.desglose"
+                      [distanciaKm]="c.distanciaKm"
+                      [minutos]="c.duracionMin ?? null"
+                      [zona]="c.zona?.nombre ?? null"
+                      tono="oscuro"
+                    />
+                  }
+                  <p class="mt-3 text-xs text-white/75">
                     @if (c.distanciaExacta === false) {
                       No encontramos alguna dirección en el mapa: la distancia es aproximada.
                     } @else {
-                      La distancia es una estimación.
+                      Distancia y tiempo por carretera (OpenStreetMap).
                     }
                   </p>
                 </div>
@@ -369,13 +415,13 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                   <button
                     type="button"
                     class="btn-acento w-full"
-                    [disabled]="!vigente() || creando()"
+                    [disabled]="!vigente() || creando() || cotizando()"
                     (click)="confirmar()"
                   >
                     @if (creando()) {
                       <ti-icono nombre="loader" class="animate-spin" /> Enviando solicitud…
                     } @else {
-                      <ti-icono nombre="check" /> Confirmar solicitud
+                      <ti-icono nombre="check" /> Confirmar por {{ precioElegido() | cop }}
                     }
                   </button>
                 </div>
@@ -386,12 +432,19 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
               >
                 <span
                   class="mx-auto grid size-14 place-items-center rounded-full bg-marca-suave text-marca"
-                  ><ti-icono nombre="circle-dollar" class="size-7"
-                /></span>
-                <p class="mt-4 font-semibold">Tu cotización aparecerá aquí</p>
+                >
+                  @if (cotizando()) {
+                    <ti-icono nombre="loader" class="size-7 animate-spin" />
+                  } @else {
+                    <ti-icono nombre="calculator" class="size-7" />
+                  }
+                </span>
+                <p class="mt-4 font-semibold">
+                  {{ cotizando() ? 'Calculando tu precio…' : 'Tu precio aparecerá aquí' }}
+                </p>
                 <p class="mt-1 text-sm text-piedra">
-                  Llena los datos y pulsa Cotizar. Verás la distancia, el tiempo estimado y el
-                  precio.
+                  Elige las direcciones de las sugerencias o en el mapa y lo calculamos al instante.
+                  También puedes escribirlas y pulsar Cotizar.
                 </p>
               </section>
             }
@@ -410,19 +463,24 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
 
-  protected readonly lugares = LUGARES_FRECUENTES;
   protected readonly tiposCarga = TIPOS_CARGA;
-  protected readonly categorias = CATEGORIAS_VEHICULO;
   protected readonly opcionesVehiculo: {
     valor: CategoriaVehiculo | '';
     texto: string;
     icono: NombreIcono;
+    ayuda: string;
   }[] = [
-    { valor: '', texto: 'Cualquiera', icono: 'sparkles' },
+    { valor: '', texto: 'Cualquiera', icono: 'sparkles', ayuda: 'El más rápido' },
     ...CATEGORIAS_VEHICULO.map((c) => ({
       valor: c,
       texto: c,
       icono: (c === 'Camioneta' ? 'truck' : 'bike') as NombreIcono,
+      ayuda:
+        c === 'Moto Express'
+          ? 'Paquetes pequeños'
+          : c === 'Motocarro'
+            ? 'Cajas y bultos'
+            : 'Carga grande',
     })),
   ];
   protected readonly duracion = formatoDuracion;
@@ -431,7 +489,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     {
       origen: ['', [Validators.required, textoValidator(3, 200)]],
       destino: ['', [Validators.required, textoValidator(3, 200)]],
-      idZona: this.fb.control<number | null>(null, Validators.required),
+      idZona: this.fb.control<number | null>(null),
       tipoCarga: [''],
       otroTipo: [''],
       categoria: this.fb.control<CategoriaVehiculo | ''>(''),
@@ -442,18 +500,23 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
   protected readonly valores = toSignal(this.form.valueChanges, {
     initialValue: this.form.getRawValue(),
   });
+  protected readonly origenCoords = signal<Coordenadas | null>(null);
+  protected readonly destinoCoords = signal<Coordenadas | null>(null);
 
   protected readonly zonas = signal<Zona[]>([]);
   protected readonly zonasCargando = signal(false);
   protected readonly errorZonas = signal(false);
   protected readonly cotizacion = signal<Cotizacion | null>(null);
   private readonly firmaCotizada = signal('');
+  private readonly textosCotizados = signal('');
   private readonly vencida = signal(false);
   protected readonly cotizando = signal(false);
   protected readonly creando = signal(false);
   protected readonly error = signal('');
   protected readonly creado = signal<Envio | null>(null);
   private temporizadorVigencia: ReturnType<typeof setTimeout> | null = null;
+  private temporizadorAuto: ReturnType<typeof setTimeout> | null = null;
+  private consulta = 0;
 
   protected readonly esOtro = computed(() => this.valores().tipoCarga === OTRO);
   protected readonly iguales = computed(() => {
@@ -463,17 +526,56 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       (this.form.controls.destino.touched || this.form.controls.destino.dirty)
     );
   });
+  private readonly firmaActual = computed(() =>
+    this.firma(this.valores(), this.origenCoords(), this.destinoCoords()),
+  );
   protected readonly vigente = computed(
     () =>
-      this.cotizacion() !== null &&
-      !this.vencida() &&
-      this.firmaCotizada() === this.firma(this.valores()),
+      this.cotizacion() !== null && !this.vencida() && this.firmaCotizada() === this.firmaActual(),
+  );
+  /** Precio del vehículo elegido (todas las opciones vienen en la misma cotización). */
+  protected readonly precioElegido = computed(() => {
+    const c = this.cotizacion();
+    if (!c) return 0;
+    const cat = this.valores().categoria || VEHICULO_POR_DEFECTO;
+    return c.opciones?.find((o) => o.categoria === cat)?.tarifaTotal ?? c.tarifaTotal;
+  });
+  protected readonly vehiculoCotizado = computed(
+    () => this.valores().categoria || 'Cualquier vehículo',
   );
   protected readonly tarifaCambio = computed(() => {
-    const c = this.cotizacion();
     const e = this.creado();
-    return !!c && !!e && c.tarifaTotal !== e.tarifa;
+    return !!this.cotizacion() && !!e && this.precioElegido() !== e.tarifa;
   });
+  /** Vista previa del trayecto cuando las dos direcciones están en el mapa. */
+  protected readonly rutaEnMapa = computed<Seguimiento | null>(() => {
+    const o = this.cotizacion()?.origenCoords ?? this.origenCoords();
+    const d = this.cotizacion()?.destinoCoords ?? this.destinoCoords();
+    if (!o || !d) return null;
+    const v = this.valores();
+    return {
+      idEnvio: 0,
+      estado: 'Pendiente',
+      origen: { direccion: v.origen ?? '', coords: o },
+      destino: { direccion: v.destino ?? '', coords: d },
+      ultima: null,
+      recorrido: [],
+      enVivo: false,
+      distanciaRestanteKm: null,
+      etaMinutos: null,
+    };
+  });
+
+  constructor() {
+    // Recotiza sola cuando hay datos suficientes y algo relevante cambió
+    effect(() => {
+      const firma = this.firmaActual();
+      const listo = this.listoParaAutocotizar();
+      untracked(() => {
+        if (listo && firma !== this.firmaCotizada()) this.programarCotizacion();
+      });
+    });
+  }
 
   ngOnInit(): void {
     void this.cargarZonas();
@@ -481,6 +583,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.temporizadorVigencia) clearTimeout(this.temporizadorVigencia);
+    if (this.temporizadorAuto) clearTimeout(this.temporizadorAuto);
   }
 
   async cargarZonas(): Promise<void> {
@@ -495,7 +598,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     }
   }
 
-  protected err(c: 'origen' | 'destino' | 'idZona'): boolean {
+  protected err(c: 'origen' | 'destino'): boolean {
     return mostrarError(this.form.controls[c]);
   }
 
@@ -505,34 +608,80 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     return tocado && !!this.form.errors?.['tipoCarga'];
   }
 
-  async cotizar(): Promise<void> {
-    this.form.markAllAsTouched();
-    this.valores(); // fuerza recálculo de errores
+  protected precioDe(valor: CategoriaVehiculo | ''): number | null {
+    const c = this.cotizacion();
+    if (!c?.opciones) return null;
+    return (
+      c.opciones.find((o) => o.categoria === (valor || VEHICULO_POR_DEFECTO))?.tarifaTotal ?? null
+    );
+  }
+
+  /**
+   * Con las dos direcciones ubicadas en el mapa no hace falta pulsar Cotizar. Si se escribieron a
+   * mano, solo se recotiza sola cuando cambia el vehículo o la zona (no mientras se escribe).
+   */
+  private listoParaAutocotizar(): boolean {
+    const v = this.valores();
+    const rutaValida =
+      this.form.controls.origen.valid &&
+      this.form.controls.destino.valid &&
+      !this.form.errors?.['iguales'];
+    const ubicadas = !!this.origenCoords() && !!this.destinoCoords();
+    const mismosTextos = this.textosCotizados() === this.textos(v.origen, v.destino);
+    return rutaValida && (ubicadas || (this.cotizacion() !== null && mismosTextos));
+  }
+
+  private textos(o = '', d = ''): string {
+    return `${limpiarTexto(o).toLowerCase()}|${limpiarTexto(d).toLowerCase()}`;
+  }
+
+  private programarCotizacion(): void {
+    if (this.temporizadorAuto) clearTimeout(this.temporizadorAuto);
+    this.temporizadorAuto = setTimeout(() => void this.cotizar(false), ESPERA_AUTOCOTIZAR_MS);
+  }
+
+  /** Con `marcar` (botón Cotizar) se muestran los errores de todos los campos. */
+  async cotizar(marcar = true): Promise<void> {
+    if (this.temporizadorAuto) clearTimeout(this.temporizadorAuto);
+    if (marcar) {
+      this.form.controls.origen.markAsTouched();
+      this.form.controls.destino.markAsTouched();
+    }
     this.form.updateValueAndValidity();
-    if (this.form.invalid || this.cotizando()) return;
+    const { origen, destino } = this.form.controls;
+    if (origen.invalid || destino.invalid || this.form.errors?.['iguales']) return;
     const v = this.form.getRawValue();
+    const firma = this.firmaActual();
+    const n = ++this.consulta;
     this.cotizando.set(true);
     this.error.set('');
     try {
       const c = await this.quotePort.cotizar({
         origen: limpiarTexto(v.origen),
         destino: limpiarTexto(v.destino),
-        idZona: v.idZona as number,
+        idZona: this.destinoCoords() ? null : v.idZona,
+        categoria: v.categoria || undefined,
+        origenCoords: this.origenCoords(),
+        destinoCoords: this.destinoCoords(),
       });
+      if (n !== this.consulta) return;
       this.cotizacion.set(c);
-      this.firmaCotizada.set(this.firma(v));
+      this.firmaCotizada.set(firma);
+      this.textosCotizados.set(this.textos(v.origen, v.destino));
       this.vencida.set(false);
       if (this.temporizadorVigencia) clearTimeout(this.temporizadorVigencia);
       this.temporizadorVigencia = setTimeout(() => this.vencida.set(true), VIGENCIA_COTIZACION_MS);
     } catch (e) {
+      if (n !== this.consulta) return;
       this.cotizacion.set(null);
+      this.firmaCotizada.set(firma);
       this.error.set(
         e instanceof ApiError && e.status === 404
           ? 'La zona elegida no existe. Elige otra zona.'
           : this.mapper.traducir(e),
       );
     } finally {
-      this.cotizando.set(false);
+      if (n === this.consulta) this.cotizando.set(false);
     }
   }
 
@@ -548,7 +697,9 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       const envio = await this.shipments.crear({
         origen: limpiarTexto(v.origen),
         destino: limpiarTexto(v.destino),
-        idZona: v.idZona as number,
+        idZona: this.destinoCoords() ? null : v.idZona,
+        origenCoords: this.origenCoords(),
+        destinoCoords: this.destinoCoords(),
         tipoCarga: this.tipoCargaFinal(),
         categoria: v.categoria || undefined,
         notas: v.notas.trim() || undefined,
@@ -569,6 +720,9 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
   nuevo(): void {
     this.creado.set(null);
     this.cotizacion.set(null);
+    this.firmaCotizada.set('');
+    this.origenCoords.set(null);
+    this.destinoCoords.set(null);
     this.form.reset();
   }
 
@@ -577,21 +731,19 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     return v.tipoCarga === OTRO ? limpiarTexto(v.otroTipo) : v.tipoCarga;
   }
 
+  /** Lo que define el precio: textos, coordenadas, zona (si aplica) y vehículo. */
   private firma(
-    v: Partial<{
-      origen: string;
-      destino: string;
-      idZona: number | null;
-      tipoCarga: string;
-      otroTipo: string;
-    }>,
+    v: Partial<{ origen: string; destino: string; idZona: number | null; categoria: string }>,
+    o: Coordenadas | null,
+    d: Coordenadas | null,
   ): string {
     return JSON.stringify([
       limpiarTexto(v.origen ?? '').toLowerCase(),
       limpiarTexto(v.destino ?? '').toLowerCase(),
-      v.idZona ?? null,
-      v.tipoCarga ?? '',
-      v.tipoCarga === OTRO ? limpiarTexto(v.otroTipo ?? '') : '',
+      o,
+      d,
+      d ? null : (v.idZona ?? null),
+      v.categoria ?? '',
     ]);
   }
 }

@@ -10,7 +10,9 @@ import { Observable, filter, firstValueFrom, map } from 'rxjs';
 import {
   CategoriaVehiculo,
   ConductorPostulante,
+  Coordenadas,
   Cotizacion,
+  DatosZona,
   Envio,
   EnvioAdmin,
   EstadisticasPublicas,
@@ -29,6 +31,9 @@ import {
   ResumenConductor,
   Seguimiento,
   SolicitudCotizacion,
+  SugerenciaDireccion,
+  TarifaVehiculo,
+  TarifasPublicas,
   TipoDocumento,
   Ubicacion,
   Usuario,
@@ -52,6 +57,7 @@ import {
   DriverStatsPort,
   EventoLog,
   EvidenceStoragePort,
+  GeoPort,
   LocationTransportPort,
   LogTransportPort,
   NotificationsPort,
@@ -73,8 +79,11 @@ import {
   ApiEnvioAdmin,
   ApiNotificacion,
   ApiPerfil,
+  ApiCotizacion,
   ApiSeguimiento,
+  ApiTarifaVehiculo,
   ApiUsuarioLogin,
+  ApiZona,
 } from './backend.types';
 import {
   aCategoria,
@@ -85,19 +94,12 @@ import {
   aNotificacion,
   aPerfil,
   aPostulante,
+  aCotizacion,
   aSeguimiento,
+  aTarifaVehiculo,
   aUsuario,
+  aZona,
 } from './mappers';
-
-interface ApiZona {
-  id_zona: number;
-  nombre_zona: string;
-  tarifa_base: number | string;
-}
-
-function aZona(z: ApiZona): Zona {
-  return { id: z.id_zona, nombre: z.nombre_zona, tarifaBase: Number(z.tarifa_base) };
-}
 
 function validarId(id: number): void {
   if (!esIdValido(id)) throw new ApiError(400, `Id de envío inválido: ${id}`);
@@ -160,23 +162,45 @@ export class HttpQuoteAdapter implements QuotePort {
 
   async cotizar(s: SolicitudCotizacion): Promise<Cotizacion> {
     const r = await firstValueFrom(
-      this.http.post<{
-        distancia_km: number;
-        tarifa_base: number;
-        tarifa_total: number;
-        duracion_estimada_min?: number;
-        distancia_exacta?: boolean;
-      }>(this.url('/cotizar/cotizar'), { origen: s.origen, destino: s.destino, id_zona: s.idZona }),
+      this.http.post<ApiCotizacion>(this.url('/cotizar/cotizar'), cuerpoRuta(s)),
     );
-    const c: Cotizacion = {
-      distanciaKm: Number(r.distancia_km),
-      tarifaBase: Number(r.tarifa_base),
-      tarifaTotal: Number(r.tarifa_total),
-      moneda: 'COP',
-    };
-    if (r.duracion_estimada_min !== undefined) c.duracionMin = r.duracion_estimada_min;
-    if (r.distancia_exacta !== undefined) c.distanciaExacta = r.distancia_exacta;
-    return c;
+    return aCotizacion(r);
+  }
+}
+
+/** Cuerpo común de cotizar y crear: textos, coordenadas si las hay, zona solo si hace falta. */
+function cuerpoRuta(s: SolicitudCotizacion): Record<string, unknown> {
+  const cuerpo: Record<string, unknown> = { origen: s.origen, destino: s.destino };
+  if (s.idZona) cuerpo['id_zona'] = s.idZona;
+  if (s.categoria) cuerpo['categoria'] = s.categoria;
+  if (s.origenCoords) cuerpo['origen_coords'] = s.origenCoords;
+  if (s.destinoCoords) cuerpo['destino_coords'] = s.destinoCoords;
+  return cuerpo;
+}
+
+@Injectable({ providedIn: 'root' })
+export class HttpGeoAdapter implements GeoPort {
+  private readonly http = inject(HttpClient);
+  private readonly url = apiUrl();
+
+  async buscar(texto: string): Promise<SugerenciaDireccion[]> {
+    const q = texto.trim();
+    if (q.length < 3) return [];
+    const r = await firstValueFrom(
+      this.http.get<{ resultados: SugerenciaDireccion[] }>(this.url('/geo/buscar'), {
+        params: { q },
+      }),
+    );
+    return r.resultados;
+  }
+
+  async inversa(p: Coordenadas): Promise<SugerenciaDireccion | null> {
+    const r = await firstValueFrom(
+      this.http.get<{ resultado: SugerenciaDireccion | null }>(this.url('/geo/inversa'), {
+        params: { lat: String(p.lat), lon: String(p.lon) },
+      }),
+    );
+    return r.resultado;
   }
 }
 
@@ -188,13 +212,7 @@ export class HttpShipmentsAdapter implements ShipmentsPort {
   private readonly url = apiUrl();
 
   async crear(e: NuevoEnvio): Promise<Envio> {
-    const cuerpo: Record<string, unknown> = {
-      origen: e.origen,
-      destino: e.destino,
-      tipo_carga: e.tipoCarga,
-      id_zona: e.idZona,
-    };
-    if (e.categoria) cuerpo['categoria'] = e.categoria;
+    const cuerpo: Record<string, unknown> = { ...cuerpoRuta(e), tipo_carga: e.tipoCarga };
     if (e.notas?.trim()) cuerpo['notas'] = e.notas.trim();
     const r = await firstValueFrom(
       this.http.post<{ envio: ApiEnvio }>(this.url('/envios/crear'), cuerpo),
@@ -620,6 +638,21 @@ export class HttpPublicSiteAdapter implements PublicSitePort {
     return (await firstValueFrom(this.http.get<ApiZona[]>(this.url('/publico/zonas')))).map(aZona);
   }
 
+  async tarifas(): Promise<TarifasPublicas> {
+    const r = await firstValueFrom(
+      this.http.get<{
+        tarifas: ApiTarifaVehiculo[];
+        recargo_nocturno: number;
+        horario_nocturno: string;
+      }>(this.url('/publico/tarifas')),
+    );
+    return {
+      tarifas: r.tarifas.map(aTarifaVehiculo),
+      recargoNocturno: r.recargo_nocturno,
+      horarioNocturno: r.horario_nocturno,
+    };
+  }
+
   async contactar(m: MensajeContacto): Promise<void> {
     const cuerpo: Record<string, string> = {
       nombre: m.nombre,
@@ -667,6 +700,41 @@ export class HttpAdminOperationsAdapter implements AdminOperationsPort {
     return aZona(r.zona);
   }
 
+  async zonas(): Promise<Zona[]> {
+    return (await firstValueFrom(this.http.get<ApiZona[]>(this.url('/admin/zonas')))).map(aZona);
+  }
+
+  async crearZona(d: DatosZona): Promise<Zona> {
+    const r = await firstValueFrom(
+      this.http.post<{ zona: ApiZona }>(this.url('/admin/zonas'), cuerpoZona(d)),
+    );
+    return aZona(r.zona);
+  }
+
+  async actualizarZona(idZona: number, cambios: Partial<DatosZona>): Promise<Zona> {
+    const r = await firstValueFrom(
+      this.http.put<{ zona: ApiZona }>(this.url(`/admin/zonas/${idZona}`), cuerpoZona(cambios)),
+    );
+    return aZona(r.zona);
+  }
+
+  async tarifasVehiculo(): Promise<TarifaVehiculo[]> {
+    const r = await firstValueFrom(
+      this.http.get<{ tarifas: ApiTarifaVehiculo[] }>(this.url('/publico/tarifas')),
+    );
+    return r.tarifas.map(aTarifaVehiculo);
+  }
+
+  async actualizarTarifaVehiculo(t: TarifaVehiculo): Promise<TarifaVehiculo> {
+    const r = await firstValueFrom(
+      this.http.put<{ tarifa: ApiTarifaVehiculo }>(
+        this.url(`/admin/tarifas/${encodeURIComponent(t.categoria)}`),
+        { banderazo: t.banderazo, por_km: t.porKm, por_minuto: t.porMinuto, minimo: t.minimo },
+      ),
+    );
+    return aTarifaVehiculo(r.tarifa);
+  }
+
   async mensajes(pendientes: boolean, pagina: number): Promise<Pagina<MensajeContactoRecibido>> {
     const params: Record<string, string> = { pagina: String(pagina), tamano: '20' };
     if (pendientes) params['pendientes'] = 'true';
@@ -679,6 +747,18 @@ export class HttpAdminOperationsAdapter implements AdminOperationsPort {
   async atenderMensaje(id: number): Promise<void> {
     await firstValueFrom(this.http.post(this.url(`/admin/contactos/${id}/atender`), {}));
   }
+}
+
+/** Cuerpo de zona para el backend; solo los campos presentes. */
+function cuerpoZona(d: Partial<DatosZona>): Record<string, unknown> {
+  const c: Record<string, unknown> = {};
+  if (d.nombre !== undefined) c['nombre_zona'] = d.nombre;
+  if (d.tarifaBase !== undefined) c['recargo'] = d.tarifaBase;
+  if (d.centro !== undefined) c['centro'] = d.centro;
+  if (d.radioKm !== undefined) c['radio_km'] = d.radioKm;
+  if (d.activa !== undefined) c['activa'] = d.activa;
+  if (d.descripcion !== undefined) c['descripcion'] = d.descripcion ?? '';
+  return c;
 }
 
 // ---------------------------------------------------------------- Logs

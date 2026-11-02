@@ -14,7 +14,14 @@ import {
 } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { SessionService } from '../../core/auth/session.service';
-import { ASUNTOS_CONTACTO, AsuntoContacto, EstadisticasPublicas, Zona } from '../../core/domain';
+import {
+  ASUNTOS_CONTACTO,
+  AsuntoContacto,
+  EstadisticasPublicas,
+  TarifaVehiculo,
+  Zona,
+  precioEstimado,
+} from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { LoggerPort, PublicSitePort } from '../../core/ports';
 import { ContadorDirective } from '../../shared/directives/contador.directive';
@@ -28,8 +35,14 @@ import { PlacaComponent } from '../../shared/ui/placa.component';
 import { SitioCabeceraComponent } from './sitio-cabecera.component';
 import { SitioPieComponent } from './sitio-pie.component';
 
-/** Costo por kilómetro que suma el backend a la tarifa base de la zona. */
-export const COSTO_KM = 1000;
+/** Minutos por kilómetro para la calculadora (≈ 30 km/h en la región). */
+export const MINUTOS_POR_KM = 2;
+/** Tarifas de referencia si el backend no responde (mismas que la migración 003). */
+export const TARIFAS_REFERENCIA: TarifaVehiculo[] = [
+  { categoria: 'Moto Express', banderazo: 2000, porKm: 700, porMinuto: 50, minimo: 4500 },
+  { categoria: 'Motocarro', banderazo: 4000, porKm: 950, porMinuto: 80, minimo: 8000 },
+  { categoria: 'Camioneta', banderazo: 10000, porKm: 1600, porMinuto: 120, minimo: 18000 },
+];
 
 interface Paso {
   icono: NombreIcono;
@@ -112,7 +125,7 @@ const GARANTIAS: { icono: NombreIcono; titulo: string; texto: string }[] = [
   {
     icono: 'circle-dollar',
     titulo: 'Precio claro',
-    texto: 'Tarifa base de la zona más $1.000 por km. Lo ves antes de confirmar.',
+    texto: 'Según la distancia real, el vehículo y la zona. Lo ves antes de confirmar.',
   },
   {
     icono: 'star',
@@ -124,7 +137,7 @@ const GARANTIAS: { icono: NombreIcono; titulo: string; texto: string }[] = [
 const PREGUNTAS = [
   {
     p: '¿Cómo se calcula la tarifa?',
-    r: 'Es la tarifa base de la zona de destino más $1.000 por kilómetro recorrido. La distancia se calcula con OpenStreetMap y la ves antes de confirmar el envío.',
+    r: 'Se suma un banderazo, los kilómetros y los minutos del trayecto según el vehículo (moto, motocarro o camioneta), con una tarifa mínima para viajes cortos. Algunas zonas alejadas tienen un pequeño recargo y de 8:00 p. m. a 6:00 a. m. hay un recargo nocturno del 20 %. La distancia se calcula por carretera con OpenStreetMap y ves el precio con su desglose antes de confirmar.',
   },
   {
     p: '¿Para qué sirve el PIN?',
@@ -474,13 +487,26 @@ const PREGUNTAS = [
             <p class="antetitulo">Cobertura y tarifas</p>
             <h2 class="mt-3 text-3xl font-extrabold sm:text-4xl">Precios claros, sin sorpresas</h2>
             <p class="mt-4 text-lg text-piedra">
-              Pagas la tarifa base de la zona más {{ costoKm | cop }} por kilómetro. Calcula un
-              valor aproximado:
+              Pagas por la distancia real y el vehículo que necesitas, con una tarifa mínima para
+              viajes cortos. Calcula un valor aproximado:
             </p>
 
             @if (zonas().length > 0) {
               <div class="tarjeta mt-8 p-6">
                 <div class="grid gap-5 sm:grid-cols-2">
+                  <div>
+                    <label for="calc-vehiculo" class="etiqueta">Vehículo</label>
+                    <select
+                      id="calc-vehiculo"
+                      class="campo"
+                      [ngModel]="vehiculoCalculo()"
+                      (ngModelChange)="vehiculoCalculo.set($event)"
+                    >
+                      @for (t of tarifas(); track t.categoria) {
+                        <option [value]="t.categoria">{{ t.categoria }}</option>
+                      }
+                    </select>
+                  </div>
                   <div>
                     <label for="calc-zona" class="etiqueta">Zona de destino</label>
                     <select
@@ -494,15 +520,18 @@ const PREGUNTAS = [
                       }
                     </select>
                   </div>
-                  <div>
+                  <div class="sm:col-span-2">
                     <label for="calc-km" class="etiqueta"
-                      >Distancia: <span class="numeros text-marca">{{ km() }} km</span></label
+                      >Distancia: <span class="numeros text-marca">{{ km() }} km</span>
+                      <span class="font-normal text-piedra"
+                        >· unos {{ km() * minutosPorKm }} min</span
+                      ></label
                     >
                     <input
                       id="calc-km"
                       type="range"
                       min="1"
-                      max="60"
+                      max="40"
                       class="mt-3 w-full accent-marca"
                       [ngModel]="km()"
                       (ngModelChange)="km.set(+$event)"
@@ -511,8 +540,15 @@ const PREGUNTAS = [
                 </div>
                 <div class="mt-6 flex items-end justify-between gap-4 border-t border-linea pt-5">
                   <p class="text-sm text-piedra">
-                    {{ zonaElegida()?.tarifaBase ?? 0 | cop }} base + {{ km() }} km ×
-                    {{ costoKm | cop }}
+                    @if (tarifaElegida(); as t) {
+                      {{ t.banderazo | cop }} + {{ t.porKm | cop }}/km + {{ t.porMinuto | cop }}/min
+                      @if ((zonaElegida()?.tarifaBase ?? 0) > 0) {
+                        + recargo {{ zonaElegida()?.tarifaBase | cop }}
+                      }
+                      <br /><span class="text-xs"
+                        >Mínimo {{ t.minimo | cop }} · sin recargo nocturno</span
+                      >
+                    }
                   </p>
                   <p class="numeros text-3xl font-extrabold text-marca">{{ estimado() | cop }}</p>
                 </div>
@@ -522,13 +558,18 @@ const PREGUNTAS = [
                 class="mt-6 divide-y divide-linea overflow-hidden rounded-2xl border border-linea"
               >
                 @for (z of zonas(); track z.id) {
-                  <li class="flex items-center justify-between bg-crema px-5 py-3">
-                    <span class="flex items-center gap-2 font-semibold"
-                      ><ti-icono nombre="map-pin" class="size-4 text-marca" /> {{ z.nombre }}</span
+                  <li class="flex items-center justify-between gap-3 bg-crema px-5 py-3">
+                    <span class="flex min-w-0 items-center gap-2 font-semibold"
+                      ><ti-icono nombre="map-pin" class="size-4 shrink-0 text-marca" />
+                      <span class="truncate">{{ z.nombre }}</span></span
                     >
-                    <span class="numeros text-piedra"
-                      >desde <strong class="text-tinta">{{ z.tarifaBase | cop }}</strong></span
-                    >
+                    <span class="numeros shrink-0 text-sm text-piedra">
+                      @if (z.tarifaBase > 0) {
+                        recargo <strong class="text-tinta">{{ z.tarifaBase | cop }}</strong>
+                      } @else {
+                        <strong class="text-exito">sin recargo</strong>
+                      }
+                    </span>
                   </li>
                 }
               </ul>
@@ -810,7 +851,7 @@ export class InicioPage implements OnInit {
   protected readonly garantias = GARANTIAS;
   protected readonly preguntas = PREGUNTAS;
   protected readonly asuntos = ASUNTOS_CONTACTO;
-  protected readonly costoKm = COSTO_KM;
+  protected readonly minutosPorKm = MINUTOS_POR_KM;
   protected readonly beneficios = [
     'Registro en línea: sube tu cédula, SOAT y licencia con la cámara del celular.',
     'Ves el destino, el tipo de carga y lo que ganas antes de aceptar.',
@@ -821,14 +862,26 @@ export class InicioPage implements OnInit {
   protected readonly estadisticas = signal<EstadisticasPublicas | null>(null);
   protected readonly zonas = signal<Zona[]>([]);
   protected readonly errorZonas = signal(false);
+  protected readonly tarifas = signal<TarifaVehiculo[]>(TARIFAS_REFERENCIA);
+  protected readonly vehiculoCalculo = signal<string>('Moto Express');
   protected readonly zonaCalculo = signal(0);
-  protected readonly km = signal(8);
+  protected readonly km = signal(5);
   protected readonly zonaElegida = computed<Zona | undefined>(
     () => this.zonas().find((z) => z.id === this.zonaCalculo()) ?? this.zonas()[0],
   );
-  protected readonly estimado = computed(
-    () => (this.zonaElegida()?.tarifaBase ?? 0) + this.km() * COSTO_KM,
+  protected readonly tarifaElegida = computed<TarifaVehiculo | undefined>(
+    () => this.tarifas().find((t) => t.categoria === this.vehiculoCalculo()) ?? this.tarifas()[0],
   );
+  protected readonly estimado = computed(() => {
+    const t = this.tarifaElegida();
+    if (!t) return 0;
+    return precioEstimado(
+      t,
+      this.km(),
+      this.km() * MINUTOS_POR_KM,
+      this.zonaElegida()?.tarifaBase ?? 0,
+    );
+  });
 
   /** Solo se muestran cifras reales y con valor: un sitio nuevo no exhibe ceros. */
   protected readonly cifras = computed(() => {
@@ -865,11 +918,14 @@ export class InicioPage implements OnInit {
   protected readonly errorContacto = signal('');
 
   async ngOnInit(): Promise<void> {
-    const [estadisticas, zonas] = await Promise.allSettled([
+    const [estadisticas, zonas, tarifas] = await Promise.allSettled([
       this.sitio.estadisticas(),
       this.sitio.zonas(),
+      this.sitio.tarifas(),
     ]);
     if (estadisticas.status === 'fulfilled') this.estadisticas.set(estadisticas.value);
+    if (tarifas.status === 'fulfilled' && tarifas.value.tarifas.length > 0)
+      this.tarifas.set(tarifas.value.tarifas);
     if (zonas.status === 'fulfilled') {
       this.zonas.set(zonas.value);
       this.zonaCalculo.set(zonas.value[0]?.id ?? 0);

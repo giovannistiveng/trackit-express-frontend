@@ -13,6 +13,7 @@ const ICONO: Record<TipoNotificacion, { icono: NombreIcono; color: string }> = {
   conductor_aprobado: { icono: 'badge-check', color: 'bg-exito-suave text-exito' },
   conductor_rechazado: { icono: 'triangle-alert', color: 'bg-aviso-suave text-placa-oscuro' },
   calificacion_recibida: { icono: 'star', color: 'bg-aviso-suave text-placa-oscuro' },
+  nuevo_servicio: { icono: 'package', color: 'bg-bosque-suave text-bosque' },
 };
 
 /** Botón de campana con el contador y el panel desplegable de notificaciones. */

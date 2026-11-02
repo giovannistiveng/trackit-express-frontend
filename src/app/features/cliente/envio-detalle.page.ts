@@ -32,6 +32,7 @@ import { ModalComponent } from '../../shared/ui/modal.component';
 import { PlacaComponent } from '../../shared/ui/placa.component';
 import { ToastService } from '../../shared/ui/toast.service';
 import { Sondeo } from '../../shared/util/sondeo';
+import { DesgloseTarifaComponent } from './components/desglose-tarifa.component';
 import { CalificarModalComponent } from './components/calificar-modal.component';
 import { LineaTiempoComponent } from './components/linea-tiempo.component';
 import { MapaEnvioComponent } from '../../shared/ui/mapa-envio.component';
@@ -65,6 +66,7 @@ const TITULARES: Record<Envio['estado'], string> = {
     IconoComponent,
     ModalComponent,
     PlacaComponent,
+    DesgloseTarifaComponent,
   ],
   template: `
     <div class="contenedor-ancho max-w-5xl">
@@ -211,6 +213,14 @@ const TITULARES: Record<Envio['estado'], string> = {
                     </div>
                   }
                 </dl>
+                @if (e.desglose) {
+                  <ti-desglose-tarifa
+                    class="mt-4 block border-t border-linea pt-3"
+                    [desglose]="e.desglose"
+                    [distanciaKm]="e.distanciaKm ?? null"
+                    [minutos]="e.duracionMin ?? null"
+                  />
+                }
                 @if (e.notas) {
                   <p class="mt-4 flex gap-2 rounded-xl bg-crema p-3 text-sm">
                     <ti-icono nombre="message" class="mt-0.5 size-4 text-marca" />

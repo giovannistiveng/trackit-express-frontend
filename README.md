@@ -112,6 +112,19 @@ src/testing/           Dobles, fixtures (Apéndice A) y helpers de pruebas
 - **Sesión entre pestañas**: si se inicia otra cuenta en otra pestaña del mismo navegador, esta pestaña
   la adopta y avisa. Para probar dos roles a la vez usa otro navegador o una ventana privada.
 
+## Funciones nuevas (v2.2): tarifas automáticas y zonas en el mapa
+
+- **Direcciones con autocompletado** (`ti-campo-direccion`): busca en OpenStreetMap a través del backend
+  (`GET /api/geo/buscar`), "Usar mi ubicación" y "Elegir en el mapa" (`ti-selector-mapa`, con las zonas dibujadas).
+- **Cotización automática**: con las dos direcciones ubicadas en el mapa el precio se calcula solo; cada tarjeta de
+  vehículo muestra su precio y la cotización trae el desglose (banderazo, km, minutos, recargos). Si el destino no se
+  encuentra, se pide la zona a mano.
+- **Zonas y tarifas** (`/admin/zonas`): el administrador edita banderazo, valor por km, por minuto y mínimo de cada
+  vehículo (con ejemplos de precio en vivo) y crea, mueve, redimensiona o desactiva zonas tocando el mapa.
+- **Tablero del conductor**: explica qué pedidos ve según su vehículo (un motocarro también ve los de moto) y llega
+  la notificación "Nuevo servicio disponible" al crearse un envío compatible.
+- La calculadora del sitio público usa las mismas tarifas (`GET /api/publico/tarifas`).
+
 ## Logs
 
 Los eventos del frontend (errores no capturados, fallos HTTP, acciones clave) se envían por

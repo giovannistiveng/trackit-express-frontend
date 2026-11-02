@@ -4,6 +4,8 @@ import {
   CATEGORIAS_VEHICULO,
   CategoriaVehiculo,
   ConductorPostulante,
+  Cotizacion,
+  DesgloseTarifa,
   ESTADOS_ENVIO,
   Envio,
   EstadoAprobacion,
@@ -16,21 +18,27 @@ import {
   Seguimiento,
   TIPOS_DOCUMENTO,
   TIPOS_NOTIFICACION,
+  TarifaVehiculo,
   TipoDocumento,
   TipoNotificacion,
   Ubicacion,
   Usuario,
+  Zona,
 } from '../../domain';
 import {
   ApiConductor,
   ApiContacto,
+  ApiCotizacion,
+  ApiDesglose,
   ApiEnvio,
   ApiEnvioAdmin,
   ApiNotificacion,
   ApiPerfil,
   ApiPunto,
   ApiSeguimiento,
+  ApiTarifaVehiculo,
   ApiUsuarioLogin,
+  ApiZona,
 } from './backend.types';
 
 export function aEstado(valor: string): EstadoEnvio {
@@ -98,6 +106,8 @@ export function aEnvio(e: ApiEnvio, incluirPin: boolean): Envio {
   if (e.origen_coords) envio.origenCoords = e.origen_coords;
   if (e.destino_coords) envio.destinoCoords = e.destino_coords;
   if (e.ganancia_conductor !== undefined) envio.gananciaConductor = Number(e.ganancia_conductor);
+  if (e.duracion_min) envio.duracionMin = e.duracion_min;
+  if (e.desglose) envio.desglose = aDesglose(e.desglose);
   if (e.conductor) {
     envio.conductor = {
       nombre: e.conductor.nombre,
@@ -191,4 +201,72 @@ export function aContacto(c: ApiContacto): MensajeContactoRecibido {
     atendido: c.atendido,
     fecha: new Date(c.fecha),
   };
+}
+
+export function aZona(z: ApiZona): Zona {
+  const zona: Zona = {
+    id: z.id_zona,
+    nombre: z.nombre_zona,
+    tarifaBase: Number(z.recargo ?? z.tarifa_base),
+  };
+  if (z.centro !== undefined) zona.centro = z.centro;
+  if (z.radio_km !== undefined) zona.radioKm = Number(z.radio_km);
+  if (z.activa !== undefined) zona.activa = z.activa;
+  if (z.descripcion !== undefined) zona.descripcion = z.descripcion;
+  return zona;
+}
+
+export function aDesglose(d: ApiDesglose): DesgloseTarifa {
+  return {
+    categoria: aCategoria(d.categoria) ?? 'Moto Express',
+    banderazo: Number(d.banderazo),
+    distancia: Number(d.distancia),
+    tiempo: Number(d.tiempo),
+    recargoZona: Number(d.recargo_zona),
+    recargoNocturno: Number(d.recargo_nocturno),
+    minimoAplicado: !!d.minimo_aplicado,
+    total: Number(d.total),
+  };
+}
+
+export function aTarifaVehiculo(t: ApiTarifaVehiculo): TarifaVehiculo {
+  return {
+    categoria: aCategoria(t.categoria) ?? 'Moto Express',
+    banderazo: Number(t.banderazo),
+    porKm: Number(t.por_km),
+    porMinuto: Number(t.por_minuto),
+    minimo: Number(t.minimo),
+  };
+}
+
+export function aCotizacion(r: ApiCotizacion): Cotizacion {
+  const c: Cotizacion = {
+    distanciaKm: Number(r.distancia_km),
+    tarifaBase: Number(r.tarifa_base),
+    tarifaTotal: Number(r.tarifa_total),
+    moneda: 'COP',
+  };
+  if (r.duracion_estimada_min !== undefined) c.duracionMin = r.duracion_estimada_min;
+  if (r.distancia_exacta !== undefined) c.distanciaExacta = r.distancia_exacta;
+  const cat = aCategoria(r.categoria);
+  if (cat) c.categoria = cat;
+  if (r.zona) c.zona = { id: r.zona.id_zona, nombre: r.zona.nombre_zona };
+  if (r.zona_origen !== undefined) {
+    c.zonaOrigen = r.zona_origen
+      ? { id: r.zona_origen.id_zona, nombre: r.zona_origen.nombre_zona }
+      : null;
+  }
+  if (r.desglose) c.desglose = aDesglose(r.desglose);
+  if (r.opciones) {
+    c.opciones = r.opciones.flatMap((o) => {
+      const categoria = aCategoria(o.categoria);
+      return categoria
+        ? [{ categoria, tarifaTotal: Number(o.tarifa_total), minimoAplicado: !!o.minimo_aplicado }]
+        : [];
+    });
+  }
+  if (r.recargo_nocturno_activo !== undefined) c.nocturno = r.recargo_nocturno_activo;
+  if (r.origen_coords !== undefined) c.origenCoords = r.origen_coords;
+  if (r.destino_coords !== undefined) c.destinoCoords = r.destino_coords;
+  return c;
 }
