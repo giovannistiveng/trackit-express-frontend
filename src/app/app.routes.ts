@@ -1,5 +1,5 @@
 import { inject } from '@angular/core';
-import { Router, Routes } from '@angular/router';
+import { ActivatedRouteSnapshot, Router, Routes } from '@angular/router';
 import { authGuard, invitadoGuard, roleGuard } from './core/auth/guards';
 import { SessionService } from './core/auth/session.service';
 import { ROL } from './core/domain';
@@ -36,6 +36,53 @@ export const routes: Routes = [
     canActivate: [invitadoGuard],
     title: 'Crear cuenta · TrackIt Express',
     loadComponent: () => import('./features/auth/registro.page').then((m) => m.RegistroPage),
+  },
+  {
+    path: 'olvide-contrasena',
+    canActivate: [invitadoGuard],
+    title: 'Recuperar contraseña · TrackIt Express',
+    loadComponent: () =>
+      import('./features/auth/recuperacion.pages').then((m) => m.OlvideContrasenaPage),
+  },
+  {
+    path: 'restablecer-contrasena',
+    title: 'Nueva contraseña · TrackIt Express',
+    loadComponent: () =>
+      import('./features/auth/recuperacion.pages').then((m) => m.RestablecerContrasenaPage),
+  },
+  {
+    path: 'verificar-correo',
+    title: 'Verificar correo · TrackIt Express',
+    loadComponent: () =>
+      import('./features/auth/recuperacion.pages').then((m) => m.VerificarCorreoPage),
+  },
+  {
+    // Enlace público para quien recibe el envío (sin cuenta)
+    path: 'seguimiento/:token',
+    title: 'Seguimiento de envío · TrackIt Express',
+    loadComponent: () =>
+      import('./features/publico/seguimiento.page').then((m) => m.SeguimientoPublicoPage),
+  },
+  {
+    // Enlaces de las notificaciones push: llevan al envío según el rol
+    path: 'envios/:id',
+    canActivate: [
+      authGuard,
+      (ruta: ActivatedRouteSnapshot) => {
+        const session = inject(SessionService);
+        const id = ruta.paramMap.get('id');
+        const chat = ruta.queryParamMap.get('chat') ? '?chat=1' : '';
+        const rol = session.rol();
+        const destino =
+          rol === ROL.CLIENTE
+            ? `/cliente/envios/${id}${chat}`
+            : rol === ROL.CONDUCTOR
+              ? `/conductor/servicio/${id}${chat}`
+              : '/admin/envios';
+        return inject(Router).parseUrl(destino);
+      },
+    ],
+    children: [],
   },
   {
     path: 'cliente',

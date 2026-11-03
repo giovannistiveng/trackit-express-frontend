@@ -8,6 +8,10 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { AccountPort } from '../core/ports';
+import { PushService } from '../core/realtime/push.service';
+import { ToastService } from '../shared/ui/toast.service';
+import { ErrorMessageMapper } from '../core/http/error-message.mapper';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SessionService } from '../core/auth/session.service';
 import { Rol } from '../core/domain';
@@ -31,6 +35,7 @@ export const MENU: Record<Rol, Enlace[]> = {
     { ruta: '/admin/conductores', texto: 'Conductores', icono: 'users' },
     { ruta: '/admin/zonas', texto: 'Zonas', icono: 'map-pin' },
     { ruta: '/admin/mensajes', texto: 'Mensajes', icono: 'inbox' },
+    { ruta: '/admin/pagos', texto: 'Pagos', icono: 'wallet', movil: false },
     { ruta: '/admin/auditoria', texto: 'Auditoría', icono: 'clipboard-list', movil: false },
   ],
   '2': [
@@ -159,6 +164,36 @@ export function iniciales(nombre: string | undefined): string {
     </header>
 
     <main id="contenido" class="pb-10 pt-6 sm:pb-14 sm:pt-8" tabindex="-1">
+      @if (session.usuario()?.correoVerificado === false && !avisoCerrado()) {
+        <div class="contenedor-ancho mb-6">
+          <div
+            class="flex flex-wrap items-center gap-3 rounded-2xl border border-placa/60 bg-aviso-suave px-4 py-3 text-sm"
+            role="status"
+          >
+            <ti-icono nombre="mail" class="text-placa-oscuro" />
+            <p class="min-w-0 flex-1">
+              Confirma tu correo <strong>{{ session.usuario()?.correo }}</strong> con el enlace que
+              te enviamos. Así podrás recuperar tu cuenta si olvidas la contraseña.
+            </p>
+            <button
+              type="button"
+              class="btn-texto text-sm"
+              [disabled]="reenviando() || reenviado()"
+              (click)="reenviarVerificacion()"
+            >
+              {{ reenviado() ? 'Enlace enviado' : reenviando() ? 'Enviando…' : 'Reenviar enlace' }}
+            </button>
+            <button
+              type="button"
+              class="grid size-8 place-items-center rounded-full hover:bg-white/60"
+              aria-label="Ocultar aviso"
+              (click)="avisoCerrado.set(true)"
+            >
+              <ti-icono nombre="x" class="size-4" />
+            </button>
+          </div>
+        </div>
+      }
       <router-outlet />
     </main>
 
@@ -192,6 +227,13 @@ export class ShellComponent implements OnInit, OnDestroy {
   private readonly notificaciones = inject(NotificacionesStore);
   private readonly el = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly menuUsuario = signal(false);
+  private readonly cuenta = inject(AccountPort);
+  private readonly push = inject(PushService);
+  private readonly toast = inject(ToastService);
+  private readonly mapper = inject(ErrorMessageMapper);
+  protected readonly avisoCerrado = signal(false);
+  protected readonly reenviando = signal(false);
+  protected readonly reenviado = signal(false);
 
   protected readonly enlaces = computed(() => {
     const rol = this.session.rol();
@@ -206,16 +248,37 @@ export class ShellComponent implements OnInit, OnDestroy {
   protected readonly inicialesUsuario = computed(() => iniciales(this.session.usuario()?.nombre));
 
   ngOnInit(): void {
-    if (this.session.estaAutenticado()) this.notificaciones.iniciar();
+    if (this.session.estaAutenticado()) {
+      this.notificaciones.iniciar();
+      void this.push.comprobar();
+    }
+  }
+
+  protected async reenviarVerificacion(): Promise<void> {
+    this.reenviando.set(true);
+    try {
+      await this.cuenta.reenviarVerificacion();
+      this.reenviado.set(true);
+      this.toast.exito('Te enviamos un enlace nuevo. Revisa tu correo.');
+    } catch (e) {
+      this.toast.error(this.mapper.traducir(e));
+    } finally {
+      this.reenviando.set(false);
+    }
   }
 
   ngOnDestroy(): void {
     this.notificaciones.detener();
   }
 
-  protected salir(): void {
+  protected async salir(): Promise<void> {
     this.menuUsuario.set(false);
     this.notificaciones.detener();
+    // Este dispositivo deja de recibir avisos de la cuenta que cierra sesión (máximo 2 s de espera)
+    await Promise.race([
+      this.push.desactivar().catch(() => undefined),
+      new Promise((ok) => setTimeout(ok, 2000)),
+    ]);
     this.session.cerrar('manual');
     void this.router.navigate(['/login']);
   }

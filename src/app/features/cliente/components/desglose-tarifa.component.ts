@@ -23,7 +23,10 @@ import { CopPipe } from '../../../shared/pipes/cop.pipe';
       >
         <dt>Banderazo ({{ d.categoria }})</dt>
         <dd class="text-right">{{ d.banderazo | cop }}</dd>
-        <dt>Distancia{{ distanciaKm() !== null ? ' · ' + distanciaKm() + ' km' : '' }}</dt>
+        <dt>
+          Distancia{{ distanciaKm() !== null ? ' · ' + distanciaKm() + ' km' : ''
+          }}{{ d.idaYVuelta ? ' (ida y vuelta)' : '' }}
+        </dt>
         <dd class="text-right">{{ d.distancia | cop }}</dd>
         <dt>Tiempo{{ minutos() !== null ? ' · ' + minutos() + ' min' : '' }}</dt>
         <dd class="text-right">{{ d.tiempo | cop }}</dd>
@@ -35,6 +38,10 @@ import { CopPipe } from '../../../shared/pipes/cop.pipe';
         @if (d.recargoZona > 0) {
           <dt>Recargo de zona{{ zona() ? ' · ' + zona() : '' }}</dt>
           <dd class="text-right">{{ d.recargoZona | cop }}</dd>
+        }
+        @if (d.recargoParadas > 0) {
+          <dt>{{ d.paradas }} {{ d.paradas === 1 ? 'parada' : 'paradas' }}</dt>
+          <dd class="text-right">{{ d.recargoParadas | cop }}</dd>
         }
         @if (d.recargoNocturno > 0) {
           <dt>Recargo nocturno (20 %)</dt>

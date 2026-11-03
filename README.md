@@ -80,22 +80,26 @@ src/testing/           Dobles, fixtures (Apéndice A) y helpers de pruebas
 
 ## Rutas
 
-| Ruta                                   | Rol           | Caso de uso    |
-| -------------------------------------- | ------------- | -------------- |
-| `/login`, `/registro`                  | Público       | CU-002, CU-001 |
-| `/cliente/nuevo-envio`                 | Cliente       | CU-005, CU-006 |
-| `/cliente/envios`                      | Cliente       | E6-HU2         |
-| `/cliente/envios/:id`                  | Cliente       | CU-008, CU-010 |
-| `/conductor/perfil`                    | Conductor     | CU-003, CU-004 |
-| `/conductor/tablero`                   | Conductor     | CU-007         |
-| `/conductor/servicio/:id`              | Conductor     | CU-008, CU-009 |
-| `/admin/conductores`                   | Administrador | CU-011         |
-| `/admin/dashboard`, `/admin/auditoria` | Administrador | E7-HU2         |
-| `/` e `/inicio`                        | Público       | Sitio web      |
-| `/cuenta`                              | Todos         | Mi cuenta      |
-| `/conductor/ganancias`                 | Conductor     | Resumen        |
-| `/admin/envios`, `/admin/zonas`        | Administrador | Operación      |
-| `/admin/mensajes`                      | Administrador | Contacto       |
+| Ruta                                                                 | Rol                  | Caso de uso                                              |
+| -------------------------------------------------------------------- | -------------------- | -------------------------------------------------------- |
+| `/login`, `/registro`                                                | Público              | CU-002, CU-001                                           |
+| `/cliente/nuevo-envio`                                               | Cliente              | CU-005, CU-006                                           |
+| `/cliente/envios`                                                    | Cliente              | E6-HU2                                                   |
+| `/cliente/envios/:id`                                                | Cliente              | CU-008, CU-010                                           |
+| `/conductor/perfil`                                                  | Conductor            | CU-003, CU-004                                           |
+| `/conductor/tablero`                                                 | Conductor            | CU-007                                                   |
+| `/conductor/servicio/:id`                                            | Conductor            | CU-008, CU-009                                           |
+| `/admin/conductores`                                                 | Administrador        | CU-011                                                   |
+| `/admin/dashboard`, `/admin/auditoria`                               | Administrador        | E7-HU2                                                   |
+| `/` e `/inicio`                                                      | Público              | Sitio web                                                |
+| `/cuenta`                                                            | Todos                | Mi cuenta                                                |
+| `/conductor/ganancias`                                               | Conductor            | Resumen                                                  |
+| `/admin/envios`, `/admin/zonas`                                      | Administrador        | Operación                                                |
+| `/admin/mensajes`                                                    | Administrador        | Contacto                                                 |
+| `/admin/pagos`                                                       | Administrador        | Pagos y liquidaciones                                    |
+| `/olvide-contrasena`, `/restablecer-contrasena`, `/verificar-correo` | Público              | Cuenta                                                   |
+| `/seguimiento/:token`                                                | Público (sin cuenta) | Seguimiento para quien recibe                            |
+| `/envios/:id`                                                        | Cliente o conductor  | Enlace de las notificaciones push; redirige según el rol |
 
 ## Funciones nuevas (v2.1)
 
@@ -124,6 +128,23 @@ src/testing/           Dobles, fixtures (Apéndice A) y helpers de pruebas
 - **Tablero del conductor**: explica qué pedidos ve según su vehículo (un motocarro también ve los de moto) y llega
   la notificación "Nuevo servicio disponible" al crearse un envío compatible.
 - La calculadora del sitio público usa las mismas tarifas (`GET /api/publico/tarifas`).
+
+## Funciones nuevas (v2.3): pagos, tiempo real y servicio completo
+
+- **Eliminar y editar:** el administrador elimina zonas (se archivan si tienen historial) y mensajes; el cliente edita
+  un envío Pendiente; cualquiera borra notificaciones o las ya leídas.
+- **Direcciones:** ya no existe el selector "Zona del destino": cada dirección se ubica con una sugerencia, "Usar mi
+  ubicación" o el mapa. "Usar mi ubicación" diagnostica el motivo cuando falla (Windows con la ubicación apagada,
+  sitio bloqueado, sin https, sin señal) y, si la ubicación es aproximada, abre el mapa para confirmarla.
+- **Cuenta:** recuperar la contraseña por correo y verificar el correo (aviso en la cabecera con "Reenviar enlace").
+- **Pagos:** efectivo contra entrega o **Nequi** (cobro al celular con espera en vivo, reintento o cambio a efectivo).
+  El conductor confirma el efectivo al entregar y ve su liquidación semanal; el administrador la genera y la marca pagada.
+- **Tiempo real:** los avisos, mensajes y cambios de envío llegan por SSE (`EventosService`); si el canal se cae, se
+  reconecta y mientras tanto se consulta cada 30 s. **Notificaciones push** (`PushService`): Web Push en el navegador
+  (requiere el build de producción por el service worker) y Firebase en la app Android/iOS si se empaqueta con Capacitor.
+- **Enlace de seguimiento** para quien recibe (WhatsApp, copiar o compartir), sin cuenta ni datos privados.
+- **Envíos programados, hasta 3 paradas e ida y vuelta**, con su recargo en el desglose.
+- **Chat cliente ↔ conductor** con respuestas rápidas, y **foto al recoger** el paquete (con ella inicia la ruta).
 
 ## Logs
 

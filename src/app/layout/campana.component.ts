@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, ElementRef, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { PushService } from '../core/realtime/push.service';
 import { Router } from '@angular/router';
 import { SessionService } from '../core/auth/session.service';
 import { Notificacion, TipoNotificacion, haceCuanto } from '../core/domain';
@@ -14,6 +22,11 @@ const ICONO: Record<TipoNotificacion, { icono: NombreIcono; color: string }> = {
   conductor_rechazado: { icono: 'triangle-alert', color: 'bg-aviso-suave text-placa-oscuro' },
   calificacion_recibida: { icono: 'star', color: 'bg-aviso-suave text-placa-oscuro' },
   nuevo_servicio: { icono: 'package', color: 'bg-bosque-suave text-bosque' },
+  pago_aprobado: { icono: 'wallet', color: 'bg-exito-suave text-exito' },
+  pago_rechazado: { icono: 'triangle-alert', color: 'bg-alerta-suave text-alerta' },
+  liquidacion: { icono: 'hand-coins', color: 'bg-bosque-suave text-bosque' },
+  mensaje_chat: { icono: 'message', color: 'bg-marca-suave text-marca' },
+  paquete_recogido: { icono: 'camera', color: 'bg-marca-suave text-marca' },
 };
 
 /** Botón de campana con el contador y el panel desplegable de notificaciones. */
@@ -58,22 +71,41 @@ const ICONO: Record<TipoNotificacion, { icono: NombreIcono; color: string }> = {
       >
         <div class="flex items-center justify-between border-b border-linea px-4 py-3">
           <p class="font-bold">Notificaciones</p>
-          @if (store.noLeidas() > 0) {
-            <button
-              type="button"
-              class="text-sm font-semibold text-marca hover:underline"
-              (click)="store.marcarTodas()"
-            >
-              Marcar todas como leídas
-            </button>
-          }
+          <span class="flex gap-3">
+            @if (store.noLeidas() > 0) {
+              <button
+                type="button"
+                class="text-sm font-semibold text-marca hover:underline"
+                (click)="store.marcarTodas()"
+              >
+                Marcar leídas
+              </button>
+            }
+            @if (hayLeidas()) {
+              <button
+                type="button"
+                class="text-sm font-semibold text-piedra hover:text-alerta hover:underline"
+                (click)="$event.stopPropagation(); store.borrarLeidas()"
+              >
+                Borrar leídas
+              </button>
+            }
+          </span>
         </div>
         <ul class="max-h-[70vh] overflow-y-auto sm:max-h-96">
           @for (n of store.items(); track n.id) {
-            <li>
+            <li class="group relative">
               <button
                 type="button"
-                class="flex w-full gap-3 border-b border-linea/60 px-4 py-3 text-left transition-colors hover:bg-crema"
+                class="absolute right-2 top-2 z-10 grid size-8 place-items-center rounded-full text-piedra opacity-60 hover:bg-alerta-suave hover:text-alerta hover:opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                [attr.aria-label]="'Eliminar notificación: ' + n.titulo"
+                (click)="$event.stopPropagation(); store.borrar(n)"
+              >
+                <ti-icono nombre="x" class="size-4" />
+              </button>
+              <button
+                type="button"
+                class="flex w-full gap-3 border-b border-linea/60 py-3 pl-4 pr-10 text-left transition-colors hover:bg-crema"
                 [class.bg-marca-suave]="!n.leida"
                 (click)="abrir(n)"
               >
@@ -109,6 +141,28 @@ const ICONO: Record<TipoNotificacion, { icono: NombreIcono; color: string }> = {
             </li>
           }
         </ul>
+        @switch (push.estado()) {
+          @case ('inactivo') {
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 border-t border-linea bg-crema px-4 py-3 text-left text-sm font-semibold text-marca hover:bg-marca-suave"
+              (click)="$event.stopPropagation(); push.activar()"
+            >
+              <ti-icono nombre="bell-ring" class="size-4" /> Recibir avisos en este dispositivo
+            </button>
+          }
+          @case ('activando') {
+            <p class="flex items-center gap-2 border-t border-linea px-4 py-3 text-sm text-piedra">
+              <ti-icono nombre="loader" class="size-4 animate-spin" /> Activando avisos…
+            </p>
+          }
+          @case ('bloqueado') {
+            <p class="flex items-center gap-2 border-t border-linea px-4 py-3 text-xs text-piedra">
+              <ti-icono nombre="bell-off" class="size-4" /> Los avisos están bloqueados en este
+              navegador. Permítelos desde el ícono junto a la dirección web.
+            </p>
+          }
+        }
       </div>
     }
   `,
@@ -119,6 +173,8 @@ export class CampanaComponent {
   private readonly router = inject(Router);
   private readonly el = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly abierto = signal(false);
+  protected readonly push = inject(PushService);
+  protected readonly hayLeidas = computed(() => this.store.items().some((n) => n.leida));
 
   protected alternar(): void {
     const abrir = !this.abierto();

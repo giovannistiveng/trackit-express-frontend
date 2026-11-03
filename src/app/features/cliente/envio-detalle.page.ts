@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnDestroy,
   OnInit,
   computed,
@@ -12,6 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
   Envio,
+  PagoResumen,
   Seguimiento,
   esActivo,
   esIdValido,
@@ -37,6 +39,10 @@ import { CalificarModalComponent } from './components/calificar-modal.component'
 import { LineaTiempoComponent } from './components/linea-tiempo.component';
 import { MapaEnvioComponent } from '../../shared/ui/mapa-envio.component';
 import { PinEnvioComponent } from './components/pin-envio.component';
+import { PagoPanelComponent } from './components/pago-panel.component';
+import { ChatEnvioComponent } from '../../shared/ui/chat-envio.component';
+import { EventosService } from '../../core/realtime/eventos.service';
+import { ApiNotificacion } from '../../core/adapters/http/backend.types';
 
 export const INTERVALO_TRAZABILIDAD_MS = 10_000;
 
@@ -67,6 +73,8 @@ const TITULARES: Record<Envio['estado'], string> = {
     ModalComponent,
     PlacaComponent,
     DesgloseTarifaComponent,
+    PagoPanelComponent,
+    ChatEnvioComponent,
   ],
   template: `
     <div class="contenedor-ancho max-w-5xl">
@@ -85,6 +93,17 @@ const TITULARES: Record<Envio['estado'], string> = {
             <h1 class="mt-1">{{ titular() }}</h1>
             <div class="mt-3 flex flex-wrap items-center gap-3 text-sm">
               <ti-estado-badge [estado]="e.estado" />
+              @if (e.fechaProgramada && e.estado === 'Pendiente') {
+                <span class="insignia bg-aviso-suave"
+                  ><ti-icono nombre="calendar-clock" class="size-4" /> Programado:
+                  {{ e.fechaProgramada | fechaLocal }}</span
+                >
+              }
+              @if (e.idaYVuelta) {
+                <span class="insignia bg-marca-suave text-marca"
+                  ><ti-icono nombre="repeat" class="size-4" /> Ida y vuelta</span
+                >
+              }
               @if (e.fechaUltimoCambio) {
                 <span class="text-piedra"
                   >Último cambio:
@@ -172,6 +191,65 @@ const TITULARES: Record<Envio['estado'], string> = {
                 </section>
               }
 
+              @if (e.tokenSeguimiento && e.estado !== 'Cancelado') {
+                <section class="tarjeta p-5" aria-labelledby="titulo-compartir">
+                  <h2 id="titulo-compartir" class="flex items-center gap-2 text-base">
+                    <ti-icono nombre="share" class="text-marca" /> Comparte el seguimiento
+                  </h2>
+                  <p class="mt-1 text-sm text-piedra">
+                    Quien recibe puede ver el estado y el mapa sin crear una cuenta.
+                  </p>
+                  <div class="mt-4 flex flex-wrap gap-2">
+                    <a
+                      class="btn-primario"
+                      [href]="enlaceWhatsapp()"
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      <ti-icono nombre="message-circle" /> Enviar por WhatsApp
+                    </a>
+                    <button type="button" class="btn-secundario" (click)="copiarEnlace()">
+                      <ti-icono [nombre]="copiado() ? 'check' : 'copy'" />
+                      {{ copiado() ? 'Copiado' : 'Copiar enlace' }}
+                    </button>
+                    @if (puedeCompartirNativo) {
+                      <button type="button" class="btn-secundario" (click)="compartirNativo()">
+                        <ti-icono nombre="share" /> Más opciones
+                      </button>
+                    }
+                  </div>
+                </section>
+              }
+
+              @if (e.urlFotoRecogida) {
+                <section class="tarjeta p-5" aria-labelledby="titulo-recogida">
+                  <h2 id="titulo-recogida" class="flex items-center gap-2 text-base">
+                    <ti-icono nombre="camera" class="text-marca" /> Foto al recoger
+                  </h2>
+                  @if (e.fechaRecogida) {
+                    <p class="text-sm text-piedra">Recogido {{ e.fechaRecogida | fechaLocal }}</p>
+                  }
+                  <a [href]="e.urlFotoRecogida" target="_blank" rel="noopener" class="mt-3 block">
+                    <img
+                      [src]="e.urlFotoRecogida"
+                      alt="Foto del paquete tomada por el conductor al recogerlo"
+                      class="max-h-72 w-full rounded-xl border border-linea object-cover"
+                      loading="lazy"
+                    />
+                  </a>
+                </section>
+              }
+
+              @if (e.conductor && (chatAbierto() || e.chatNoLeidos)) {
+                <div id="chat">
+                  <ti-chat-envio
+                    [idEnvio]="e.id"
+                    rol="cliente"
+                    [otro]="e.conductor.nombre.split(' ')[0]"
+                  />
+                </div>
+              }
+
               <section class="tarjeta p-5 sm:p-6" aria-labelledby="titulo-recorrido">
                 <h2 id="titulo-recorrido" class="mb-5">Recorrido</h2>
                 <ti-linea-tiempo [historial]="e.historial" [estadoActual]="e.estado" />
@@ -189,11 +267,43 @@ const TITULARES: Record<Envio['estado'], string> = {
                     <p class="text-piedra">Recoger en</p>
                     <p class="font-semibold">{{ e.origen }}</p>
                   </li>
+                  @for (p of e.paradas ?? []; track p.id) {
+                    <li>
+                      <span
+                        class="absolute -left-[7px] mt-1 size-3 rounded-full"
+                        [class]="p.completadaEn ? 'bg-exito' : 'border-2 border-tinta bg-papel'"
+                      ></span>
+                      <p class="text-piedra">
+                        Parada {{ p.orden }}
+                        @if (p.completadaEn) {
+                          · <span class="font-semibold text-exito">hecha</span>
+                        }
+                      </p>
+                      <p class="font-semibold">{{ p.direccion }}</p>
+                    </li>
+                  }
                   <li>
                     <span class="absolute -left-[7px] mt-1 size-3 rounded-full bg-marca"></span>
                     <p class="text-piedra">Entregar en</p>
                     <p class="font-semibold">{{ e.destino }}</p>
+                    @if (e.destinatarioNombre || e.destinatarioTelefono) {
+                      <p class="text-xs text-piedra">
+                        Recibe: {{ e.destinatarioNombre ?? '' }} {{ e.destinatarioTelefono ?? '' }}
+                      </p>
+                    }
                   </li>
+                  @if (e.idaYVuelta) {
+                    <li>
+                      <span class="absolute -left-[7px] mt-1 size-3 rounded-full bg-tinta"></span>
+                      <p class="text-piedra">
+                        Regresa a
+                        @if (e.destinoVisitadoEn) {
+                          · <span class="font-semibold text-exito">en camino de vuelta</span>
+                        }
+                      </p>
+                      <p class="font-semibold">{{ e.origen }}</p>
+                    </li>
+                  }
                 </ol>
                 <dl class="mt-5 grid grid-cols-2 gap-3 border-t border-linea pt-4 text-sm">
                   <div>
@@ -228,6 +338,21 @@ const TITULARES: Record<Envio['estado'], string> = {
                   </p>
                 }
               </section>
+
+              @if (e.pago) {
+                <ti-pago-panel
+                  [idEnvio]="e.id"
+                  [pagoInicial]="e.pago"
+                  [editable]="e.estado === 'Pendiente'"
+                  (cambio)="alCambiarPago($event)"
+                />
+              }
+
+              @if (e.estado === 'Pendiente') {
+                <button type="button" class="btn-secundario w-full" (click)="abrirEdicion(e)">
+                  <ti-icono nombre="pencil" /> Editar datos del envío
+                </button>
+              }
 
               @if (e.conductor; as c) {
                 <section class="tarjeta p-5">
@@ -327,17 +452,95 @@ const TITULARES: Record<Envio['estado'], string> = {
         </div>
       </ti-modal>
     }
+
+    @if (edicion() && envio(); as e) {
+      <ti-modal titulo="Editar envío" (cerrar)="edicion.set(false)">
+        <p class="text-sm text-piedra">
+          Puedes corregir estos datos mientras ningún conductor lo haya tomado. Para cambiar las
+          direcciones, cancela y crea uno nuevo.
+        </p>
+        <div class="mt-5 space-y-4">
+          <div>
+            <label for="ed-tipo" class="etiqueta">Tipo de carga</label>
+            <input
+              id="ed-tipo"
+              class="campo"
+              maxlength="80"
+              [ngModel]="edTipo()"
+              (ngModelChange)="edTipo.set($event)"
+            />
+          </div>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label for="ed-nombre" class="etiqueta">Quién recibe</label>
+              <input
+                id="ed-nombre"
+                class="campo"
+                maxlength="120"
+                [ngModel]="edNombre()"
+                (ngModelChange)="edNombre.set($event)"
+              />
+            </div>
+            <div>
+              <label for="ed-tel" class="etiqueta">Celular de quien recibe</label>
+              <input
+                id="ed-tel"
+                class="campo"
+                maxlength="20"
+                inputmode="tel"
+                [ngModel]="edTelefono()"
+                (ngModelChange)="edTelefono.set($event)"
+              />
+            </div>
+          </div>
+          <div>
+            <label for="ed-notas" class="etiqueta">Indicaciones para el conductor</label>
+            <textarea
+              id="ed-notas"
+              rows="3"
+              class="campo"
+              maxlength="300"
+              [ngModel]="edNotas()"
+              (ngModelChange)="edNotas.set($event)"
+            ></textarea>
+          </div>
+        </div>
+        @if (errorEdicion()) {
+          <p class="error-campo" role="alert">{{ errorEdicion() }}</p>
+        }
+        <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" class="btn-secundario" (click)="edicion.set(false)">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="btn-primario"
+            [disabled]="guardando()"
+            (click)="guardarEdicion(e)"
+          >
+            <ti-icono
+              [nombre]="guardando() ? 'loader' : 'save'"
+              [class]="guardando() ? 'animate-spin' : ''"
+            />
+            Guardar cambios
+          </button>
+        </div>
+      </ti-modal>
+    }
   `,
 })
 export class EnvioDetallePage implements OnInit, OnDestroy {
   /** Parámetro de ruta :id */
   readonly id = input.required<string>();
+  /** ?chat=1 (desde una notificación de mensaje): lleva al chat. */
+  readonly chat = input<string>();
 
   private readonly shipments = inject(ShipmentsPort);
   private readonly tracking = inject(TrackingPort);
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
+  private readonly eventos = inject(EventosService);
 
   protected readonly envio = signal<Envio | null>(null);
   protected readonly seguimiento = signal<Seguimiento | null>(null);
@@ -352,6 +555,33 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
   private autoAbierto = false;
   private sondeo: Sondeo<Envio> | null = null;
   protected readonly esActivo = esActivo;
+  protected readonly copiado = signal(false);
+  protected readonly puedeCompartirNativo = typeof navigator !== 'undefined' && !!navigator.share;
+  protected readonly edicion = signal(false);
+  protected readonly guardando = signal(false);
+  protected readonly errorEdicion = signal('');
+  protected readonly edTipo = signal('');
+  protected readonly edNotas = signal('');
+  protected readonly edNombre = signal('');
+  protected readonly edTelefono = signal('');
+  private chatEnfocado = false;
+
+  protected readonly chatAbierto = computed(() => {
+    const e = this.envio()?.estado;
+    return e === 'Asignado' || e === 'En Ruta';
+  });
+  protected readonly enlaceSeguimiento = computed(() => {
+    const t = this.envio()?.tokenSeguimiento;
+    return t ? `${location.origin}/seguimiento/${t}` : '';
+  });
+  protected readonly enlaceWhatsapp = computed(() => {
+    const e = this.envio();
+    if (!e) return '';
+    const nombre = e.destinatarioNombre ? ` ${e.destinatarioNombre.split(' ')[0]}` : '';
+    const texto = `Hola${nombre}, te envié un paquete con TrackIt Express. Puedes seguirlo aquí: ${this.enlaceSeguimiento()}`;
+    const tel = telefonoWhatsapp(e.destinatarioTelefono);
+    return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
+  });
 
   protected readonly fase = computed<FaseCarga>(() =>
     this.envio() ? 'listo' : this.error() ? 'error' : 'cargando',
@@ -385,6 +615,25 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     return u ? haceCuanto(new Date(u.capturadoEn)) : 'Sin señal aún';
   });
 
+  constructor() {
+    // Cambios del envío al instante (aceptado, recogido, entregado, pago…) por el canal de eventos
+    const sub = this.eventos.de<ApiNotificacion>('notificacion').subscribe((n) => {
+      if (n.id_envio === this.envio()?.id && n.tipo !== 'mensaje_chat') void this.refrescar();
+    });
+    const sub2 = this.eventos.de<{ id_envio: number }>('envio').subscribe((d) => {
+      if (d.id_envio === this.envio()?.id) void this.refrescar();
+    });
+    inject(DestroyRef).onDestroy(() => {
+      sub.unsubscribe();
+      sub2.unsubscribe();
+    });
+  }
+
+  private async refrescar(): Promise<void> {
+    if (this.sondeo?.estaActivo) await this.sondeo.refrescar();
+    else if (this.envio()) this.alResultado(await this.shipments.obtener(this.envio()!.id));
+  }
+
   async ngOnInit(): Promise<void> {
     const id = this.id();
     if (!esIdValido(id)) {
@@ -409,6 +658,68 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     this.error.set('');
     void this.sondeo?.refrescar();
     if (this.sondeo && !this.sondeo.estaActivo) this.sondeo.iniciar();
+  }
+
+  protected alCambiarPago(pago: PagoResumen): void {
+    const e = this.envio();
+    if (e) this.envio.set({ ...e, pago, metodoPago: pago.metodo });
+  }
+
+  protected async copiarEnlace(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.enlaceSeguimiento());
+      this.copiado.set(true);
+      setTimeout(() => this.copiado.set(false), 2500);
+    } catch {
+      this.toast.mostrar(this.enlaceSeguimiento());
+    }
+  }
+
+  protected async compartirNativo(): Promise<void> {
+    try {
+      await navigator.share({
+        title: `Envío #${this.envio()?.id} · TrackIt Express`,
+        text: 'Sigue tu paquete en tiempo real',
+        url: this.enlaceSeguimiento(),
+      });
+    } catch {
+      // El usuario cerró el menú de compartir
+    }
+  }
+
+  protected abrirEdicion(e: Envio): void {
+    this.edTipo.set(e.tipoCarga);
+    this.edNotas.set(e.notas ?? '');
+    this.edNombre.set(e.destinatarioNombre ?? '');
+    this.edTelefono.set(e.destinatarioTelefono ?? '');
+    this.errorEdicion.set('');
+    this.edicion.set(true);
+  }
+
+  protected async guardarEdicion(e: Envio): Promise<void> {
+    if (this.guardando()) return;
+    const tipo = this.edTipo().trim();
+    if (tipo.length < 1) {
+      this.errorEdicion.set('Indica el tipo de carga.');
+      return;
+    }
+    this.guardando.set(true);
+    this.errorEdicion.set('');
+    try {
+      const actualizado = await this.shipments.editar(e.id, {
+        tipoCarga: tipo,
+        notas: this.edNotas().trim(),
+        destinatarioNombre: this.edNombre().trim(),
+        destinatarioTelefono: this.edTelefono().replace(/[\s-]/g, ''),
+      });
+      this.envio.set({ ...e, ...actualizado, pin: actualizado.pin ?? e.pin });
+      this.edicion.set(false);
+      this.toast.exito('Cambios guardados');
+    } catch (err) {
+      this.errorEdicion.set(this.mapper.traducir(err));
+    } finally {
+      this.guardando.set(false);
+    }
   }
 
   protected alCalificar(): void {
@@ -451,6 +762,13 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     if (e.calificado) this.calificado.set(true);
     this.envio.set(e);
     this.cargando.set(false);
+    if (this.chat() && !this.chatEnfocado && e.conductor) {
+      this.chatEnfocado = true;
+      setTimeout(
+        () => document.getElementById('chat')?.scrollIntoView({ behavior: 'smooth' }),
+        300,
+      );
+    }
     if (puedeCalificar(e, this.calificado()) && !this.autoAbierto) {
       this.autoAbierto = true;
       this.modalAbierto.set(true);
@@ -469,4 +787,13 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
       this.error.set(this.mapper.traducir(e));
     }
   }
+}
+
+/** Número para wa.me: celular colombiano de 10 dígitos → 57XXXXXXXXXX; sin número, vacío. */
+export function telefonoWhatsapp(tel: string | null | undefined): string {
+  const t = (tel ?? '').replace(/[^\d+]/g, '');
+  if (/^3\d{9}$/.test(t)) return `57${t}`;
+  if (/^\+\d{8,15}$/.test(t)) return t.slice(1);
+  if (/^57\d{10}$/.test(t)) return t;
+  return '';
 }

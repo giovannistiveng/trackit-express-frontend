@@ -10,9 +10,18 @@ import { Observable, filter, firstValueFrom, map } from 'rxjs';
 import {
   CategoriaVehiculo,
   ConductorPostulante,
+  Billetera,
   Coordenadas,
   Cotizacion,
   DatosZona,
+  EstadoPago,
+  Liquidacion,
+  MensajeChat,
+  MetodoPago,
+  PagoAdmin,
+  PagoResumen,
+  Parada,
+  SeguimientoPublico,
   Envio,
   EnvioAdmin,
   EstadisticasPublicas,
@@ -47,6 +56,7 @@ import {
   AdminOperationsPort,
   ApprovalPort,
   AuthPort,
+  ChatPort,
   ClientShipmentsPort,
   DeliveryPort,
   DocumentsPort,
@@ -55,6 +65,7 @@ import {
   DriverProfilePort,
   DriverServicePort,
   DriverStatsPort,
+  EdicionEnvio,
   EventoLog,
   EvidenceStoragePort,
   GeoPort,
@@ -62,9 +73,11 @@ import {
   LogTransportPort,
   NotificationsPort,
   NuevoEnvio,
+  PaymentsPort,
   PublicSitePort,
   QuotePort,
   RatingPort,
+  RealtimePort,
   ShipmentsPort,
   TrackingPort,
   VehiclesPort,
@@ -80,7 +93,12 @@ import {
   ApiNotificacion,
   ApiPerfil,
   ApiCotizacion,
+  ApiLiquidacion,
+  ApiMensaje,
+  ApiPago,
+  ApiParada,
   ApiSeguimiento,
+  ApiSeguimientoPublico,
   ApiTarifaVehiculo,
   ApiUsuarioLogin,
   ApiZona,
@@ -95,7 +113,12 @@ import {
   aPerfil,
   aPostulante,
   aCotizacion,
+  aLiquidacion,
+  aMensaje,
+  aPago,
+  aParada,
   aSeguimiento,
+  aSeguimientoPublico,
   aTarifaVehiculo,
   aUsuario,
   aZona,
@@ -115,6 +138,18 @@ interface RespuestaDocumento {
 export class HttpAuthAdapter implements AuthPort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
+
+  async olvidePassword(correo: string): Promise<void> {
+    await firstValueFrom(this.http.post(this.url('/auth/olvide-password'), { correo }));
+  }
+
+  async restablecerPassword(token: string, nueva: string): Promise<void> {
+    await firstValueFrom(this.http.post(this.url('/auth/restablecer-password'), { token, nueva }));
+  }
+
+  async verificarCorreo(token: string): Promise<void> {
+    await firstValueFrom(this.http.post(this.url('/auth/verificar-correo'), { token }));
+  }
 
   async registrar(d: RegistroUsuario) {
     const r = await firstValueFrom(
@@ -175,6 +210,15 @@ function cuerpoRuta(s: SolicitudCotizacion): Record<string, unknown> {
   if (s.categoria) cuerpo['categoria'] = s.categoria;
   if (s.origenCoords) cuerpo['origen_coords'] = s.origenCoords;
   if (s.destinoCoords) cuerpo['destino_coords'] = s.destinoCoords;
+  if (s.paradas?.length) {
+    cuerpo['paradas'] = s.paradas.map((p) => ({
+      direccion: p.direccion,
+      coords: p.coords,
+      notas: p.notas || undefined,
+    }));
+  }
+  if (s.idaYVuelta) cuerpo['ida_y_vuelta'] = true;
+  if (s.fechaProgramada) cuerpo['fecha_programada'] = s.fechaProgramada.toISOString();
   return cuerpo;
 }
 
@@ -211,9 +255,28 @@ export class HttpShipmentsAdapter implements ShipmentsPort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
 
+  async editar(id: number, c: EdicionEnvio): Promise<Envio> {
+    validarId(id);
+    const cuerpo: Record<string, unknown> = {};
+    if (c.tipoCarga !== undefined) cuerpo['tipo_carga'] = c.tipoCarga;
+    if (c.notas !== undefined) cuerpo['notas'] = c.notas;
+    if (c.destinatarioNombre !== undefined) cuerpo['destinatario_nombre'] = c.destinatarioNombre;
+    if (c.destinatarioTelefono !== undefined)
+      cuerpo['destinatario_telefono'] = c.destinatarioTelefono;
+    const r = await firstValueFrom(
+      this.http.patch<{ envio: ApiEnvio }>(this.url(`/envios/${id}`), cuerpo),
+    );
+    return aEnvio(r.envio, true);
+  }
+
   async crear(e: NuevoEnvio): Promise<Envio> {
     const cuerpo: Record<string, unknown> = { ...cuerpoRuta(e), tipo_carga: e.tipoCarga };
     if (e.notas?.trim()) cuerpo['notas'] = e.notas.trim();
+    if (e.metodoPago) cuerpo['metodo_pago'] = e.metodoPago;
+    if (e.metodoPago === 'nequi') cuerpo['telefono_nequi'] = e.telefonoNequi;
+    if (e.destinatarioNombre?.trim()) cuerpo['destinatario_nombre'] = e.destinatarioNombre.trim();
+    if (e.destinatarioTelefono?.trim())
+      cuerpo['destinatario_telefono'] = e.destinatarioTelefono.trim();
     const r = await firstValueFrom(
       this.http.post<{ envio: ApiEnvio }>(this.url('/envios/crear'), cuerpo),
     );
@@ -382,6 +445,35 @@ export class HttpDriverServiceAdapter implements DriverServicePort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
 
+  async recoger(idEnvio: number, foto: File): Promise<Envio> {
+    validarId(idEnvio);
+    const datos = new FormData();
+    datos.append('archivo', foto, foto.name);
+    const r = await firstValueFrom(
+      this.http.post<{ envio: ApiEnvio }>(this.url(`/envios/${idEnvio}/recogida`), datos),
+    );
+    return aEnvio(r.envio, false);
+  }
+
+  async completarParada(idEnvio: number, idParada: number): Promise<Parada[]> {
+    validarId(idEnvio);
+    const r = await firstValueFrom(
+      this.http.post<{ paradas: ApiParada[] }>(
+        this.url(`/envios/${idEnvio}/paradas/${idParada}/completar`),
+        {},
+      ),
+    );
+    return r.paradas.map(aParada);
+  }
+
+  async llegadaDestino(idEnvio: number): Promise<Envio> {
+    validarId(idEnvio);
+    const r = await firstValueFrom(
+      this.http.post<{ envio: ApiEnvio }>(this.url(`/envios/${idEnvio}/llegada-destino`), {}),
+    );
+    return aEnvio(r.envio, false);
+  }
+
   async aceptar(idEnvio: number): Promise<Envio> {
     validarId(idEnvio);
     const r = await firstValueFrom(
@@ -435,12 +527,14 @@ export class HttpDeliveryAdapter implements DeliveryPort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
 
-  async validar(idEnvio: number, urlFoto: string, pin: string) {
+  async validar(idEnvio: number, urlFoto: string, pin: string, efectivoRecibido?: boolean) {
     validarId(idEnvio);
     const r = await firstValueFrom(
       this.http.post<{ envio: { id_envio: number; url_foto: string } }>(
         this.url(`/envios/${idEnvio}/validar-entrega`),
-        { url_foto: urlFoto, pin_seguridad: pin },
+        efectivoRecibido === undefined
+          ? { url_foto: urlFoto, pin_seguridad: pin }
+          : { url_foto: urlFoto, pin_seguridad: pin, efectivo_recibido: efectivoRecibido },
       ),
     );
     return { id: r.envio.id_envio, estado: 'Entregado' as const, urlFoto: r.envio.url_foto };
@@ -536,6 +630,45 @@ export class HttpDriverStatsAdapter implements DriverStatsPort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
 
+  async billetera(): Promise<Billetera> {
+    const r = await firstValueFrom(
+      this.http.get<{
+        pendiente: {
+          servicios: number;
+          ganancia_nequi: number;
+          cobrado_efectivo: number;
+          comision_efectivo: number;
+          saldo: number;
+        };
+        movimientos: {
+          id_envio: number;
+          fecha: string;
+          metodo: string;
+          tarifa: number;
+          ganancia: number;
+        }[];
+        liquidaciones: ApiLiquidacion[];
+      }>(this.url('/conductores/me/billetera')),
+    );
+    return {
+      pendiente: {
+        servicios: r.pendiente.servicios,
+        gananciaNequi: r.pendiente.ganancia_nequi,
+        cobradoEfectivo: r.pendiente.cobrado_efectivo,
+        comisionEfectivo: r.pendiente.comision_efectivo,
+        saldo: r.pendiente.saldo,
+      },
+      movimientos: r.movimientos.map((m) => ({
+        idEnvio: m.id_envio,
+        fecha: new Date(m.fecha),
+        metodo: m.metodo === 'nequi' ? 'nequi' : 'efectivo',
+        tarifa: m.tarifa,
+        ganancia: m.ganancia,
+      })),
+      liquidaciones: r.liquidaciones.map(aLiquidacion),
+    };
+  }
+
   async resumen(): Promise<ResumenConductor> {
     const r = await firstValueFrom(
       this.http.get<{
@@ -572,6 +705,13 @@ export class HttpAccountAdapter implements AccountPort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
 
+  async reenviarVerificacion(): Promise<boolean> {
+    const r = await firstValueFrom(
+      this.http.post<{ enviado: boolean }>(this.url('/usuarios/me/verificacion'), {}),
+    );
+    return r.enviado;
+  }
+
   async perfil(): Promise<PerfilUsuario> {
     return aPerfil(await firstValueFrom(this.http.get<ApiPerfil>(this.url('/usuarios/me'))));
   }
@@ -595,6 +735,17 @@ export class HttpAccountAdapter implements AccountPort {
 export class HttpNotificationsAdapter implements NotificationsPort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
+
+  async borrar(id: number): Promise<void> {
+    await firstValueFrom(this.http.delete(this.url(`/notificaciones/${id}`)));
+  }
+
+  async borrarLeidas(): Promise<number> {
+    const r = await firstValueFrom(
+      this.http.delete<{ borradas: number }>(this.url('/notificaciones')),
+    );
+    return r.borradas;
+  }
 
   async listar(soloNoLeidas = false): Promise<{ noLeidas: number; items: Notificacion[] }> {
     const params: Record<string, string> = { limite: '30' };
@@ -629,6 +780,15 @@ export class HttpNotificationsAdapter implements NotificationsPort {
 export class HttpPublicSiteAdapter implements PublicSitePort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
+
+  async seguimiento(token: string): Promise<SeguimientoPublico> {
+    const r = await firstValueFrom(
+      this.http.get<ApiSeguimientoPublico>(
+        this.url(`/publico/seguimiento/${encodeURIComponent(token)}`),
+      ),
+    );
+    return aSeguimientoPublico(r);
+  }
 
   estadisticas(): Promise<EstadisticasPublicas> {
     return firstValueFrom(this.http.get<EstadisticasPublicas>(this.url('/publico/estadisticas')));
@@ -671,6 +831,83 @@ export class HttpPublicSiteAdapter implements PublicSitePort {
 export class HttpAdminOperationsAdapter implements AdminOperationsPort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
+
+  async borrarMensaje(id: number): Promise<void> {
+    await firstValueFrom(this.http.delete(this.url(`/admin/contactos/${id}`)));
+  }
+
+  async borrarZona(idZona: number): Promise<'borrada' | 'archivada'> {
+    const r = await firstValueFrom(
+      this.http.delete<{ resultado: 'borrada' | 'archivada' }>(this.url(`/admin/zonas/${idZona}`)),
+    );
+    return r.resultado;
+  }
+
+  async pagos(f: {
+    metodo?: MetodoPago;
+    estado?: EstadoPago;
+    pagina: number;
+  }): Promise<Pagina<PagoAdmin>> {
+    const params: Record<string, string> = { pagina: String(f.pagina), tamano: '20' };
+    if (f.metodo) params['metodo'] = f.metodo;
+    if (f.estado) params['estado'] = f.estado;
+    const r = await firstValueFrom(
+      this.http.get<
+        Pagina<
+          ApiPago & { id_envio: number; cliente_nombre: string; origen: string; destino: string }
+        >
+      >(this.url('/admin/pagos'), { params }),
+    );
+    return {
+      ...r,
+      items: r.items.map((p) => ({
+        ...aPago(p),
+        idEnvio: p.id_envio,
+        cliente: p.cliente_nombre,
+        origen: p.origen,
+        destino: p.destino,
+      })),
+    };
+  }
+
+  async reembolsar(idEnvio: number): Promise<PagoResumen> {
+    const r = await firstValueFrom(
+      this.http.post<{ pago: ApiPago }>(this.url(`/admin/pagos/${idEnvio}/reembolso`), {}),
+    );
+    return aPago(r.pago);
+  }
+
+  async liquidaciones(f: {
+    estado?: 'pendiente' | 'pagada';
+    pagina: number;
+  }): Promise<Pagina<Liquidacion>> {
+    const params: Record<string, string> = { pagina: String(f.pagina), tamano: '20' };
+    if (f.estado) params['estado'] = f.estado;
+    const r = await firstValueFrom(
+      this.http.get<Pagina<ApiLiquidacion>>(this.url('/admin/liquidaciones'), { params }),
+    );
+    return { ...r, items: r.items.map(aLiquidacion) };
+  }
+
+  async generarLiquidaciones(hasta?: string): Promise<Liquidacion[]> {
+    const r = await firstValueFrom(
+      this.http.post<{ liquidaciones: ApiLiquidacion[] }>(
+        this.url('/admin/liquidaciones/generar'),
+        hasta ? { hasta } : {},
+      ),
+    );
+    return r.liquidaciones.map(aLiquidacion);
+  }
+
+  async pagarLiquidacion(id: number, referencia: string): Promise<Liquidacion> {
+    const r = await firstValueFrom(
+      this.http.post<{ liquidacion: ApiLiquidacion }>(
+        this.url(`/admin/liquidaciones/${id}/pagar`),
+        { referencia },
+      ),
+    );
+    return aLiquidacion(r.liquidacion);
+  }
 
   async envios(f: FiltroEnviosAdmin): Promise<Pagina<EnvioAdmin>> {
     const params: Record<string, string> = { pagina: String(f.pagina), tamano: String(f.tamano) };
@@ -759,6 +996,93 @@ function cuerpoZona(d: Partial<DatosZona>): Record<string, unknown> {
   if (d.activa !== undefined) c['activa'] = d.activa;
   if (d.descripcion !== undefined) c['descripcion'] = d.descripcion ?? '';
   return c;
+}
+
+// ---------------------------------------------------------------- Pagos, chat y tiempo real
+
+@Injectable({ providedIn: 'root' })
+export class HttpPaymentsAdapter implements PaymentsPort {
+  private readonly http = inject(HttpClient);
+  private readonly url = apiUrl();
+
+  async estado(idEnvio: number): Promise<PagoResumen> {
+    validarId(idEnvio);
+    return aPago(await firstValueFrom(this.http.get<ApiPago>(this.url(`/envios/${idEnvio}/pago`))));
+  }
+
+  async reintentar(idEnvio: number, telefono?: string): Promise<PagoResumen> {
+    validarId(idEnvio);
+    const r = await firstValueFrom(
+      this.http.post<{ pago: ApiPago }>(
+        this.url(`/envios/${idEnvio}/pago/reintentar`),
+        telefono ? { telefono } : {},
+      ),
+    );
+    return aPago(r.pago);
+  }
+
+  async pagarEnEfectivo(idEnvio: number): Promise<PagoResumen> {
+    validarId(idEnvio);
+    const r = await firstValueFrom(
+      this.http.post<{ pago: ApiPago }>(this.url(`/envios/${idEnvio}/pago/efectivo`), {}),
+    );
+    return aPago(r.pago);
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class HttpChatAdapter implements ChatPort {
+  private readonly http = inject(HttpClient);
+  private readonly url = apiUrl();
+
+  async mensajes(idEnvio: number): Promise<{ abierto: boolean; mensajes: MensajeChat[] }> {
+    validarId(idEnvio);
+    const r = await firstValueFrom(
+      this.http.get<{ abierto: boolean; mensajes: ApiMensaje[] }>(
+        this.url(`/envios/${idEnvio}/mensajes`),
+      ),
+    );
+    return { abierto: r.abierto, mensajes: r.mensajes.map(aMensaje) };
+  }
+
+  async enviar(idEnvio: number, texto: string): Promise<MensajeChat> {
+    validarId(idEnvio);
+    return aMensaje(
+      await firstValueFrom(
+        this.http.post<ApiMensaje>(this.url(`/envios/${idEnvio}/mensajes`), { texto }),
+      ),
+    );
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class HttpRealtimeAdapter implements RealtimePort {
+  private readonly http = inject(HttpClient);
+  private readonly url = apiUrl();
+
+  async ticket(): Promise<string> {
+    return (
+      await firstValueFrom(this.http.post<{ ticket: string }>(this.url('/eventos/ticket'), {}))
+    ).ticket;
+  }
+
+  urlEventos(ticket: string): string {
+    return `${this.url('/eventos')}?ticket=${encodeURIComponent(ticket)}`;
+  }
+
+  async clavePush(): Promise<string | null> {
+    return (
+      await firstValueFrom(this.http.get<{ clave: string | null }>(this.url('/push/clave-publica')))
+    ).clave;
+  }
+
+  async suscribirPush(datos: Parameters<RealtimePort['suscribirPush']>[0]): Promise<void> {
+    await firstValueFrom(this.http.post(this.url('/push/suscripciones'), datos));
+  }
+
+  async desuscribirPush(endpoint: string): Promise<void> {
+    await firstValueFrom(this.http.delete(this.url('/push/suscripciones'), { body: { endpoint } }));
+  }
 }
 
 // ---------------------------------------------------------------- Logs

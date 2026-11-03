@@ -7,7 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { Envio, ResumenConductor } from '../../core/domain';
+import { Billetera, Envio, ResumenConductor } from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { DriverStatsPort } from '../../core/ports';
 import { ContadorDirective } from '../../shared/directives/contador.directive';
@@ -105,6 +105,71 @@ const MESES = new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' 
             </a>
           }
 
+          @if (billetera(); as b) {
+            <section class="tarjeta mt-6 p-5 sm:p-6" aria-labelledby="titulo-billetera">
+              <h2 id="titulo-billetera" class="flex items-center gap-2">
+                <ti-icono nombre="wallet" class="text-marca" /> Liquidación de esta semana
+              </h2>
+              <p class="mt-1 text-sm text-piedra">
+                Cada lunes liquidamos la semana anterior: te transferimos lo pagado con Nequi y
+                descontamos la comisión (20 %) de lo que cobraste en efectivo.
+              </p>
+              <dl class="numeros mt-4 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-sm">
+                <dt class="text-piedra">Servicios entregados</dt>
+                <dd class="text-right font-semibold">{{ b.pendiente.servicios }}</dd>
+                <dt class="text-piedra">Tu parte de servicios pagados con Nequi</dt>
+                <dd class="text-right font-semibold">{{ b.pendiente.gananciaNequi | cop }}</dd>
+                <dt class="text-piedra">Efectivo que cobraste (ya lo tienes)</dt>
+                <dd class="text-right font-semibold">{{ b.pendiente.cobradoEfectivo | cop }}</dd>
+                <dt class="text-piedra">Comisión del efectivo</dt>
+                <dd class="text-right font-semibold text-alerta">
+                  − {{ b.pendiente.comisionEfectivo | cop }}
+                </dd>
+                <dt class="border-t border-linea pt-2 font-bold">
+                  {{ b.pendiente.saldo >= 0 ? 'Te pagaremos' : 'Debes a la plataforma' }}
+                </dt>
+                <dd
+                  class="border-t border-linea pt-2 text-right text-lg font-extrabold"
+                  [class]="b.pendiente.saldo >= 0 ? 'text-exito' : 'text-alerta'"
+                >
+                  {{ abs(b.pendiente.saldo) | cop }}
+                </dd>
+              </dl>
+              @if (b.liquidaciones.length > 0) {
+                <h3 class="mt-6 text-sm font-semibold">Semanas anteriores</h3>
+                <ul class="mt-2 divide-y divide-linea text-sm">
+                  @for (l of b.liquidaciones; track l.id) {
+                    <li class="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                      <span>{{ rango(l.desde, l.hasta) }} · {{ l.servicios }} servicios</span>
+                      <span class="flex items-center gap-2">
+                        <strong
+                          class="numeros"
+                          [class]="l.saldo >= 0 ? 'text-exito' : 'text-alerta'"
+                        >
+                          {{ l.saldo < 0 ? '−' : '' }}{{ abs(l.saldo) | cop }}
+                        </strong>
+                        <span
+                          class="insignia"
+                          [class]="
+                            l.estado === 'pagada' ? 'bg-exito-suave text-exito' : 'bg-aviso-suave'
+                          "
+                        >
+                          {{
+                            l.estado === 'pagada'
+                              ? l.saldo >= 0
+                                ? 'Pagada'
+                                : 'Saldada'
+                              : 'Pendiente'
+                          }}
+                        </span>
+                      </span>
+                    </li>
+                  }
+                </ul>
+              }
+            </section>
+          }
+
           <h2 class="mt-10">Servicios terminados</h2>
           @if (historial().length === 0) {
             <div class="mt-4 rounded-2xl border border-dashed border-linea px-5 py-10 text-center">
@@ -171,6 +236,8 @@ export class GananciasPage implements OnInit {
 
   protected readonly resumen = signal<ResumenConductor | null>(null);
   protected readonly historial = signal<Envio[]>([]);
+  protected readonly billetera = signal<Billetera | null>(null);
+  protected readonly abs = Math.abs;
   protected readonly error = signal('');
   protected readonly cargando = signal(true);
   protected readonly mes = MESES.format(new Date());
@@ -193,11 +260,30 @@ export class GananciasPage implements OnInit {
       const [r, h] = await Promise.all([this.stats.resumen(), this.stats.historial()]);
       this.resumen.set(r);
       this.historial.set(h);
+      void this.cargarBilletera();
     } catch (e) {
       this.error.set(this.mapper.traducir(e));
     } finally {
       this.cargando.set(false);
     }
+  }
+
+  /** La liquidación es complementaria: si falla, el resto de la página se muestra igual. */
+  private async cargarBilletera(): Promise<void> {
+    try {
+      this.billetera.set(await this.stats.billetera());
+    } catch {
+      this.billetera.set(null);
+    }
+  }
+
+  /** "3 – 9 nov." */
+  protected rango(desde: string, hasta: string): string {
+    const f = (s: string) => new Date(`${s}T12:00:00`);
+    const d = f(desde);
+    const h = f(hasta);
+    const mes = h.toLocaleDateString('es-CO', { month: 'short' });
+    return `${d.getDate()} – ${h.getDate()} ${mes}`;
   }
 
   protected estrellas(n: number): string {

@@ -71,6 +71,9 @@ export const MENSAJE_CREDENCIALES = 'Correo o contraseña incorrectos';
           @if (err('password')) {
             <p id="password-error" class="error-campo">Escribe tu contraseña.</p>
           }
+          <p class="mt-2 text-right text-sm">
+            <a routerLink="/olvide-contrasena" class="btn-texto">¿Olvidaste tu contraseña?</a>
+          </p>
         </div>
         @if (error()) {
           <p

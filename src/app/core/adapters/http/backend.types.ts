@@ -5,6 +5,7 @@ export interface ApiUsuarioLogin {
   nombre: string;
   correo: string;
   rol: string;
+  correo_verificado?: boolean;
 }
 
 export interface ApiCambioEstado {
@@ -39,6 +40,18 @@ export interface ApiEnvio {
   ganancia_conductor?: number;
   duracion_min?: number | null;
   desglose?: ApiDesglose | null;
+  metodo_pago?: string;
+  pago?: ApiPago | null;
+  token_seguimiento?: string | null;
+  destinatario_nombre?: string | null;
+  destinatario_telefono?: string | null;
+  fecha_programada?: string | null;
+  ida_y_vuelta?: boolean;
+  destino_visitado_en?: string | null;
+  url_foto_recogida?: string | null;
+  fecha_recogida?: string | null;
+  paradas?: ApiParada[];
+  chat_no_leidos?: number;
   conductor?: {
     nombre: string;
     vehiculo?: string | null;
@@ -92,6 +105,7 @@ export interface ApiPerfil {
   nombre_rol: string;
   telefono: string | null;
   fecha_registro: string | null;
+  correo_verificado?: boolean;
 }
 
 export interface ApiEnvioAdmin extends ApiEnvio {
@@ -128,9 +142,69 @@ export interface ApiDesglose {
   distancia: number;
   tiempo: number;
   recargo_zona: number;
+  paradas?: number;
+  recargo_paradas?: number;
+  ida_y_vuelta?: boolean;
   recargo_nocturno: number;
   minimo_aplicado: boolean;
   total: number;
+}
+
+export interface ApiPago {
+  metodo: string;
+  estado: string;
+  monto: number | string;
+  telefono: string | null;
+  mensaje: string | null;
+  actualizado: string | null;
+}
+
+export interface ApiParada {
+  id_parada?: number;
+  orden: number;
+  direccion: string;
+  coords: { lat: number; lon: number };
+  notas?: string | null;
+  completada_en: string | null;
+}
+
+export interface ApiMensaje {
+  id: number;
+  texto: string;
+  autor: string | null;
+  mio: boolean;
+  leido: boolean;
+  fecha: string;
+}
+
+export interface ApiLiquidacion {
+  id_liquidacion: number;
+  conductor_nombre?: string;
+  desde: string;
+  hasta: string;
+  servicios: number;
+  total_tarifas: number | string;
+  ganancia_conductor: number | string;
+  cobrado_efectivo: number | string;
+  comision_efectivo: number | string;
+  saldo: number | string;
+  estado: 'pendiente' | 'pagada';
+  referencia: string | null;
+  pagada_en: string | null;
+}
+
+export interface ApiSeguimientoPublico {
+  codigo: number;
+  estado: string;
+  origen: string;
+  destino: string;
+  destinatario: string | null;
+  fecha_programada: string | null;
+  ida_y_vuelta: boolean;
+  historial: ApiCambioEstado[];
+  conductor: { nombre: string; vehiculo: string | null; placa: string | null } | null;
+  paradas: { orden: number; direccion: string; completada: boolean }[];
+  mapa: ApiSeguimiento | null;
 }
 
 export interface ApiTarifaVehiculo {

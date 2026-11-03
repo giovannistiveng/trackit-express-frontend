@@ -6,6 +6,12 @@ import {
   ConductorPostulante,
   Cotizacion,
   DesgloseTarifa,
+  EstadoPago,
+  Liquidacion,
+  MensajeChat,
+  PagoResumen,
+  Parada,
+  SeguimientoPublico,
   ESTADOS_ENVIO,
   Envio,
   EstadoAprobacion,
@@ -32,6 +38,11 @@ import {
   ApiDesglose,
   ApiEnvio,
   ApiEnvioAdmin,
+  ApiLiquidacion,
+  ApiMensaje,
+  ApiPago,
+  ApiParada,
+  ApiSeguimientoPublico,
   ApiNotificacion,
   ApiPerfil,
   ApiPunto,
@@ -57,7 +68,9 @@ export function aEstadoAprobacion(valor: string): EstadoAprobacion {
 }
 
 export function aUsuario(u: ApiUsuarioLogin): Usuario {
-  return { id: u.id, nombre: u.nombre, correo: u.correo, rol: aRol(u.rol) };
+  const usuario: Usuario = { id: u.id, nombre: u.nombre, correo: u.correo, rol: aRol(u.rol) };
+  if (u.correo_verificado !== undefined) usuario.correoVerificado = u.correo_verificado;
+  return usuario;
 }
 
 export function aCategoria(v: string | null | undefined): CategoriaVehiculo | undefined {
@@ -108,6 +121,18 @@ export function aEnvio(e: ApiEnvio, incluirPin: boolean): Envio {
   if (e.ganancia_conductor !== undefined) envio.gananciaConductor = Number(e.ganancia_conductor);
   if (e.duracion_min) envio.duracionMin = e.duracion_min;
   if (e.desglose) envio.desglose = aDesglose(e.desglose);
+  if (e.metodo_pago) envio.metodoPago = e.metodo_pago === 'nequi' ? 'nequi' : 'efectivo';
+  if (e.pago !== undefined) envio.pago = e.pago ? aPago(e.pago) : null;
+  if (e.token_seguimiento) envio.tokenSeguimiento = e.token_seguimiento;
+  if (e.destinatario_nombre !== undefined) envio.destinatarioNombre = e.destinatario_nombre;
+  if (e.destinatario_telefono !== undefined) envio.destinatarioTelefono = e.destinatario_telefono;
+  if (e.fecha_programada) envio.fechaProgramada = new Date(e.fecha_programada);
+  if (e.ida_y_vuelta) envio.idaYVuelta = true;
+  if (e.destino_visitado_en) envio.destinoVisitadoEn = new Date(e.destino_visitado_en);
+  if (e.url_foto_recogida) envio.urlFotoRecogida = e.url_foto_recogida;
+  if (e.fecha_recogida) envio.fechaRecogida = new Date(e.fecha_recogida);
+  if (e.paradas) envio.paradas = e.paradas.map(aParada);
+  if (e.chat_no_leidos !== undefined) envio.chatNoLeidos = e.chat_no_leidos;
   if (e.conductor) {
     envio.conductor = {
       nombre: e.conductor.nombre,
@@ -175,6 +200,7 @@ export function aPerfil(p: ApiPerfil): PerfilUsuario {
     nombreRol: p.nombre_rol,
     telefono: p.telefono,
     fechaRegistro: p.fecha_registro ? new Date(p.fecha_registro) : null,
+    correoVerificado: p.correo_verificado !== false,
   };
 }
 
@@ -223,6 +249,9 @@ export function aDesglose(d: ApiDesglose): DesgloseTarifa {
     distancia: Number(d.distancia),
     tiempo: Number(d.tiempo),
     recargoZona: Number(d.recargo_zona),
+    paradas: Number(d.paradas ?? 0),
+    recargoParadas: Number(d.recargo_paradas ?? 0),
+    idaYVuelta: !!d.ida_y_vuelta,
     recargoNocturno: Number(d.recargo_nocturno),
     minimoAplicado: !!d.minimo_aplicado,
     total: Number(d.total),
@@ -269,4 +298,85 @@ export function aCotizacion(r: ApiCotizacion): Cotizacion {
   if (r.origen_coords !== undefined) c.origenCoords = r.origen_coords;
   if (r.destino_coords !== undefined) c.destinoCoords = r.destino_coords;
   return c;
+}
+
+const ESTADOS_PAGO: EstadoPago[] = [
+  'pendiente',
+  'aprobado',
+  'rechazado',
+  'expirado',
+  'por_cobrar',
+  'cobrado',
+  'anulado',
+  'reembolso_pendiente',
+  'reembolsado',
+];
+
+export function aPago(p: ApiPago): PagoResumen {
+  return {
+    metodo: p.metodo === 'nequi' ? 'nequi' : 'efectivo',
+    estado: (ESTADOS_PAGO as string[]).includes(p.estado) ? (p.estado as EstadoPago) : 'pendiente',
+    monto: Number(p.monto),
+    telefono: p.telefono,
+    mensaje: p.mensaje,
+    actualizado: p.actualizado ? new Date(p.actualizado) : null,
+  };
+}
+
+export function aParada(p: ApiParada): Parada {
+  return {
+    id: p.id_parada ?? p.orden,
+    orden: p.orden,
+    direccion: p.direccion,
+    coords: p.coords,
+    notas: p.notas ?? null,
+    completadaEn: p.completada_en ? new Date(p.completada_en) : null,
+  };
+}
+
+export function aMensaje(m: ApiMensaje): MensajeChat {
+  return {
+    id: m.id,
+    texto: m.texto,
+    autor: m.autor,
+    mio: m.mio,
+    leido: m.leido,
+    fecha: new Date(m.fecha),
+  };
+}
+
+export function aLiquidacion(l: ApiLiquidacion): Liquidacion {
+  return {
+    id: l.id_liquidacion,
+    conductor: l.conductor_nombre ?? null,
+    desde: l.desde,
+    hasta: l.hasta,
+    servicios: l.servicios,
+    totalTarifas: Number(l.total_tarifas),
+    gananciaConductor: Number(l.ganancia_conductor),
+    cobradoEfectivo: Number(l.cobrado_efectivo),
+    comisionEfectivo: Number(l.comision_efectivo),
+    saldo: Number(l.saldo),
+    estado: l.estado,
+    referencia: l.referencia,
+    pagadaEn: l.pagada_en ? new Date(l.pagada_en) : null,
+  };
+}
+
+export function aSeguimientoPublico(s: ApiSeguimientoPublico): SeguimientoPublico {
+  return {
+    codigo: s.codigo,
+    estado: aEstado(s.estado),
+    origen: s.origen,
+    destino: s.destino,
+    destinatario: s.destinatario,
+    fechaProgramada: s.fecha_programada ? new Date(s.fecha_programada) : null,
+    idaYVuelta: s.ida_y_vuelta,
+    historial: s.historial
+      .map((h) => ({ estado: aEstado(h.estado), fecha: new Date(h.fecha) }))
+      .sort((a, b) => a.fecha.getTime() - b.fecha.getTime()),
+    conductor: s.conductor,
+    paradas: s.paradas,
+    mapa: s.mapa ? aSeguimiento(s.mapa) : null,
+  };
 }

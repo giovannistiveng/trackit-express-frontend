@@ -15,6 +15,7 @@ import { CargaArchivoComponent } from '../../../shared/ui/carga-archivo.componen
 import { ModalComponent } from '../../../shared/ui/modal.component';
 import { TecladoPinComponent } from '../../../shared/ui/teclado-pin.component';
 import { ToastService } from '../../../shared/ui/toast.service';
+import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 export const MENSAJE_PIN_INCORRECTO =
   'El PIN no coincide. Pídeselo de nuevo al cliente e inténtalo otra vez.';
@@ -23,7 +24,7 @@ export const MENSAJE_PIN_INCORRECTO =
 @Component({
   selector: 'ti-entrega-modal',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ModalComponent, TecladoPinComponent, CargaArchivoComponent],
+  imports: [ModalComponent, TecladoPinComponent, CargaArchivoComponent, CopPipe],
   template: `
     <ti-modal titulo="Finalizar entrega" [cerrable]="!enviando()" (cerrar)="cerrar.emit()">
       <section aria-labelledby="paso-pin">
@@ -45,6 +46,28 @@ export const MENSAJE_PIN_INCORRECTO =
           (archivo)="alElegirFoto($event)"
         />
       </section>
+      @if (cobroEfectivo(); as monto) {
+        <label
+          class="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border-2 p-4"
+          [class]="
+            efectivoRecibido() ? 'border-exito bg-exito-suave' : 'border-placa bg-aviso-suave'
+          "
+        >
+          <input
+            type="checkbox"
+            class="mt-1 size-5 accent-[var(--color-exito)]"
+            [checked]="efectivoRecibido()"
+            [disabled]="enviando()"
+            (change)="efectivoRecibido.set($any($event.target).checked)"
+          />
+          <span>
+            <span class="block font-semibold">Recibí {{ monto | cop }} en efectivo</span>
+            <span class="text-sm text-piedra"
+              >Confírmalo solo cuando tengas el dinero en la mano.</span
+            >
+          </span>
+        </label>
+      }
       @if (error()) {
         <p
           class="mt-4 rounded-lg bg-alerta-suave px-4 py-3 text-sm font-semibold text-alerta"
@@ -66,6 +89,8 @@ export const MENSAJE_PIN_INCORRECTO =
 })
 export class EntregaModalComponent {
   readonly idEnvio = input.required<number>();
+  /** Valor a cobrar en efectivo; null si el cliente pagó en línea. */
+  readonly cobroEfectivo = input<number | null>(null);
   readonly cerrar = output<void>();
   readonly entregado = output<void>();
   /** Se emite si el backend dice que el envío ya estaba entregado. */
@@ -84,7 +109,13 @@ export class EntregaModalComponent {
   protected readonly enviando = signal(false);
   protected readonly paso = signal('');
   protected readonly error = signal('');
-  protected readonly listo = computed(() => esPinValido(this.pin()) && this.foto() !== null);
+  readonly efectivoRecibido = signal(false);
+  protected readonly listo = computed(
+    () =>
+      esPinValido(this.pin()) &&
+      this.foto() !== null &&
+      (this.cobroEfectivo() === null || this.efectivoRecibido()),
+  );
 
   alElegirFoto(f: File): void {
     this.foto.set(f);
@@ -102,7 +133,12 @@ export class EntregaModalComponent {
         this.urlFoto = await this.evidencias.subir(this.idEnvio(), foto);
       }
       this.paso.set('Validando PIN…');
-      await this.entregas.validar(this.idEnvio(), this.urlFoto, this.pin());
+      await this.entregas.validar(
+        this.idEnvio(),
+        this.urlFoto,
+        this.pin(),
+        this.cobroEfectivo() === null ? undefined : this.efectivoRecibido(),
+      );
       this.log.info('Entrega', `Envío #${this.idEnvio()} entregado`);
       this.toast.exito('Entrega registrada. ¡Buen trabajo!');
       this.entregado.emit();

@@ -79,6 +79,7 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.mapa?.stop();
     this.mapa?.remove();
     this.mapa = null;
   }
@@ -126,9 +127,11 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
         fillOpacity: 0.12,
         interactive: false,
       }).addTo(this.capaPunto);
-      if (!this.encuadrado) this.mapa.fitBounds(circulo.getBounds(), { padding: [24, 24] });
+      if (!this.encuadrado)
+        this.mapa.fitBounds(circulo.getBounds(), { padding: [24, 24], animate: false });
     } else if (!this.encuadrado) {
-      this.mapa.setView([p.lat, p.lon], Math.max(this.mapa.getZoom(), 15));
+      // Sin animación: si el modal se cierra durante el zoom animado, Leaflet falla (_leaflet_pos)
+      this.mapa.setView([p.lat, p.lon], Math.max(this.mapa.getZoom(), 15), { animate: false });
     }
     this.encuadrado = true;
     this.marcador = L.marker([p.lat, p.lon], {

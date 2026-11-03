@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnDestroy,
   OnInit,
   computed,
@@ -27,6 +28,11 @@ import { EstadoBadgeComponent } from '../../shared/ui/estado-badge.component';
 import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
 import { ToastService } from '../../shared/ui/toast.service';
 import { EntregaModalComponent } from './components/entrega-modal.component';
+import { RecogidaModalComponent } from './components/recogida-modal.component';
+import { ChatEnvioComponent } from '../../shared/ui/chat-envio.component';
+import { EventosService } from '../../core/realtime/eventos.service';
+import { ApiNotificacion } from '../../core/adapters/http/backend.types';
+import { telefonoWhatsapp } from '../cliente/envio-detalle.page';
 import { CompartirUbicacionService } from './state/compartir-ubicacion.service';
 import { DriverProfileStore } from './state/driver-profile.store';
 
@@ -40,6 +46,8 @@ import { DriverProfileStore } from './state/driver-profile.store';
     EstadoBadgeComponent,
     EstadoCargaComponent,
     EntregaModalComponent,
+    RecogidaModalComponent,
+    ChatEnvioComponent,
     IconoComponent,
     MapaEnvioComponent,
   ],
@@ -65,7 +73,24 @@ import { DriverProfileStore } from './state/driver-profile.store';
               <h1 class="mt-1">
                 {{ e.estado === 'Entregado' ? 'Entrega completada' : 'Servicio en curso' }}
               </h1>
-              <div class="mt-3"><ti-estado-badge [estado]="e.estado" /></div>
+              <div class="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                <ti-estado-badge [estado]="e.estado" />
+                @if (e.metodoPago === 'efectivo' && e.estado !== 'Cancelado') {
+                  <span class="insignia bg-aviso-suave"
+                    ><ti-icono nombre="banknote" class="size-4" /> Cobra {{ e.tarifa | cop }} en
+                    efectivo</span
+                  >
+                } @else if (e.metodoPago === 'nequi') {
+                  <span class="insignia bg-exito-suave text-exito"
+                    ><ti-icono nombre="smartphone" class="size-4" /> Pagado con Nequi</span
+                  >
+                }
+                @if (e.idaYVuelta) {
+                  <span class="insignia bg-marca-suave text-marca"
+                    ><ti-icono nombre="repeat" class="size-4" /> Ida y vuelta</span
+                  >
+                }
+              </div>
             </div>
             @if (e.gananciaConductor !== undefined) {
               <div class="rounded-2xl bg-bosque-suave px-5 py-3 text-right">
@@ -115,10 +140,10 @@ import { DriverProfileStore } from './state/driver-profile.store';
                 <li class="tarjeta flex items-start gap-4 p-4">
                   <span
                     class="grid size-10 shrink-0 place-items-center rounded-full bg-tinta text-white"
-                    ><ti-icono nombre="package"
+                    ><ti-icono [nombre]="e.urlFotoRecogida ? 'check' : 'package'"
                   /></span>
                   <div class="min-w-0 flex-1">
-                    <p class="text-sm text-piedra">1. Recoge en</p>
+                    <p class="text-sm text-piedra">Recoge en</p>
                     <p class="text-lg font-semibold">{{ e.origen }}</p>
                   </div>
                   @if (e.estado === 'Asignado') {
@@ -133,27 +158,127 @@ import { DriverProfileStore } from './state/driver-profile.store';
                     </a>
                   }
                 </li>
+                @for (p of e.paradas ?? []; track p.id) {
+                  <li
+                    class="tarjeta flex items-start gap-4 p-4"
+                    [class.opacity-70]="!!p.completadaEn"
+                  >
+                    <span
+                      class="grid size-10 shrink-0 place-items-center rounded-full border-2 font-bold"
+                      [class]="
+                        p.completadaEn
+                          ? 'border-exito bg-exito text-white'
+                          : 'border-tinta bg-papel'
+                      "
+                    >
+                      @if (p.completadaEn) {
+                        <ti-icono nombre="check" />
+                      } @else {
+                        {{ p.orden }}
+                      }
+                    </span>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm text-piedra">Parada {{ p.orden }}</p>
+                      <p class="text-lg font-semibold">{{ p.direccion }}</p>
+                      @if (e.estado === 'En Ruta' && !p.completadaEn) {
+                        <button
+                          type="button"
+                          class="btn-secundario mt-2 !py-1.5 text-sm"
+                          [disabled]="ocupado()"
+                          (click)="completarParada(e, p.id)"
+                        >
+                          <ti-icono nombre="check" class="size-4" /> Marcar parada hecha
+                        </button>
+                      }
+                    </div>
+                    @if (e.estado === 'En Ruta' && !p.completadaEn) {
+                      <a
+                        class="btn-secundario shrink-0 !px-3"
+                        [href]="comoLlegar(p.direccion, p.coords)"
+                        target="_blank"
+                        rel="noopener"
+                        [attr.aria-label]="'Cómo llegar a la parada ' + p.orden"
+                      >
+                        <ti-icono nombre="navigation" class="text-marca" />
+                      </a>
+                    }
+                  </li>
+                }
                 <li class="tarjeta flex items-start gap-4 p-4">
                   <span
                     class="grid size-10 shrink-0 place-items-center rounded-full bg-marca text-white"
-                    ><ti-icono nombre="map-pin"
+                    ><ti-icono [nombre]="e.destinoVisitadoEn ? 'check' : 'map-pin'"
                   /></span>
                   <div class="min-w-0 flex-1">
-                    <p class="text-sm text-piedra">2. Entrega en</p>
+                    <p class="text-sm text-piedra">{{ e.idaYVuelta ? 'Lleva a' : 'Entrega en' }}</p>
                     <p class="text-lg font-semibold">{{ e.destino }}</p>
+                    @if (e.destinatarioNombre || e.destinatarioTelefono) {
+                      <p class="mt-1 text-sm">
+                        Recibe: <strong>{{ e.destinatarioNombre ?? 'Sin nombre' }}</strong>
+                      </p>
+                      @if (e.destinatarioTelefono; as tel) {
+                        <div class="mt-2 flex flex-wrap gap-2">
+                          <a class="btn-secundario !py-1.5 text-sm" [href]="'tel:' + tel"
+                            ><ti-icono nombre="phone" class="size-4" /> Llamar</a
+                          >
+                          <a
+                            class="btn-secundario !py-1.5 text-sm"
+                            [href]="whatsapp(tel)"
+                            target="_blank"
+                            rel="noopener"
+                            ><ti-icono nombre="message-circle" class="size-4" /> WhatsApp</a
+                          >
+                        </div>
+                      }
+                    }
+                    @if (e.idaYVuelta && e.estado === 'En Ruta' && !e.destinoVisitadoEn) {
+                      <button
+                        type="button"
+                        class="btn-primario mt-3 !py-2 text-sm"
+                        [disabled]="ocupado() || paradasPendientes() > 0"
+                        (click)="llegadaDestino(e)"
+                      >
+                        <ti-icono nombre="flag" class="size-4" /> Llegué al destino, regreso
+                      </button>
+                    }
                   </div>
-                  @if (e.estado === 'En Ruta') {
+                  @if (
+                    e.estado === 'En Ruta' && !e.destinoVisitadoEn && paradasPendientes() === 0
+                  ) {
                     <a
                       class="btn-secundario shrink-0 !px-3"
                       [href]="comoLlegar(e.destino, e.destinoCoords)"
                       target="_blank"
                       rel="noopener"
-                      aria-label="Cómo llegar al punto de entrega"
+                      aria-label="Cómo llegar al destino"
                     >
                       <ti-icono nombre="navigation" class="text-marca" />
                     </a>
                   }
                 </li>
+                @if (e.idaYVuelta) {
+                  <li class="tarjeta flex items-start gap-4 p-4">
+                    <span
+                      class="grid size-10 shrink-0 place-items-center rounded-full bg-tinta text-white"
+                      ><ti-icono nombre="repeat"
+                    /></span>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm text-piedra">Regresa y entrega en</p>
+                      <p class="text-lg font-semibold">{{ e.origen }}</p>
+                    </div>
+                    @if (e.estado === 'En Ruta' && e.destinoVisitadoEn) {
+                      <a
+                        class="btn-secundario shrink-0 !px-3"
+                        [href]="comoLlegar(e.origen, e.origenCoords)"
+                        target="_blank"
+                        rel="noopener"
+                        aria-label="Cómo llegar al origen"
+                      >
+                        <ti-icono nombre="navigation" class="text-marca" />
+                      </a>
+                    }
+                  </li>
+                }
               </ol>
               @if (e.notas) {
                 <p class="flex gap-3 rounded-2xl border border-placa/60 bg-aviso-suave p-4">
@@ -180,17 +305,13 @@ import { DriverProfileStore } from './state/driver-profile.store';
                     <button
                       type="button"
                       class="btn-primario btn-grande w-full"
-                      [disabled]="iniciando()"
-                      (click)="iniciarRuta()"
+                      (click)="recogida.set(true)"
                     >
-                      <ti-icono
-                        [nombre]="iniciando() ? 'loader' : 'navigation'"
-                        [class]="iniciando() ? 'animate-spin' : ''"
-                      />
-                      {{ iniciando() ? 'Iniciando…' : 'Iniciar ruta' }}
+                      <ti-icono nombre="camera" /> Recogí el paquete
                     </button>
                     <p class="text-sm text-piedra">
-                      Al iniciar la ruta compartiremos tu ubicación con el cliente.
+                      Toma la foto del paquete: con eso inicia la ruta y compartimos tu ubicación
+                      con el cliente.
                     </p>
                   }
                   <div class="tarjeta flex items-center justify-between gap-4 p-4">
@@ -229,17 +350,26 @@ import { DriverProfileStore } from './state/driver-profile.store';
                     <button
                       type="button"
                       class="btn-acento btn-grande w-full text-lg"
+                      [disabled]="!!faltaParaEntregar()"
                       (click)="modal.set(true)"
                     >
                       <ti-icono nombre="package-check" /> Finalizar entrega
                     </button>
                     <p class="text-sm text-piedra">
-                      Pídele el PIN al cliente y toma una foto del paquete entregado.
+                      {{
+                        faltaParaEntregar() ||
+                          'Pídele el PIN al cliente y toma una foto del paquete entregado.'
+                      }}
                     </p>
                   } @else if (e.estado !== 'Cancelado') {
                     <p class="text-sm text-piedra">
-                      Inicia la ruta para poder finalizar la entrega.
+                      Recoge el paquete para poder finalizar la entrega.
                     </p>
+                  }
+                  @if (e.estado === 'Asignado' || e.estado === 'En Ruta') {
+                    <div id="chat">
+                      <ti-chat-envio [idEnvio]="e.id" rol="conductor" otro="el cliente" />
+                    </div>
                   }
                 </section>
               } @else {
@@ -262,9 +392,18 @@ import { DriverProfileStore } from './state/driver-profile.store';
       </ti-estado-carga>
     </div>
 
+    @if (recogida() && envio(); as e) {
+      <ti-recogida-modal
+        [idEnvio]="e.id"
+        (cerrar)="recogida.set(false)"
+        (recogido)="alRecoger($event)"
+      />
+    }
+
     @if (modal() && envio(); as e) {
       <ti-entrega-modal
         [idEnvio]="e.id"
+        [cobroEfectivo]="e.metodoPago === 'efectivo' ? e.tarifa : null"
         (cerrar)="modal.set(false)"
         (entregado)="alEntregar()"
         (yaEntregado)="alEntregar()"
@@ -274,6 +413,8 @@ import { DriverProfileStore } from './state/driver-profile.store';
 })
 export class ServicioPage implements OnInit, OnDestroy {
   readonly id = input.required<string>();
+  /** ?chat=1 desde una notificación de mensaje. */
+  readonly chat = input<string>();
 
   private readonly servicios = inject(DriverServicePort);
   private readonly tracking = inject(TrackingPort);
@@ -288,7 +429,25 @@ export class ServicioPage implements OnInit, OnDestroy {
   private temporizadorMapa: ReturnType<typeof setInterval> | null = null;
   protected readonly error = signal('');
   protected readonly modal = signal(false);
-  protected readonly iniciando = signal(false);
+  protected readonly recogida = signal(false);
+  private chatEnfocado = false;
+  protected readonly ocupado = signal(false);
+  private readonly eventos = inject(EventosService);
+
+  protected readonly paradasPendientes = computed(
+    () => (this.envio()?.paradas ?? []).filter((p) => !p.completadaEn).length,
+  );
+  /** Qué falta antes de poder entregar (paradas, regreso), o '' si nada. */
+  protected readonly faltaParaEntregar = computed(() => {
+    const e = this.envio();
+    if (!e) return '';
+    const n = this.paradasPendientes();
+    if (n > 0)
+      return `Te ${n === 1 ? 'falta 1 parada' : `faltan ${n} paradas`} por marcar como hecha.`;
+    if (e.idaYVuelta && !e.destinoVisitadoEn)
+      return 'Marca la llegada al destino; la entrega se cierra al regresar al origen.';
+    return '';
+  });
 
   protected readonly fase = computed<FaseCarga>(() =>
     this.envio() ? 'listo' : this.error() ? 'error' : 'cargando',
@@ -307,7 +466,10 @@ export class ServicioPage implements OnInit, OnDestroy {
       case 'activo':
         return 'El cliente puede ver por dónde vas.';
       case 'denegado':
-        return 'Bloqueaste el permiso de ubicación. Actívalo en el navegador para compartir.';
+        return (
+          this.ubicacion.motivo() ||
+          'La ubicación está bloqueada. Permítela en el navegador para compartir.'
+        );
       case 'no-disponible':
         return 'Tu dispositivo no puede obtener la ubicación ahora.';
       default:
@@ -330,6 +492,18 @@ export class ServicioPage implements OnInit, OnDestroy {
       actual: n === i && estado !== 'Entregado',
     }));
   });
+
+  constructor() {
+    // Cancelaciones o cambios del cliente llegan al instante
+    const sub = this.eventos.de<ApiNotificacion>('notificacion').subscribe((n) => {
+      if (n.id_envio === this.envio()?.id && n.tipo !== 'mensaje_chat') void this.cargar();
+    });
+    inject(DestroyRef).onDestroy(() => sub.unsubscribe());
+  }
+
+  protected whatsapp(tel: string): string {
+    return `https://wa.me/${telefonoWhatsapp(tel)}`;
+  }
 
   ngOnInit(): void {
     void this.cargar();
@@ -363,6 +537,13 @@ export class ServicioPage implements OnInit, OnDestroy {
         return;
       }
       this.envio.set(e);
+      if (this.chat() && !this.chatEnfocado) {
+        this.chatEnfocado = true;
+        setTimeout(
+          () => document.getElementById('chat')?.scrollIntoView({ behavior: 'smooth' }),
+          300,
+        );
+      }
       // Si ya va en ruta (por ejemplo, al recargar la página), retoma la ubicación compartida
       if (e.estado === 'En Ruta' && this.ubicacion.estado() === 'apagado')
         this.ubicacion.iniciar(e.id);
@@ -375,19 +556,40 @@ export class ServicioPage implements OnInit, OnDestroy {
     }
   }
 
-  async iniciarRuta(): Promise<void> {
-    const e = this.envio();
-    if (!e || this.iniciando()) return;
-    this.iniciando.set(true);
+  protected alRecoger(e: Envio): void {
+    this.recogida.set(false);
+    const antes = this.envio();
+    // La respuesta de la recogida no trae las paradas: se conservan las que ya se tenían
+    this.envio.set({ ...e, paradas: e.paradas ?? antes?.paradas, pago: e.pago ?? antes?.pago });
+    this.toast.exito('Paquete recogido. ¡Buen viaje!');
+    if (!this.ubicacion.compartiendo(e.id)) this.ubicacion.iniciar(e.id);
+    void this.actualizarMapa();
+  }
+
+  async completarParada(e: Envio, idParada: number): Promise<void> {
+    if (this.ocupado()) return;
+    this.ocupado.set(true);
     try {
-      this.envio.set(await this.servicios.iniciarRuta(e.id));
-      this.log.info('Servicio', `Ruta iniciada #${e.id}`);
-      if (!this.ubicacion.compartiendo(e.id)) this.ubicacion.iniciar(e.id);
+      const paradas = await this.servicios.completarParada(e.id, idParada);
+      this.envio.set({ ...e, paradas });
+    } catch (err) {
+      this.toast.error(this.mapper.traducir(err));
+    } finally {
+      this.ocupado.set(false);
+    }
+  }
+
+  async llegadaDestino(e: Envio): Promise<void> {
+    if (this.ocupado()) return;
+    this.ocupado.set(true);
+    try {
+      const r = await this.servicios.llegadaDestino(e.id);
+      this.envio.set({ ...e, ...r, paradas: r.paradas ?? e.paradas, pago: r.pago ?? e.pago });
       void this.actualizarMapa();
     } catch (err) {
       this.toast.error(this.mapper.traducir(err));
     } finally {
-      this.iniciando.set(false);
+      this.ocupado.set(false);
     }
   }
 

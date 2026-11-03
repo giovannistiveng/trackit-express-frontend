@@ -12,8 +12,9 @@ import {
 } from '../../../testing/fakes';
 import { configurar, montar } from '../../../testing/pantallas';
 import { ApiError } from '../../core/http/api-error';
-import { EventoCarga, PerfilConductor } from '../../core/domain';
+import { EventoCarga, MensajeChat, Parada, PerfilConductor } from '../../core/domain';
 import {
+  ChatPort,
   DeliveryPort,
   DocumentsPort,
   DriverBoardPort,
@@ -436,8 +437,29 @@ describe('CU-009 EntregaModalComponent', () => {
     botonPorTexto(el, 'Finalizar entrega').click();
     await estable();
     expect(p.evidencia.subir).toHaveBeenCalledWith(1, expect.any(File));
-    expect(p.entrega.validar).toHaveBeenCalledWith(1, 'https://x/foto.jpg', '1234');
+    expect(p.entrega.validar).toHaveBeenCalledWith(1, 'https://x/foto.jpg', '1234', undefined);
     expect(salidas).toEqual(['entregado']);
+  });
+
+  it('Dado un envío en efectivo, exige confirmar que recibió el dinero', async () => {
+    const p = puertos();
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+    const r = await montar(EntregaModalComponent, {
+      inputs: { idEnvio: 1, cobroEfectivo: 31600 },
+      providers: [
+        { provide: EvidenceStoragePort, useValue: p.evidencia },
+        { provide: DeliveryPort, useValue: p.entrega },
+      ],
+    });
+    await pinYFoto(r.el, '1234', r.estable);
+    expect(r.el.textContent).toMatch(/Recibí \$\s31\.600 en efectivo/);
+    expect(botonPorTexto(r.el, 'Finalizar entrega').disabled).toBe(true);
+    q<HTMLInputElement>(r.el, 'input[type=checkbox]').click();
+    await r.estable();
+    botonPorTexto(r.el, 'Finalizar entrega').click();
+    await r.estable();
+    expect(p.entrega.validar).toHaveBeenCalledWith(1, 'https://x/foto.jpg', '1234', true);
   });
 
   it('Dado PIN incorrecto, entonces el modal sigue abierto, limpia el teclado, avisa y reutiliza la foto subida', async () => {
@@ -481,6 +503,29 @@ describe('CU-009 EntregaModalComponent', () => {
   });
 });
 
+const PARADA: Parada = {
+  id: 11,
+  orden: 1,
+  direccion: 'Chinauta',
+  coords: { lat: 4.27, lon: -74.4 },
+  notas: null,
+  completadaEn: null,
+};
+
+function chatFalso() {
+  return {
+    mensajes: vi.fn(async () => ({ abierto: true, mensajes: [] as MensajeChat[] })),
+    enviar: vi.fn(async (_id: number, texto: string): Promise<MensajeChat> => ({
+      id: Date.now(),
+      texto,
+      autor: 'Yo',
+      mio: true,
+      leido: false,
+      fecha: new Date(),
+    })),
+  };
+}
+
 describe('ServicioPage', () => {
   function puertos(envio = buildEnvio({ id: 5, estado: 'Asignado', pin: undefined })) {
     return {
@@ -489,6 +534,20 @@ describe('ServicioPage', () => {
         activo: vi.fn(),
         obtener: vi.fn(async () => envio),
         iniciarRuta: vi.fn(async () => buildEnvio({ id: 5, estado: 'En Ruta', pin: undefined })),
+        recoger: vi.fn(async () =>
+          buildEnvio({
+            id: 5,
+            estado: 'En Ruta',
+            pin: undefined,
+            urlFotoRecogida: 'https://x/r.jpg',
+          }),
+        ),
+        completarParada: vi.fn(async (): Promise<Parada[]> => [
+          { ...PARADA, completadaEn: new Date() },
+        ]),
+        llegadaDestino: vi.fn(async () =>
+          buildEnvio({ id: 5, estado: 'En Ruta', idaYVuelta: true, destinoVisitadoEn: new Date() }),
+        ),
       },
     };
   }
@@ -511,6 +570,7 @@ describe('ServicioPage', () => {
         },
         { provide: EvidenceStoragePort, useValue: { subir: vi.fn() } },
         { provide: DeliveryPort, useValue: { validar: vi.fn() } },
+        { provide: ChatPort, useValue: chatFalso() },
       ],
     });
     await cargarPerfil();
@@ -519,34 +579,110 @@ describe('ServicioPage', () => {
     return { ...r, p };
   }
 
-  it('nunca debería mostrar el PIN y desde Asignado debería pedir iniciar la ruta', async () => {
+  it('nunca muestra el PIN; desde Asignado pide la foto de recogida, que inicia la ruta', async () => {
     const { el, p, estable } = await montarServicio(
-      puertos(buildEnvio({ id: 5, estado: 'Asignado', pin: '6647' })),
+      puertos(
+        buildEnvio({
+          id: 5,
+          estado: 'Asignado',
+          pin: '6647',
+          metodoPago: 'efectivo',
+          tarifa: 20000,
+        }),
+      ),
     );
     expect(el.textContent).not.toContain('6647');
-    expect(el.textContent).toContain('Inicia la ruta para poder finalizar');
-    botonPorTexto(el, 'Iniciar ruta').click();
+    expect(el.textContent).toMatch(/Cobra \$\s20\.000 en efectivo/);
+    expect(el.textContent).toContain('Recoge el paquete para poder finalizar');
+    botonPorTexto(el, 'Recogí el paquete').click();
     await estable();
-    expect(p.servicio.iniciarRuta).toHaveBeenCalledWith(5);
-    // Al iniciar la ruta se comparte la ubicación sin que el conductor lo active a mano
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+    const input = q<HTMLInputElement>(el, '[role="dialog"] input[type=file]');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })],
+      configurable: true,
+    });
+    input.dispatchEvent(new Event('change'));
+    await estable();
+    botonPorTexto(el, 'Confirmar recogida e iniciar ruta').click();
+    await estable();
+    expect(p.servicio.recoger).toHaveBeenCalledWith(5, expect.any(File));
+    // Al recoger se comparte la ubicación sin que el conductor lo active a mano
     expect(q(el, '[role="switch"]').getAttribute('aria-checked')).toBe('true');
     expect(el.textContent).toContain('El cliente puede ver por dónde vas.');
-    expect(
-      q<HTMLAnchorElement>(el, '[aria-label="Cómo llegar al punto de entrega"]').href,
-    ).toContain('destination=');
+    expect(q<HTMLAnchorElement>(el, '[aria-label="Cómo llegar al destino"]').href).toContain(
+      'destination=',
+    );
     botonPorTexto(el, 'Finalizar entrega').click();
     await estable();
     expect(q(el, '[role="dialog"]')).toBeTruthy();
   });
 
-  it('debería mostrar un error si iniciar ruta falla', async () => {
+  it('si la recogida falla, muestra el error en el modal', async () => {
     const p = puertos();
-    p.servicio.iniciarRuta.mockImplementation(rechaza(new ApiError(500, 'x')));
+    p.servicio.recoger.mockImplementation(
+      rechaza(new ApiError(400, 'La foto debe ser JPG, PNG o WebP')),
+    );
+    const { el, estable } = await montarServicio(p);
+    botonPorTexto(el, 'Recogí el paquete').click();
+    await estable();
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+    const input = q<HTMLInputElement>(el, '[role="dialog"] input[type=file]');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })],
+      configurable: true,
+    });
+    input.dispatchEvent(new Event('change'));
+    await estable();
+    botonPorTexto(el, 'Confirmar recogida e iniciar ruta').click();
+    await estable();
+    expect(q(el, '[role="dialog"] [role="alert"]').textContent).toContain('JPG, PNG o WebP');
+  });
+
+  it('con paradas y de ida y vuelta: marca la parada, la llegada y solo entonces deja entregar', async () => {
+    const envio = buildEnvio({
+      id: 5,
+      estado: 'En Ruta',
+      pin: undefined,
+      idaYVuelta: true,
+      paradas: [PARADA],
+      destinatarioNombre: 'Ana',
+      destinatarioTelefono: '3001234567',
+      metodoPago: 'nequi',
+    });
+    const { el, p, estable } = await montarServicio(puertos(envio));
+    expect(el.textContent).toContain('Pagado con Nequi');
+    expect(q<HTMLAnchorElement>(el, 'a[href^="tel:"]').href).toContain('3001234567');
+    expect(q<HTMLAnchorElement>(el, 'a[href^="https://wa.me/573001234567"]')).toBeTruthy();
+    expect(botonPorTexto(el, 'Finalizar entrega').disabled).toBe(true);
+    expect(el.textContent).toContain('Te falta 1 parada');
+    botonPorTexto(el, 'Marcar parada hecha').click();
+    await estable();
+    expect(p.servicio.completarParada).toHaveBeenCalledWith(5, 11);
+    expect(el.textContent).toContain('Marca la llegada al destino');
+    botonPorTexto(el, 'Llegué al destino, regreso').click();
+    await estable();
+    expect(p.servicio.llegadaDestino).toHaveBeenCalledWith(5);
+    expect(botonPorTexto(el, 'Finalizar entrega').disabled).toBe(false);
+    expect(q(el, '[aria-label="Cómo llegar al origen"]')).toBeTruthy();
+  });
+
+  it('errores al marcar parada o llegada se avisan', async () => {
+    const envio = buildEnvio({ id: 5, estado: 'En Ruta', idaYVuelta: true, paradas: [PARADA] });
+    const p = puertos(envio);
+    p.servicio.completarParada.mockImplementation(rechaza(new ApiError(500, 'x')));
     const { el, estable } = await montarServicio(p);
     const toast = vi.spyOn(TestBed.inject(ToastService), 'error');
-    botonPorTexto(el, 'Iniciar ruta').click();
+    botonPorTexto(el, 'Marcar parada hecha').click();
     await estable();
     expect(toast).toHaveBeenCalled();
+  });
+
+  it('muestra el chat con el cliente mientras el servicio está activo', async () => {
+    const { el } = await montarServicio();
+    expect(el.textContent).toContain('Chat con el cliente');
   });
 
   it('debería alternar compartir ubicación', async () => {

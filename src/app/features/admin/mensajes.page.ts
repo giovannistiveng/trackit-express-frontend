@@ -82,6 +82,31 @@ import { ToastService } from '../../shared/ui/toast.service';
                       <ti-icono nombre="check" class="size-4" /> Atendido
                     </button>
                   }
+                  @if (confirmarBorrar() === m.id) {
+                    <button
+                      type="button"
+                      class="btn-peligro min-h-9 px-3 text-sm"
+                      (click)="borrar(m)"
+                    >
+                      ¿Eliminar? Sí
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-secundario min-h-9 px-3 text-sm"
+                      (click)="confirmarBorrar.set(null)"
+                    >
+                      No
+                    </button>
+                  } @else {
+                    <button
+                      type="button"
+                      class="btn-secundario min-h-9 px-3 text-sm text-alerta"
+                      [attr.aria-label]="'Eliminar el mensaje de ' + m.nombre"
+                      (click)="confirmarBorrar.set(m.id)"
+                    >
+                      <ti-icono nombre="trash" class="size-4" />
+                    </button>
+                  }
                 </div>
               </div>
               <p class="mt-3 whitespace-pre-line rounded-xl bg-crema p-3">{{ m.mensaje }}</p>
@@ -99,6 +124,7 @@ export class MensajesPage implements OnInit {
 
   protected readonly pagina = signal<Pagina<MensajeContactoRecibido> | null>(null);
   protected readonly soloPendientes = signal(true);
+  protected readonly confirmarBorrar = signal<number | null>(null);
   protected readonly cargando = signal(true);
   protected readonly error = signal('');
   protected readonly fase = computed<FaseCarga>(() =>
@@ -134,6 +160,17 @@ export class MensajesPage implements OnInit {
 
   protected asuntoCorreo(m: MensajeContactoRecibido): string {
     return encodeURIComponent(`Re: tu mensaje a TrackIt Express (${m.asunto})`);
+  }
+
+  async borrar(m: MensajeContactoRecibido): Promise<void> {
+    try {
+      await this.ops.borrarMensaje(m.id);
+      this.confirmarBorrar.set(null);
+      this.toast.exito('Mensaje eliminado');
+      await this.cargar();
+    } catch (e) {
+      this.toast.error(this.mapper.traducir(e));
+    }
   }
 
   async atender(m: MensajeContactoRecibido): Promise<void> {

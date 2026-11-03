@@ -89,6 +89,15 @@ import {
   Wallet,
   X,
   Zap,
+  Trash2,
+  Share2,
+  Link,
+  Repeat,
+  CalendarClock,
+  MessageCircle,
+  Banknote,
+  CheckCheck,
+  BellOff,
 } from 'lucide-static';
 
 /** Íconos de Lucide (licencia ISC) disponibles en la app. */
@@ -181,6 +190,15 @@ const ICONOS = {
   wallet: Wallet,
   x: X,
   zap: Zap,
+  trash: Trash2,
+  share: Share2,
+  link: Link,
+  repeat: Repeat,
+  'calendar-clock': CalendarClock,
+  'message-circle': MessageCircle,
+  banknote: Banknote,
+  'check-check': CheckCheck,
+  'bell-off': BellOff,
 } as const;
 
 export type NombreIcono = keyof typeof ICONOS;

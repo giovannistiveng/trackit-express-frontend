@@ -28,6 +28,11 @@ export const ADMIN_ROUTES: Routes = [
     loadComponent: () => import('./mensajes.page').then((m) => m.MensajesPage),
   },
   {
+    path: 'pagos',
+    title: 'Pagos · TrackIt Express',
+    loadComponent: () => import('./pagos.page').then((m) => m.PagosAdminPage),
+  },
+  {
     path: 'auditoria',
     title: 'Auditoría · TrackIt Express',
     loadComponent: () => import('./auditoria.page').then((m) => m.AuditoriaPage),

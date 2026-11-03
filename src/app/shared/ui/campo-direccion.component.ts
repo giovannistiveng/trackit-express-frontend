@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  InjectionToken,
   OnDestroy,
   forwardRef,
   inject,
@@ -14,6 +15,19 @@ import { GeoPort } from '../../core/ports';
 import { IconoComponent } from './icono.component';
 import { ModalComponent } from './modal.component';
 import { SelectorMapaComponent } from './selector-mapa.component';
+import {
+  EntornoUbicacion,
+  ErrorUbicacion,
+  PRECISION_DUDOSA_M,
+  entornoNavegador,
+  obtenerUbicacion,
+} from '../util/ubicacion';
+
+/** Acceso a la geolocalización del navegador (reemplazable en pruebas). */
+export const ENTORNO_UBICACION = new InjectionToken<EntornoUbicacion>('ENTORNO_UBICACION', {
+  providedIn: 'root',
+  factory: entornoNavegador,
+});
 
 /** Espera tras la última tecla antes de buscar (el backend limita 60 búsquedas por minuto). */
 export const ESPERA_BUSQUEDA_MS = 400;
@@ -124,7 +138,13 @@ let contador = 0;
       </span>
     </div>
     @if (aviso()) {
-      <p class="mt-1 text-sm text-alerta" role="status">{{ aviso() }}</p>
+      <p
+        class="mt-1 flex gap-2 rounded-lg bg-alerta-suave px-3 py-2 text-sm text-alerta"
+        role="status"
+      >
+        <ti-icono nombre="triangle-alert" class="mt-0.5 size-4 shrink-0" />
+        <span>{{ aviso() }}</span>
+      </p>
     }
 
     @if (mapaAbierto()) {
@@ -133,6 +153,11 @@ let contador = 0;
         ancho="amplio"
         (cerrar)="mapaAbierto.set(false)"
       >
+        @if (avisoMapa()) {
+          <p class="mb-3 rounded-lg bg-aviso-suave px-3 py-2 text-sm font-medium" role="status">
+            {{ avisoMapa() }}
+          </p>
+        }
         <p class="mb-3 text-sm text-piedra">
           Toca el mapa o arrastra el marcador hasta el lugar exacto.
           @if (zonas().length > 0) {
@@ -194,6 +219,8 @@ export class CampoDireccionComponent implements ControlValueAccessor, OnDestroy 
   );
   protected readonly mapaAbierto = signal(false);
   protected readonly puntoMapa = signal<Coordenadas | null>(null);
+  protected readonly avisoMapa = signal('');
+  private readonly entorno = inject(ENTORNO_UBICACION);
 
   private alCambiar: (v: string) => void = () => undefined;
   private alTocar: () => void = () => undefined;
@@ -291,6 +318,7 @@ export class CampoDireccionComponent implements ControlValueAccessor, OnDestroy 
   }
 
   protected abrirMapa(): void {
+    this.avisoMapa.set('');
     this.puntoMapa.set(this.coords());
     this.mapaAbierto.set(true);
   }
@@ -303,26 +331,25 @@ export class CampoDireccionComponent implements ControlValueAccessor, OnDestroy 
   }
 
   async usarMiUbicacion(): Promise<void> {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      this.aviso.set('Tu navegador no permite obtener la ubicación.');
-      return;
-    }
     this.ubicando.set(true);
     this.aviso.set('');
     try {
-      const pos = await new Promise<GeolocationPosition>((ok, mal) =>
-        navigator.geolocation.getCurrentPosition(ok, mal, {
-          enableHighAccuracy: true,
-          timeout: 12_000,
-          maximumAge: 30_000,
-        }),
-      );
-      await this.nombrarPunto({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      const pos = await obtenerUbicacion(this.entorno);
+      const p = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      if (pos.coords.accuracy > PRECISION_DUDOSA_M) {
+        // Ubicación por red (poco precisa): se abre el mapa con el punto para que lo confirme.
+        this.puntoMapa.set(p);
+        this.avisoMapa.set(
+          `Tu ubicación es aproximada (±${Math.round(pos.coords.accuracy / 100) / 10} km). Mueve el marcador al lugar exacto.`,
+        );
+        this.mapaAbierto.set(true);
+        return;
+      }
+      await this.nombrarPunto(p);
     } catch (e) {
-      const negado = (e as GeolocationPositionError)?.code === 1;
       this.aviso.set(
-        negado
-          ? 'No diste permiso para usar tu ubicación. Puedes marcarla en el mapa.'
+        e instanceof ErrorUbicacion
+          ? e.message
           : 'No pudimos obtener tu ubicación. Márcala en el mapa.',
       );
     } finally {

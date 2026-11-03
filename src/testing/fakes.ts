@@ -8,10 +8,16 @@ import {
   KeyValueStorePort,
   NotificationsPort,
   LogTransportPort,
+  RealtimePort,
   LoggerPort,
   SessionStoragePort,
 } from '../app/core/ports';
 import { Geo, GEOLOCALIZACION } from '../app/features/conductor/state/geolocalizacion';
+import { SwPush } from '@angular/service-worker';
+import { EMPTY, of } from 'rxjs';
+import { FUENTE_EVENTOS } from '../app/core/realtime/eventos.service';
+import { ENTORNO_UBICACION } from '../app/shared/ui/campo-direccion.component';
+import { EntornoUbicacion } from '../app/shared/util/ubicacion';
 
 export const API_BASE = 'http://api.test/api';
 
@@ -104,6 +110,74 @@ export class FakeNotifications implements NotificationsPort {
   async leerTodas() {
     this.items = this.items.map((n) => ({ ...n, leida: true }));
   }
+  async borrar(id: number) {
+    this.items = this.items.filter((n) => n.id !== id);
+  }
+  async borrarLeidas() {
+    const antes = this.items.length;
+    this.items = this.items.filter((n) => !n.leida);
+    return antes - this.items.length;
+  }
+}
+
+/** Canal de eventos y push falsos: sin servidor (el canal SSE no se abre en jsdom). */
+export class FakeRealtime implements RealtimePort {
+  clave: string | null = 'CLAVE';
+  readonly suscripciones: unknown[] = [];
+  readonly bajas: string[] = [];
+  async ticket() {
+    return 'ticket';
+  }
+  urlEventos(ticket: string) {
+    return `${API_BASE}/eventos?ticket=${ticket}`;
+  }
+  async clavePush() {
+    return this.clave;
+  }
+  async suscribirPush(d: unknown) {
+    this.suscripciones.push(d);
+  }
+  async desuscribirPush(endpoint: string) {
+    this.bajas.push(endpoint);
+  }
+}
+
+/** SwPush desactivado (como en desarrollo o en un navegador sin service worker). */
+export const SW_PUSH_FALSO = {
+  isEnabled: false,
+  subscription: of(null),
+  notificationClicks: EMPTY,
+  messages: EMPTY,
+  requestSubscription: vi.fn(async () => {
+    throw new Error('sin service worker');
+  }),
+  unsubscribe: vi.fn(async () => undefined),
+};
+
+/** Ubicación del navegador simulada para "Usar mi ubicación". */
+export class FakeEntornoUbicacion implements EntornoUbicacion {
+  seguro = true;
+  esWindows = true;
+  estadoPermiso: PermissionState | null = 'prompt';
+  /** Respuestas en orden: posición o código de error (1 denegado, 2 sin señal, 3 tiempo). */
+  respuestas: (GeolocationPosition | number)[] = [];
+  geolocation = {
+    getCurrentPosition: (ok: PositionCallback, mal?: PositionErrorCallback | null) => {
+      const r = this.respuestas.shift() ?? 2;
+      if (typeof r === 'number') mal?.({ code: r, message: 'x' } as GeolocationPositionError);
+      else ok(r);
+    },
+  } as Pick<Geolocation, 'getCurrentPosition'> | null;
+  async permiso() {
+    return this.estadoPermiso;
+  }
+}
+
+export function posicion(lat: number, lon: number, precision = 20): GeolocationPosition {
+  return {
+    coords: { latitude: lat, longitude: lon, accuracy: precision },
+    timestamp: Date.now(),
+  } as GeolocationPosition;
 }
 
 export class FakeGeolocation implements Geo {
@@ -152,6 +226,10 @@ export function provideFakesBase(cfg?: AppEnvironment): EnvironmentProviders {
     { provide: GEOLOCALIZACION, useClass: FakeGeolocation },
     { provide: NotificationsPort, useClass: FakeNotifications },
     { provide: GeoPort, useClass: FakeGeo },
+    { provide: RealtimePort, useClass: FakeRealtime },
+    { provide: SwPush, useValue: SW_PUSH_FALSO },
+    { provide: FUENTE_EVENTOS, useValue: null },
+    { provide: ENTORNO_UBICACION, useClass: FakeEntornoUbicacion },
   ]);
 }
 

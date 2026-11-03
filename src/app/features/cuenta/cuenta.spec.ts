@@ -9,6 +9,7 @@ import { AccountPort } from '../../core/ports';
 import { CuentaPage } from './cuenta.page';
 
 const PERFIL: PerfilUsuario = {
+  correoVerificado: true,
   id: 1,
   nombre: 'Cli',
   correo: 'cli@t.co',

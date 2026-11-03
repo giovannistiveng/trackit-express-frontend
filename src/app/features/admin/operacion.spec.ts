@@ -2,12 +2,15 @@ import { Type } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ADMIN, buildEnvio } from '../../../testing/fixtures';
 import { FakeAdminMetrics } from '../../../testing/admin-fake';
-import { botonPorTexto, escribir, q, rechaza } from '../../../testing/fakes';
+import { botonPorTexto, elegir, escribir, q, rechaza } from '../../../testing/fakes';
 import { montar } from '../../../testing/pantallas';
 import {
   DatosZona,
   EnvioAdmin,
+  Liquidacion,
   MensajeContactoRecibido,
+  PagoAdmin,
+  PagoResumen,
   TarifaVehiculo,
   Zona,
 } from '../../core/domain';
@@ -19,6 +22,7 @@ import { ToastService } from '../../shared/ui/toast.service';
 import { DashboardPage } from './dashboard.page';
 import { EnviosAdminPage, TAMANO_PAGINA_ENVIOS } from './envios-admin.page';
 import { MensajesPage } from './mensajes.page';
+import { PagosAdminPage } from './pagos.page';
 import { ZonasPage } from './zonas.page';
 
 const ZONAS: Zona[] = [
@@ -105,8 +109,71 @@ function operaciones() {
     })),
     tarifasVehiculo: vi.fn(async () => TARIFAS.map((t) => ({ ...t }))),
     actualizarTarifaVehiculo: vi.fn(async (t: TarifaVehiculo) => t),
+    borrarZona: vi.fn(async (): Promise<'borrada' | 'archivada'> => 'archivada'),
+    borrarMensaje: vi.fn(async () => undefined),
+    pagos: vi.fn(async () => ({ items: [PAGO_ADMIN], total: 1, pagina: 1, tamano: 20 })),
+    reembolsar: vi.fn(async (): Promise<PagoResumen> => ({ ...PAGO_ADMIN, estado: 'reembolsado' })),
+    liquidaciones: vi.fn(async () => ({
+      items: LIQUIDACIONES.map((l) => ({ ...l })),
+      total: 2,
+      pagina: 1,
+      tamano: 20,
+    })),
+    generarLiquidaciones: vi.fn(async (): Promise<Liquidacion[]> => [LIQUIDACIONES[0]]),
+    pagarLiquidacion: vi.fn(async (id: number, referencia: string) => ({
+      ...LIQUIDACIONES.find((l) => l.id === id)!,
+      estado: 'pagada' as const,
+      referencia,
+      pagadaEn: new Date(),
+    })),
   };
 }
+
+const PAGO_ADMIN: PagoAdmin = {
+  idEnvio: 5,
+  cliente: 'Ana Cliente',
+  origen: 'Casco Urbano',
+  destino: 'Silvania',
+  metodo: 'nequi',
+  estado: 'reembolso_pendiente',
+  monto: 31600,
+  telefono: '*** *** 4567',
+  mensaje: 'Nequi no respondió',
+  actualizado: new Date(),
+};
+
+const LIQUIDACIONES: Liquidacion[] = [
+  {
+    id: 1,
+    conductor: 'Pedro Conductor',
+    desde: '2026-10-26',
+    hasta: '2026-11-01',
+    servicios: 5,
+    totalTarifas: 100000,
+    gananciaConductor: 80000,
+    cobradoEfectivo: 40000,
+    comisionEfectivo: 8000,
+    saldo: 32000,
+    estado: 'pendiente',
+    referencia: null,
+    pagadaEn: null,
+  },
+  {
+    id: 2,
+    conductor: 'Luis',
+    desde: '2026-10-26',
+    hasta: '2026-11-01',
+    servicios: 3,
+    totalTarifas: 60000,
+    gananciaConductor: 48000,
+    cobradoEfectivo: 60000,
+    comisionEfectivo: 12000,
+    saldo: -12000,
+    estado: 'pendiente',
+    referencia: null,
+    pagadaEn: null,
+  },
+];
 
 async function montarAdmin<T>(componente: Type<T>, ops = operaciones()) {
   const r = await montar(componente, {
@@ -344,5 +411,155 @@ describe('DashboardPage (dona y aviso de pendientes)', () => {
     expect(q(el, 'svg[role="img"]').getAttribute('aria-label')).toBe('Tasa de entrega 93 %');
     expect(el.textContent).toContain('3 conductores esperan aprobación');
     expect(el.textContent).toContain('Cancelados');
+  });
+});
+
+describe('Eliminar zonas y mensajes', () => {
+  it('elimina una zona tras confirmar y avisa si quedó archivada', async () => {
+    const { el, ops, estable } = await montarAdmin(ZonasPage);
+    const toast = vi.spyOn(TestBed.inject(ToastService), 'exito');
+    q<HTMLButtonElement>(el, '[aria-label="Eliminar la zona Silvania"]').click();
+    await estable();
+    expect(q(el, '[role="dialog"]').textContent).toContain('Silvania');
+    botonPorTexto(el, 'Cancelar').click();
+    await estable();
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+    q<HTMLButtonElement>(el, '[aria-label="Eliminar la zona Silvania"]').click();
+    await estable();
+    botonPorTexto(el, /Sí, eliminar/).click();
+    await estable();
+    expect(ops.borrarZona).toHaveBeenCalledWith(2);
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining('archivada'));
+    expect(el.querySelector('[aria-label="Eliminar la zona Silvania"]')).toBeNull();
+  });
+
+  it('si no se puede eliminar (única zona activa), muestra el error', async () => {
+    const ops = operaciones();
+    ops.borrarZona.mockImplementation(
+      rechaza(new ApiError(400, 'No puedes eliminar la única zona activa')),
+    );
+    const { el, estable } = await montarAdmin(ZonasPage, ops);
+    const toast = vi.spyOn(TestBed.inject(ToastService), 'error');
+    q<HTMLButtonElement>(el, '[aria-label="Eliminar la zona Casco Urbano"]').click();
+    await estable();
+    botonPorTexto(el, /Sí, eliminar/).click();
+    await estable();
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining('única zona'));
+    ops.borrarZona.mockImplementation(async () => 'borrada');
+    botonPorTexto(el, /Sí, eliminar/).click();
+    await estable();
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('elimina un mensaje de contacto con confirmación', async () => {
+    const { el, ops, estable } = await montarAdmin(MensajesPage);
+    const borrar = q<HTMLButtonElement>(el, 'button[aria-label^="Eliminar el mensaje"]');
+    borrar.click();
+    await estable();
+    botonPorTexto(el, 'No').click();
+    await estable();
+    expect(ops.borrarMensaje).not.toHaveBeenCalled();
+    q<HTMLButtonElement>(el, 'button[aria-label^="Eliminar el mensaje"]').click();
+    await estable();
+    botonPorTexto(el, /Eliminar\? Sí/).click();
+    await estable();
+    expect(ops.borrarMensaje).toHaveBeenCalledWith(3);
+    ops.borrarMensaje.mockImplementation(rechaza(new ApiError(500, 'x')));
+    const toast = vi.spyOn(TestBed.inject(ToastService), 'error');
+    q<HTMLButtonElement>(el, 'button[aria-label^="Eliminar el mensaje"]').click();
+    await estable();
+    botonPorTexto(el, /Eliminar\? Sí/).click();
+    await estable();
+    expect(toast).toHaveBeenCalled();
+  });
+});
+
+describe('PagosAdminPage', () => {
+  it('lista liquidaciones, genera la semana y registra el pago con referencia', async () => {
+    const { el, ops, estable } = await montarAdmin(PagosAdminPage);
+    const texto = () => el.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(ops.liquidaciones).toHaveBeenCalledWith({ estado: 'pendiente', pagina: 1 });
+    expect(texto()).toContain('Pedro Conductor');
+    expect(texto()).toContain('pagar al conductor');
+    expect(texto()).toContain('cobrar al conductor');
+    botonPorTexto(el, /Liquidar la semana pasada/).click();
+    await estable();
+    expect(ops.generarLiquidaciones).toHaveBeenCalled();
+    ops.generarLiquidaciones.mockImplementation(async () => []);
+    botonPorTexto(el, /Liquidar la semana pasada/).click();
+    await estable();
+    botonPorTexto(el, /Marcar pagada/).click();
+    await estable();
+    const confirmar = botonPorTexto(el, /Confirmar/);
+    expect(confirmar.disabled).toBe(true);
+    escribir(q(el, '#referencia'), 'Nequi M123');
+    await estable();
+    botonPorTexto(el, /Confirmar/).click();
+    await estable();
+    expect(ops.pagarLiquidacion).toHaveBeenCalledWith(1, 'Nequi M123');
+    expect(texto()).toContain('Pagada');
+    botonPorTexto(el, /Marcar saldada/).click();
+    await estable();
+    expect(q(el, '[role="dialog"]').textContent).toContain('Registrar cobro al conductor');
+    botonPorTexto(el, 'Cancelar').click();
+    await estable();
+    elegir(q(el, 'select'), 2);
+    await estable();
+    expect(ops.liquidaciones).toHaveBeenLastCalledWith({ estado: 'pagada', pagina: 1 });
+  });
+
+  it('errores al generar, pagar y cargar', async () => {
+    const ops = operaciones();
+    ops.generarLiquidaciones.mockImplementation(rechaza(new ApiError(500, 'x')));
+    ops.pagarLiquidacion.mockImplementation(
+      rechaza(new ApiError(400, 'La referencia es obligatoria')),
+    );
+    const { el, estable } = await montarAdmin(PagosAdminPage, ops);
+    const toast = vi.spyOn(TestBed.inject(ToastService), 'error');
+    botonPorTexto(el, /Liquidar la semana pasada/).click();
+    await estable();
+    expect(toast).toHaveBeenCalledTimes(1);
+    botonPorTexto(el, /Marcar pagada/).click();
+    await estable();
+    escribir(q(el, '#referencia'), 'abc');
+    await estable();
+    botonPorTexto(el, /Confirmar/).click();
+    await estable();
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining('referencia'));
+    ops.liquidaciones.mockImplementation(rechaza(new ApiError(500, 'x')));
+    elegir(q(el, 'select'), 0);
+    await estable();
+    expect(q(el, '[role="alert"]')).toBeTruthy();
+  });
+
+  it('cobros de envíos: filtra y reintenta el reembolso', async () => {
+    const { el, ops, estable } = await montarAdmin(PagosAdminPage);
+    botonPorTexto(el, 'Cobros de envíos').click();
+    await estable();
+    expect(el.textContent).toContain('Ana Cliente');
+    expect(el.textContent).toContain('Reembolso pendiente');
+    const [metodo, estado] = Array.from(el.querySelectorAll('select')) as HTMLSelectElement[];
+    elegir(metodo, 1);
+    await estable();
+    elegir(estado, 1);
+    await estable();
+    expect(ops.pagos).toHaveBeenLastCalledWith({ metodo: 'nequi', estado: 'pendiente', pagina: 1 });
+    botonPorTexto(el, /Reintentar reembolso/).click();
+    await estable();
+    expect(ops.reembolsar).toHaveBeenCalledWith(5);
+    ops.reembolsar.mockImplementation(async () => ({ ...PAGO_ADMIN }));
+    botonPorTexto(el, /Reintentar reembolso/).click();
+    await estable();
+    ops.reembolsar.mockImplementation(rechaza(new ApiError(500, 'x')));
+    const toast = vi.spyOn(TestBed.inject(ToastService), 'error');
+    botonPorTexto(el, /Reintentar reembolso/).click();
+    await estable();
+    expect(toast).toHaveBeenCalled();
+    ops.pagos.mockImplementation(async () => ({ items: [], total: 0, pagina: 1, tamano: 20 }));
+    botonPorTexto(el, 'Liquidaciones').click();
+    await estable();
+    botonPorTexto(el, 'Cobros de envíos').click();
+    await estable();
+    expect(el.textContent).toContain('No hay pagos con esos filtros.');
   });
 });

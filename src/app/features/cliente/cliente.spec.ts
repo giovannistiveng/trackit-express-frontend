@@ -3,10 +3,11 @@ import { CLIENTE, buildEnvio } from '../../../testing/fixtures';
 import { FakeGeo, botonPorTexto, elegir, escribir, q, rechaza } from '../../../testing/fakes';
 import { montar } from '../../../testing/pantallas';
 import { ApiError } from '../../core/http/api-error';
-import { Cotizacion, Seguimiento, SolicitudCotizacion } from '../../core/domain';
+import { Cotizacion, PagoResumen, Seguimiento, SolicitudCotizacion } from '../../core/domain';
 import {
   ClientShipmentsPort,
   GeoPort,
+  PaymentsPort,
   TrackingPort,
   QuotePort,
   RatingPort,
@@ -18,8 +19,19 @@ import { CalificarModalComponent } from './components/calificar-modal.component'
 import { PinEnvioComponent } from './components/pin-envio.component';
 import { EnvioDetallePage, INTERVALO_TRAZABILIDAD_MS } from './envio-detalle.page';
 import { EnviosPage } from './envios.page';
-import { ESPERA_AUTOCOTIZAR_MS, NuevoEnvioPage, VIGENCIA_COTIZACION_MS } from './nuevo-envio.page';
-import { ESPERA_BUSQUEDA_MS } from '../../shared/ui/campo-direccion.component';
+import {
+  ESPERA_AUTOCOTIZAR_MS,
+  NuevoEnvioPage,
+  VIGENCIA_COTIZACION_MS,
+  errorFechaProgramada,
+  fechaLocalInput,
+} from './nuevo-envio.page';
+import {
+  CampoDireccionComponent,
+  ESPERA_BUSQUEDA_MS,
+} from '../../shared/ui/campo-direccion.component';
+import { ComponentFixture } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 
 const DESGLOSE = {
   categoria: 'Moto Express' as const,
@@ -27,6 +39,9 @@ const DESGLOSE = {
   distancia: 24150,
   tiempo: 3450,
   recargoZona: 2000,
+  paradas: 0,
+  recargoParadas: 0,
+  idaYVuelta: false,
   recargoNocturno: 0,
   minimoAplicado: false,
   total: 31600,
@@ -77,6 +92,27 @@ function puertosNuevoEnvio() {
   };
 }
 
+function pagosFalsos() {
+  return {
+    estado: vi.fn(async () => PAGO_PENDIENTE),
+    reintentar: vi.fn(async () => PAGO_PENDIENTE),
+    pagarEnEfectivo: vi.fn(async () => ({
+      ...PAGO_PENDIENTE,
+      metodo: 'efectivo' as const,
+      estado: 'por_cobrar' as const,
+    })),
+  };
+}
+
+const PAGO_PENDIENTE: PagoResumen = {
+  metodo: 'nequi',
+  estado: 'pendiente',
+  monto: 31600,
+  telefono: '*** *** 4567',
+  mensaje: 'Acepta el pago',
+  actualizado: new Date(),
+};
+
 async function montarNuevo(p = puertosNuevoEnvio()) {
   const r = await montar(NuevoEnvioPage, {
     usuario: CLIENTE,
@@ -84,47 +120,63 @@ async function montarNuevo(p = puertosNuevoEnvio()) {
       { provide: ZonesPort, useValue: p.zonas },
       { provide: QuotePort, useValue: p.cotizar },
       { provide: ShipmentsPort, useValue: p.envios },
+      { provide: PaymentsPort, useValue: pagosFalsos() },
     ],
   });
   await r.estable();
   return { ...r, p, geo: TestBed.inject(GeoPort) as FakeGeo };
 }
 
-async function llenarCotizacion(el: HTMLElement, tipo = 1) {
-  escribir(q(el, '#origen'), '  Casco   Urbano ');
-  escribir(q(el, '#destino'), 'Silvania');
+/** Ubica un campo de dirección como si el cliente eligiera una sugerencia. */
+function ubicar(
+  fixture: ComponentFixture<unknown>,
+  id: string,
+  nombre: string,
+  coords: { lat: number; lon: number },
+) {
+  const campo = fixture.debugElement
+    .queryAll(By.directive(CampoDireccionComponent))
+    .map((d) => d.componentInstance as CampoDireccionComponent)
+    .find((c) => c.idCampo() === id);
+  if (!campo) throw new Error(`No hay campo ${id}`);
+  campo.seleccionar({ nombre, detalle: nombre, coords });
+  fixture.detectChanges();
+}
+
+async function llenarCotizacion(fixture: ComponentFixture<unknown>, el: HTMLElement, tipo = 1) {
+  ubicar(fixture, 'origen', 'Casco Urbano', FUSA);
+  ubicar(fixture, 'destino', 'Silvania', SILVANIA);
   elegir(q(el, '#tipoCarga'), tipo);
 }
 
-const confirmar = (el: HTMLElement) => botonPorTexto(el, /Confirmar por/);
+const confirmar = (el: HTMLElement) => botonPorTexto(el, /Confirmar|Pagar con Nequi/);
 
 describe('CU-005 y CU-006 NuevoEnvioPage', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('Dado direcciones escritas a mano, cuando cotizo, entonces muestra el precio, el desglose y el precio de cada vehículo', async () => {
-    const { el, p, estable } = await montarNuevo();
-    expect(el.querySelectorAll('#zona option')).toHaveLength(6);
-    expect(q(el, '#zona option').textContent).toContain('Detectar automáticamente');
-    await llenarCotizacion(el);
+  it('Dado las direcciones ubicadas, cuando cotizo, entonces muestra el precio, el desglose y el precio de cada vehículo', async () => {
+    const { el, p, estable, fixture } = await montarNuevo();
+    expect(el.querySelector('#zona')).toBeNull();
+    await llenarCotizacion(fixture, el);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
     expect(p.cotizar.cotizar).toHaveBeenCalledWith({
       origen: 'Casco Urbano',
       destino: 'Silvania',
-      idZona: null,
       categoria: undefined,
-      origenCoords: null,
-      destinoCoords: null,
+      origenCoords: FUSA,
+      destinoCoords: SILVANIA,
+      paradas: [],
+      idaYVuelta: false,
+      fechaProgramada: null,
     });
     const texto = el.textContent?.replace(/\s/g, ' ') ?? '';
     expect(texto).toContain('34.5 km');
     expect(texto).toContain('1 h 9 min');
     expect(texto).toContain('$ 31.600');
-    expect(texto).toContain('Silvania');
     expect(texto).toContain('Banderazo (Moto Express)');
     expect(texto).toContain('Recargo de zona · Silvania');
-    expect(texto).toContain('la distancia es aproximada');
-    // Cada tarjeta de vehículo muestra su precio; "Cualquiera" se cobra como moto
+    expect(texto).toContain('Pagas en efectivo al recibir');
     const precios = Array.from(el.querySelectorAll('fieldset label .numeros')).map((x) =>
       x.textContent?.replace(/\s+/g, ' ').trim(),
     );
@@ -132,38 +184,25 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     expect(confirmar(el).textContent).toMatch(/\$\s31\.600/);
   });
 
-  it('Dado que el destino no se encuentra, envía la zona elegida a mano', async () => {
+  it('Dado direcciones escritas a mano sin ubicar, pide ubicarlas y no cotiza', async () => {
     const { el, p, estable } = await montarNuevo();
-    await llenarCotizacion(el);
-    elegir(q(el, '#zona'), 4);
+    escribir(q(el, '#origen'), 'Casco Urbano');
+    escribir(q(el, '#destino'), 'Silvania');
     botonPorTexto(el, 'Cotizar').click();
     await estable();
-    expect(p.cotizar.cotizar).toHaveBeenCalledWith(expect.objectContaining({ idZona: 4 }));
-  });
-
-  it('Dado una zona inexistente (404), cuando cotizo, entonces muestra el error y no calcula', async () => {
-    const p = puertosNuevoEnvio();
-    p.cotizar.cotizar.mockImplementation(rechaza(new ApiError(404, 'Zona no encontrada')));
-    const { el, estable } = await montarNuevo(p);
-    await llenarCotizacion(el);
-    botonPorTexto(el, 'Cotizar').click();
-    await estable();
-    expect(q(el, '[role="alert"]').textContent).toContain('La zona elegida no existe');
-    expect(el.textContent).not.toContain('Confirmar por');
+    expect(p.cotizar.cotizar).not.toHaveBeenCalled();
+    expect(q(el, '[role="alert"]').textContent).toContain('Ubica en el mapa todas las direcciones');
+    expect(q(el, '#origen-error').textContent).toContain('Ubícala');
+    expect(q(el, '#destino-error').textContent).toContain('Ubícala');
   });
 
   it('Dado un destino fuera de cobertura, muestra un mensaje claro', async () => {
     const p = puertosNuevoEnvio();
     p.cotizar.cotizar.mockImplementation(
-      rechaza(
-        new ApiError(
-          400,
-          'La dirección de destino está fuera de nuestra zona de cobertura. Revisa la dirección o elígela en el mapa',
-        ),
-      ),
+      rechaza(new ApiError(400, 'La dirección de destino está fuera de nuestra zona de cobertura')),
     );
-    const { el, estable } = await montarNuevo(p);
-    await llenarCotizacion(el);
+    const { el, estable, fixture } = await montarNuevo(p);
+    await llenarCotizacion(fixture, el);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
     expect(q(el, '[role="alert"]').textContent).toContain('fuera de nuestra zona de cobertura');
@@ -171,7 +210,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
 
   it('Dado origen igual al destino, cuando cotizo, entonces lo señala y no llama a la API', async () => {
     const { el, p, estable } = await montarNuevo();
-    await llenarCotizacion(el);
+    escribir(q(el, '#origen'), 'Casco Urbano');
     escribir(q(el, '#destino'), 'casco urbano');
     botonPorTexto(el, 'Cotizar').click();
     await estable();
@@ -180,9 +219,9 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
   });
 
   it('Dado que falta el tipo de carga, cuando confirmo, entonces no se crea la solicitud y se señala el campo', async () => {
-    const { el, p, estable } = await montarNuevo();
-    escribir(q(el, '#origen'), 'Casco Urbano');
-    escribir(q(el, '#destino'), 'Silvania');
+    const { el, p, estable, fixture } = await montarNuevo();
+    ubicar(fixture, 'origen', 'Casco Urbano', FUSA);
+    ubicar(fixture, 'destino', 'Silvania', SILVANIA);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
     confirmar(el).click();
@@ -192,8 +231,8 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
   });
 
   it('debería aceptar "Otro" con texto libre', async () => {
-    const { el, p, estable } = await montarNuevo();
-    await llenarCotizacion(el, 5);
+    const { el, p, estable, fixture } = await montarNuevo();
+    await llenarCotizacion(fixture, el, 5);
     await estable();
     escribir(q(el, '#otroTipo'), 'Bicicleta');
     botonPorTexto(el, 'Cotizar').click();
@@ -205,31 +244,156 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     );
   });
 
-  it('Dado una cotización vigente, cuando confirmo, entonces crea el envío y muestra el PIN grande', async () => {
-    const { el, p, estable } = await montarNuevo();
-    await llenarCotizacion(el);
+  it('Dado una cotización vigente, cuando confirmo en efectivo, entonces crea el envío y muestra el PIN grande', async () => {
+    const { el, p, estable, fixture } = await montarNuevo();
+    await llenarCotizacion(fixture, el);
+    escribir(q(el, '#destNombre'), '  Ana  Pérez ');
+    escribir(q(el, '#destTelefono'), '300 123 4567');
     botonPorTexto(el, 'Cotizar').click();
     await estable();
     confirmar(el).click();
     await estable();
     expect(p.envios.crear).toHaveBeenCalledWith(
       expect.objectContaining({
-        idZona: null,
         tipoCarga: 'Documentos',
-        categoria: undefined,
-        origenCoords: null,
+        origenCoords: FUSA,
+        destinoCoords: SILVANIA,
+        metodoPago: 'efectivo',
+        telefonoNequi: undefined,
+        destinatarioNombre: 'Ana Pérez',
+        destinatarioTelefono: '3001234567',
       }),
     );
     expect(q(el, '[aria-label="PIN de entrega: 6 1 7 5"]')).toBeTruthy();
-    expect(el.textContent).toContain('Entrega este PIN al conductor solo al recibir tu paquete.');
+    expect(el.textContent).toContain('Avisamos a los conductores disponibles');
     expect(el.textContent).not.toContain('distinta de la cotizada');
+  });
+
+  it('un teléfono de quien recibe inválido se señala', async () => {
+    const { el, estable } = await montarNuevo();
+    escribir(q(el, '#destTelefono'), '12');
+    await estable();
+    expect(el.textContent).toContain('Escribe un teléfono de 7 a 15 dígitos');
+  });
+
+  it('con Nequi exige el celular, crea el cobro y muestra cómo aceptarlo', async () => {
+    const p = puertosNuevoEnvio();
+    p.envios.crear.mockImplementation(async () =>
+      buildEnvio({ id: 2, pin: '6175', tarifa: 31600, metodoPago: 'nequi', pago: PAGO_PENDIENTE }),
+    );
+    const { el, estable, fixture } = await montarNuevo(p);
+    await llenarCotizacion(fixture, el);
+    const nequi = Array.from(el.querySelectorAll('fieldset label')).find((l) =>
+      l.textContent?.includes('Pagas ahora desde tu app'),
+    ) as HTMLElement;
+    q<HTMLInputElement>(nequi, 'input').click();
+    await estable();
+    botonPorTexto(el, 'Cotizar').click();
+    await estable();
+    expect(confirmar(el).textContent).toContain('Pagar con Nequi');
+    escribir(q(el, '#telNequi'), '123');
+    confirmar(el).click();
+    await estable();
+    expect(p.envios.crear).not.toHaveBeenCalled();
+    expect(q(el, '#nequi-error').textContent).toContain('10 dígitos');
+    escribir(q(el, '#telNequi'), '300 123 4567');
+    confirmar(el).click();
+    await estable();
+    expect(p.envios.crear).toHaveBeenCalledWith(
+      expect.objectContaining({ metodoPago: 'nequi', telefonoNequi: '3001234567' }),
+    );
+    expect(el.textContent).toContain('Acepta el cobro en tu app Nequi');
+    expect(el.textContent).toContain('Esperando que aceptes el cobro');
+  });
+
+  it('agrega paradas (con recargo), exige ubicarlas y las envía en la cotización; también se pueden quitar', async () => {
+    const { el, p, estable, fixture } = await montarNuevo();
+    await llenarCotizacion(fixture, el);
+    botonPorTexto(el, /Agregar una parada/).click();
+    await estable();
+    expect(el.textContent).toContain('Parada 1');
+    botonPorTexto(el, 'Cotizar').click();
+    await estable();
+    expect(el.textContent).toContain('Ubícala');
+    p.cotizar.cotizar.mockClear();
+    ubicar(fixture, 'parada-1', 'Chinauta', { lat: 4.27, lon: -74.4 });
+    botonPorTexto(el, 'Cotizar').click();
+    await estable();
+    expect(p.cotizar.cotizar).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        paradas: [{ direccion: 'Chinauta', coords: { lat: 4.27, lon: -74.4 } }],
+      }),
+    );
+    botonPorTexto(el, /Agregar una parada/).click();
+    botonPorTexto(el, /Agregar una parada/).click();
+    await estable();
+    expect(el.textContent).not.toContain('Agregar una parada');
+    q<HTMLButtonElement>(el, 'button[aria-label="Quitar parada 3"]').click();
+    q<HTMLButtonElement>(el, 'button[aria-label="Quitar parada 2"]').click();
+    await estable();
+    expect(el.textContent).not.toContain('Parada 2');
+  });
+
+  it('ida y vuelta y envío programado: valida la hora y la envía en la cotización', async () => {
+    const { el, p, estable, fixture } = await montarNuevo();
+    await llenarCotizacion(fixture, el);
+    const opcion = (t: string) =>
+      q<HTMLInputElement>(
+        Array.from(el.querySelectorAll('fieldset label')).find((l) =>
+          l.textContent?.includes(t),
+        ) as HTMLElement,
+        'input',
+      );
+    opcion('Ida y vuelta').click();
+    opcion('Programar').click();
+    await estable();
+    const fecha = q<HTMLInputElement>(el, '#fecha');
+    expect(fecha.min).toBeTruthy();
+    escribir(fecha, fechaLocalInput(new Date(Date.now() + 10 * 60_000)));
+    await estable();
+    expect(q(el, '#fecha-error').textContent).toContain('al menos 30 minutos');
+    escribir(fecha, fechaLocalInput(new Date(Date.now() + 10 * 86_400_000)));
+    await estable();
+    expect(q(el, '#fecha-error').textContent).toContain('hasta 7 días');
+    const valida = new Date(Date.now() + 3 * 3_600_000);
+    escribir(fecha, fechaLocalInput(valida));
+    await estable();
+    expect(el.querySelector('#fecha-error')).toBeNull();
+    botonPorTexto(el, 'Cotizar').click();
+    await estable();
+    const pedido = p.cotizar.cotizar.mock.lastCall?.[0] as SolicitudCotizacion;
+    expect(pedido.idaYVuelta).toBe(true);
+    expect(Math.abs(pedido.fechaProgramada!.getTime() - valida.getTime())).toBeLessThan(60_000);
+  });
+
+  it('el desglose muestra paradas e ida y vuelta', async () => {
+    const p = puertosNuevoEnvio();
+    p.cotizar.cotizar.mockImplementation(async () => ({
+      ...COTIZACION,
+      desglose: { ...DESGLOSE, paradas: 2, recargoParadas: 3000, idaYVuelta: true },
+    }));
+    const { el, estable, fixture } = await montarNuevo(p);
+    await llenarCotizacion(fixture, el);
+    botonPorTexto(el, 'Cotizar').click();
+    await estable();
+    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(texto).toContain('2 paradas');
+    expect(texto).toContain('(ida y vuelta)');
+  });
+
+  it('errorFechaProgramada y fechaLocalInput', () => {
+    const ahora = new Date('2026-11-02T12:00:00');
+    expect(errorFechaProgramada('', ahora)).toContain('Elige');
+    expect(errorFechaProgramada('x', ahora)).toContain('no es válida');
+    expect(errorFechaProgramada('2026-11-02T14:00', ahora)).toBe('');
+    expect(fechaLocalInput(ahora)).toBe('2026-11-02T12:00');
   });
 
   it('debería avisar si la tarifa del envío difiere de la cotizada', async () => {
     const p = puertosNuevoEnvio();
     p.envios.crear.mockImplementation(async () => buildEnvio({ id: 2, tarifa: 41000 }));
-    const { el, estable } = await montarNuevo(p);
-    await llenarCotizacion(el);
+    const { el, estable, fixture } = await montarNuevo(p);
+    await llenarCotizacion(fixture, el);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
     confirmar(el).click();
@@ -241,8 +405,8 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
   });
 
   it('debería invalidar la cotización si cambia una dirección', async () => {
-    const { el, estable } = await montarNuevo();
-    await llenarCotizacion(el);
+    const { el, estable, fixture } = await montarNuevo();
+    await llenarCotizacion(fixture, el);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
     expect(confirmar(el).disabled).toBe(false);
@@ -255,7 +419,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
   it('debería invalidar la cotización a los 15 minutos', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { el, fixture } = await montarNuevo();
-    await llenarCotizacion(el);
+    await llenarCotizacion(fixture, el);
     botonPorTexto(el, 'Cotizar').click();
     await vi.advanceTimersByTimeAsync(0);
     fixture.detectChanges();
@@ -265,16 +429,12 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     expect(confirmar(el).disabled).toBe(true);
   });
 
-  it('debería mostrar el error de creación y permitir reintentar la carga de zonas', async () => {
+  it('si las zonas no cargan el formulario sigue; muestra el error de creación', async () => {
     const p = puertosNuevoEnvio();
     p.zonas.listar.mockImplementationOnce(rechaza(new ApiError(0, 'x')));
     p.envios.crear.mockImplementation(rechaza(new ApiError(500, 'Error interno del servidor')));
-    const { el, estable } = await montarNuevo(p);
-    expect(el.textContent).toContain('No se pudieron cargar las zonas');
-    botonPorTexto(el, 'Reintentar').click();
-    await estable();
-    expect(el.querySelectorAll('#zona option')).toHaveLength(6);
-    await llenarCotizacion(el);
+    const { el, estable, fixture } = await montarNuevo(p);
+    await llenarCotizacion(fixture, el);
     botonPorTexto(el, 'Cotizar').click();
     await estable();
     confirmar(el).click();
@@ -292,9 +452,9 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
       fixture.detectChanges();
     };
     expect(q<HTMLInputElement>(el, '#categoria').checked).toBe(true);
-    await llenarCotizacion(el);
-    botonPorTexto(el, 'Cotizar').click();
-    await paso();
+    await llenarCotizacion(fixture, el);
+    await paso(ESPERA_AUTOCOTIZAR_MS);
+    expect(p.cotizar.cotizar).toHaveBeenCalledTimes(1);
     const camioneta = Array.from(el.querySelectorAll('fieldset label')).find((l) =>
       l.textContent?.includes('Camioneta'),
     );
@@ -345,10 +505,8 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     (el.querySelectorAll('[role="option"]')[0] as HTMLElement).click();
     await paso(ESPERA_AUTOCOTIZAR_MS);
     expect(p.cotizar.cotizar).toHaveBeenCalledWith(
-      expect.objectContaining({ origenCoords: FUSA, destinoCoords: SILVANIA, idZona: null }),
+      expect.objectContaining({ origenCoords: FUSA, destinoCoords: SILVANIA }),
     );
-    // Con el destino ubicado ya no se pide la zona, y aparece la vista previa del trayecto
-    expect(el.querySelector('#zona')).toBeNull();
     expect(el.querySelector('ti-mapa-envio')).toBeTruthy();
     expect(confirmar(el).disabled).toBe(false);
   });

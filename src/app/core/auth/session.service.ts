@@ -108,6 +108,14 @@ export class SessionService {
     this.storage.guardar(CLAVE_SESION, JSON.stringify({ token: s.token, user: usuario }));
   }
 
+  marcarCorreoVerificado(): void {
+    const s = this.sesion();
+    if (!s || s.usuario.correoVerificado) return;
+    const usuario = { ...s.usuario, correoVerificado: true };
+    this.sesion.set({ ...s, usuario });
+    this.storage.guardar(CLAVE_SESION, JSON.stringify({ token: s.token, user: usuario }));
+  }
+
   inicioDelRol(): string {
     const rol = this.rol();
     return rol ? INICIO_POR_ROL[rol] : '/login';

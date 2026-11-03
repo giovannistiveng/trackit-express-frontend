@@ -46,6 +46,8 @@ export interface Usuario {
   nombre: string;
   correo: string;
   rol: Rol;
+  /** false mientras no confirme el enlace que le llegó al correo. */
+  correoVerificado?: boolean;
 }
 
 export interface Sesion {
@@ -104,6 +106,9 @@ export interface DesgloseTarifa {
   distancia: number;
   tiempo: number;
   recargoZona: number;
+  paradas: number;
+  recargoParadas: number;
+  idaYVuelta: boolean;
   recargoNocturno: number;
   minimoAplicado: boolean;
   total: number;
@@ -130,6 +135,62 @@ export interface SolicitudCotizacion {
   categoria?: CategoriaVehiculo;
   origenCoords?: Coordenadas | null;
   destinoCoords?: Coordenadas | null;
+  /** Paradas intermedias (máximo 3, ubicadas en el mapa). */
+  paradas?: NuevaParada[];
+  idaYVuelta?: boolean;
+  /** Fecha y hora del servicio si es programado. */
+  fechaProgramada?: Date | null;
+}
+
+export interface NuevaParada {
+  direccion: string;
+  coords: Coordenadas;
+  notas?: string;
+}
+
+export const MAX_PARADAS = 3;
+/** Recargo por cada parada intermedia (igual que el backend). */
+export const RECARGO_PARADA = 1500;
+
+export const METODOS_PAGO = ['efectivo', 'nequi'] as const;
+export type MetodoPago = (typeof METODOS_PAGO)[number];
+export type EstadoPago =
+  | 'pendiente'
+  | 'aprobado'
+  | 'rechazado'
+  | 'expirado'
+  | 'por_cobrar'
+  | 'cobrado'
+  | 'anulado'
+  | 'reembolso_pendiente'
+  | 'reembolsado';
+
+export interface PagoResumen {
+  metodo: MetodoPago;
+  estado: EstadoPago;
+  monto: number;
+  /** Celular Nequi enmascarado ("*** *** 1234"). */
+  telefono: string | null;
+  mensaje: string | null;
+  actualizado: Date | null;
+}
+
+export interface Parada {
+  id: number;
+  orden: number;
+  direccion: string;
+  coords: Coordenadas;
+  notas: string | null;
+  completadaEn: Date | null;
+}
+
+export interface MensajeChat {
+  id: number;
+  texto: string;
+  autor: string | null;
+  mio: boolean;
+  leido: boolean;
+  fecha: Date;
 }
 
 export interface Cotizacion {
@@ -195,6 +256,76 @@ export interface Envio {
   gananciaConductor?: number;
   duracionMin?: number | null;
   desglose?: DesgloseTarifa | null;
+  metodoPago?: MetodoPago;
+  pago?: PagoResumen | null;
+  /** Solo para el cliente dueño: token del enlace público de seguimiento. */
+  tokenSeguimiento?: string | null;
+  destinatarioNombre?: string | null;
+  destinatarioTelefono?: string | null;
+  fechaProgramada?: Date | null;
+  idaYVuelta?: boolean;
+  destinoVisitadoEn?: Date | null;
+  urlFotoRecogida?: string | null;
+  fechaRecogida?: Date | null;
+  paradas?: Parada[];
+  chatNoLeidos?: number;
+}
+
+/** Lo que ve quien recibe con el enlace público (sin datos sensibles). */
+export interface SeguimientoPublico {
+  codigo: number;
+  estado: EstadoEnvio;
+  origen: string;
+  destino: string;
+  destinatario: string | null;
+  fechaProgramada: Date | null;
+  idaYVuelta: boolean;
+  historial: CambioEstado[];
+  conductor: { nombre: string; vehiculo: string | null; placa: string | null } | null;
+  paradas: { orden: number; direccion: string; completada: boolean }[];
+  mapa: Seguimiento | null;
+}
+
+export interface Liquidacion {
+  id: number;
+  conductor: string | null;
+  desde: string;
+  hasta: string;
+  servicios: number;
+  totalTarifas: number;
+  gananciaConductor: number;
+  cobradoEfectivo: number;
+  comisionEfectivo: number;
+  /** Positivo: la plataforma le paga al conductor. Negativo: el conductor debe la comisión. */
+  saldo: number;
+  estado: 'pendiente' | 'pagada';
+  referencia: string | null;
+  pagadaEn: Date | null;
+}
+
+export interface Billetera {
+  pendiente: {
+    servicios: number;
+    gananciaNequi: number;
+    cobradoEfectivo: number;
+    comisionEfectivo: number;
+    saldo: number;
+  };
+  movimientos: {
+    idEnvio: number;
+    fecha: Date;
+    metodo: MetodoPago;
+    tarifa: number;
+    ganancia: number;
+  }[];
+  liquidaciones: Liquidacion[];
+}
+
+export interface PagoAdmin extends PagoResumen {
+  idEnvio: number;
+  cliente: string;
+  origen: string;
+  destino: string;
 }
 
 /** Datos para dibujar el mapa de seguimiento. */
@@ -220,6 +351,11 @@ export const TIPOS_NOTIFICACION = [
   'conductor_rechazado',
   'calificacion_recibida',
   'nuevo_servicio',
+  'pago_aprobado',
+  'pago_rechazado',
+  'liquidacion',
+  'mensaje_chat',
+  'paquete_recogido',
 ] as const;
 export type TipoNotificacion = (typeof TIPOS_NOTIFICACION)[number];
 
@@ -241,6 +377,7 @@ export interface PerfilUsuario {
   nombreRol: string;
   telefono: string | null;
   fechaRegistro: Date | null;
+  correoVerificado: boolean;
 }
 
 export interface ResumenConductor {

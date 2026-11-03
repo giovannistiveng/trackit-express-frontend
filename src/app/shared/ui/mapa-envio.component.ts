@@ -86,6 +86,7 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.mapa?.stop();
     this.mapa?.remove();
     this.mapa = null;
   }

@@ -1,3 +1,5 @@
+import { FakeEntornoUbicacion, posicion } from '../../testing/fakes';
+import { ENTORNO_UBICACION } from './ui/campo-direccion.component';
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
@@ -58,6 +60,11 @@ async function montarCampo() {
 
 const tecla = (el: HTMLElement, key: string) =>
   el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+
+const botonUbicacion = (el: HTMLElement) =>
+  Array.from(el.querySelectorAll('button')).find((b) =>
+    b.textContent?.includes('Usar mi ubicación'),
+  ) as HTMLButtonElement;
 
 describe('CampoDireccionComponent', () => {
   afterEach(() => {
@@ -124,49 +131,63 @@ describe('CampoDireccionComponent', () => {
 
   it('"Usar mi ubicación" pone el nombre de la dirección y las coordenadas', async () => {
     const { el, c, paso } = await montarCampo();
-    vi.stubGlobal('navigator', {
-      ...navigator,
-      geolocation: {
-        getCurrentPosition: (ok: PositionCallback) =>
-          ok({ coords: { latitude: 4.34, longitude: -74.36 } } as GeolocationPosition),
-      },
-    });
-    (
-      Array.from(el.querySelectorAll('button')).find((b) =>
-        b.textContent?.includes('Usar mi ubicación'),
-      ) as HTMLButtonElement
-    ).click();
+    const entorno = TestBed.inject(ENTORNO_UBICACION) as FakeEntornoUbicacion;
+    entorno.respuestas = [posicion(4.34, -74.36)];
+    botonUbicacion(el).click();
     await paso();
     expect(c.control.value).toBe('Calle falsa 123');
     expect(c.coords()).toEqual({ lat: 4.34, lon: -74.36 });
   });
 
-  it('"Usar mi ubicación" explica si no hay permiso o no hay GPS', async () => {
+  it('con una ubicación poco precisa abre el mapa para confirmar el punto', async () => {
+    const { el, c, paso } = await montarCampo();
+    const entorno = TestBed.inject(ENTORNO_UBICACION) as FakeEntornoUbicacion;
+    entorno.respuestas = [posicion(4.34, -74.36, 2500)];
+    botonUbicacion(el).click();
+    await paso();
+    expect(q(el, '[role="dialog"]').textContent).toContain('aproximada (±2.5 km)');
+    expect(c.coords()).toBeNull();
+  });
+
+  it('si el intento rápido no responde, reintenta con GPS', async () => {
+    const { el, c, paso } = await montarCampo();
+    const entorno = TestBed.inject(ENTORNO_UBICACION) as FakeEntornoUbicacion;
+    entorno.respuestas = [3, posicion(4.3, -74.3)];
+    botonUbicacion(el).click();
+    await paso();
+    expect(c.coords()).toEqual({ lat: 4.3, lon: -74.3 });
+  });
+
+  it.each([
+    ['granted', 'Windows tiene la ubicación apagada'],
+    ['denied', 'bloqueada para este sitio'],
+    ['prompt', 'No aceptaste el permiso'],
+  ] as const)(
+    '"Usar mi ubicación" denegado con permiso %s explica qué hacer',
+    async (permiso, texto) => {
+      const { el, paso } = await montarCampo();
+      const entorno = TestBed.inject(ENTORNO_UBICACION) as FakeEntornoUbicacion;
+      entorno.estadoPermiso = permiso;
+      entorno.respuestas = [1];
+      botonUbicacion(el).click();
+      await paso();
+      expect(el.textContent).toContain(texto);
+    },
+  );
+
+  it('"Usar mi ubicación" sin señal, sin soporte o sin https', async () => {
     const { el, paso } = await montarCampo();
-    const boton = () =>
-      Array.from(el.querySelectorAll('button')).find((b) =>
-        b.textContent?.includes('Usar mi ubicación'),
-      ) as HTMLButtonElement;
-    vi.stubGlobal('navigator', {
-      ...navigator,
-      geolocation: {
-        getCurrentPosition: (_ok: unknown, mal: (e: unknown) => void) => mal({ code: 1 }),
-      },
-    });
-    boton().click();
+    const entorno = TestBed.inject(ENTORNO_UBICACION) as FakeEntornoUbicacion;
+    entorno.respuestas = [2, 2];
+    botonUbicacion(el).click();
     await paso();
-    expect(el.textContent).toContain('No diste permiso');
-    vi.stubGlobal('navigator', {
-      ...navigator,
-      geolocation: {
-        getCurrentPosition: (_ok: unknown, mal: (e: unknown) => void) => mal({ code: 3 }),
-      },
-    });
-    boton().click();
+    expect(el.textContent).toContain('No pudimos detectar tu ubicación');
+    entorno.seguro = false;
+    botonUbicacion(el).click();
     await paso();
-    expect(el.textContent).toContain('No pudimos obtener tu ubicación');
-    vi.stubGlobal('navigator', { ...navigator, geolocation: undefined });
-    boton().click();
+    expect(el.textContent).toContain('conexión segura');
+    entorno.geolocation = null;
+    botonUbicacion(el).click();
     await paso();
     expect(el.textContent).toContain('no permite obtener la ubicación');
   });

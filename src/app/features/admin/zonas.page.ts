@@ -21,6 +21,7 @@ import { AdminOperationsPort, LoggerPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
 import { IconoComponent } from '../../shared/ui/icono.component';
+import { ModalComponent } from '../../shared/ui/modal.component';
 import { SelectorMapaComponent } from '../../shared/ui/selector-mapa.component';
 import { ToastService } from '../../shared/ui/toast.service';
 
@@ -54,7 +55,14 @@ const CAMPOS_TARIFA: {
 @Component({
   selector: 'ti-zonas',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, CopPipe, EstadoCargaComponent, IconoComponent, SelectorMapaComponent],
+  imports: [
+    FormsModule,
+    CopPipe,
+    EstadoCargaComponent,
+    IconoComponent,
+    SelectorMapaComponent,
+    ModalComponent,
+  ],
   template: `
     <div class="contenedor-ancho max-w-6xl">
       <h1>Zonas y tarifas</h1>
@@ -347,6 +355,15 @@ const CAMPOS_TARIFA: {
                     >
                       <ti-icono nombre="pencil" class="size-4" /> Editar
                     </button>
+                    <button
+                      type="button"
+                      class="btn-texto text-alerta"
+                      (click)="porBorrar.set(z)"
+                      [disabled]="!!borrador()"
+                      [attr.aria-label]="'Eliminar la zona ' + z.nombre"
+                    >
+                      <ti-icono nombre="trash" class="size-4" /> Eliminar
+                    </button>
                   </li>
                 } @empty {
                   <li class="text-sm text-piedra">Aún no hay zonas. Crea la primera.</li>
@@ -357,6 +374,40 @@ const CAMPOS_TARIFA: {
         </section>
       </ti-estado-carga>
     </div>
+
+    @if (porBorrar(); as z) {
+      <ti-modal
+        titulo="¿Eliminar esta zona?"
+        (cerrar)="porBorrar.set(null)"
+        [cerrable]="!borrando()"
+      >
+        <p>
+          Vas a eliminar <strong>{{ z.nombre }}</strong
+          >. Dejará de aparecer en el mapa y no se aceptarán envíos nuevos con destino en ella.
+        </p>
+        <p class="mt-3 text-sm text-piedra">
+          Si ya tiene envíos registrados, se archiva para conservar el historial; si no, se borra
+          por completo.
+        </p>
+        <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            class="btn-secundario"
+            [disabled]="borrando()"
+            (click)="porBorrar.set(null)"
+          >
+            Cancelar
+          </button>
+          <button type="button" class="btn-peligro" [disabled]="borrando()" (click)="borrarZona(z)">
+            <ti-icono
+              [nombre]="borrando() ? 'loader' : 'trash'"
+              [class]="borrando() ? 'animate-spin' : ''"
+            />
+            {{ borrando() ? 'Eliminando…' : 'Sí, eliminar' }}
+          </button>
+        </div>
+      </ti-modal>
+    }
   `,
 })
 export class ZonasPage implements OnInit {
@@ -364,6 +415,8 @@ export class ZonasPage implements OnInit {
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
+  protected readonly porBorrar = signal<Zona | null>(null);
+  protected readonly borrando = signal(false);
 
   protected readonly campos = CAMPOS_TARIFA;
   protected readonly ejemplos = VIAJES_EJEMPLO;
@@ -459,6 +512,26 @@ export class ZonasPage implements OnInit {
   }
 
   // ------------------------------------------------------------ Zonas
+
+  async borrarZona(z: Zona): Promise<void> {
+    if (this.borrando()) return;
+    this.borrando.set(true);
+    try {
+      const r = await this.ops.borrarZona(z.id);
+      this.zonas.update((l) => l.filter((x) => x.id !== z.id));
+      this.toast.exito(
+        r === 'archivada'
+          ? `Zona ${z.nombre} eliminada (archivada con su historial)`
+          : `Zona ${z.nombre} eliminada`,
+      );
+      this.log.info('Admin', 'Zona eliminada', { id: z.id, resultado: r });
+      this.porBorrar.set(null);
+    } catch (e) {
+      this.toast.error(this.mapper.traducir(e));
+    } finally {
+      this.borrando.set(false);
+    }
+  }
 
   protected nuevaZona(): void {
     this.errorZona.set('');

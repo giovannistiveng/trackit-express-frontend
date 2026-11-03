@@ -8,10 +8,12 @@ import {
   inject,
   signal,
   untracked,
+  WritableSignal,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
+  FormControl,
   NonNullableFormBuilder,
   ReactiveFormsModule,
   ValidationErrors,
@@ -22,6 +24,10 @@ import { RouterLink } from '@angular/router';
 import {
   CATEGORIAS_VEHICULO,
   CategoriaVehiculo,
+  MAX_PARADAS,
+  MetodoPago,
+  PagoResumen,
+  RECARGO_PARADA,
   Coordenadas,
   Cotizacion,
   Envio,
@@ -31,7 +37,8 @@ import {
   formatoDuracion,
   limpiarTexto,
 } from '../../core/domain';
-import { ApiError } from '../../core/http/api-error';
+import { FechaLocalPipe } from '../../shared/pipes/fecha-local.pipe';
+import { celularValido, PagoPanelComponent } from './components/pago-panel.component';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { LoggerPort, QuotePort, ShipmentsPort, ZonesPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
@@ -49,6 +56,34 @@ export const ESPERA_AUTOCOTIZAR_MS = 500;
 /** Vehículo con el que se cotiza cuando el cliente elige "Cualquiera". */
 export const VEHICULO_POR_DEFECTO: CategoriaVehiculo = 'Moto Express';
 const OTRO = 'Otro';
+/** Igual que el backend: programar con 30 minutos a 7 días de anticipación. */
+export const PROGRAMAR_MINIMO_MIN = 30;
+export const PROGRAMAR_MAXIMO_DIAS = 7;
+const TEXTO_SIN_UBICAR = 'Ubícala: elige una sugerencia, usa tu ubicación o márcala en el mapa.';
+
+interface ParadaForm {
+  clave: number;
+  control: FormControl<string>;
+  coords: WritableSignal<Coordenadas | null>;
+}
+
+/** "2026-11-02T19:30" en hora local, para los límites del datetime-local. */
+export function fechaLocalInput(f: Date): string {
+  const d = new Date(f.getTime() - f.getTimezoneOffset() * 60_000);
+  return d.toISOString().slice(0, 16);
+}
+
+/** Mensaje de error de la fecha programada, o '' si es válida. */
+export function errorFechaProgramada(valor: string, ahora = new Date()): string {
+  if (!valor) return 'Elige la fecha y la hora.';
+  const f = new Date(valor);
+  if (Number.isNaN(f.getTime())) return 'La fecha no es válida.';
+  if (f.getTime() - ahora.getTime() < PROGRAMAR_MINIMO_MIN * 60_000)
+    return `Programa con al menos ${PROGRAMAR_MINIMO_MIN} minutos de anticipación.`;
+  if (f.getTime() - ahora.getTime() > PROGRAMAR_MAXIMO_DIAS * 86_400_000)
+    return `Puedes programar hasta ${PROGRAMAR_MAXIMO_DIAS} días después.`;
+  return '';
+}
 
 const textoValidator =
   (min: number, max: number): ValidatorFn =>
@@ -79,6 +114,8 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
     ReactiveFormsModule,
     RouterLink,
     CopPipe,
+    FechaLocalPipe,
+    PagoPanelComponent,
     PinEnvioComponent,
     IconoComponent,
     CampoDireccionComponent,
@@ -99,10 +136,15 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
           </span>
           <p class="mt-5 font-semibold text-exito">Solicitud enviada</p>
           <h1 id="titulo-creado" class="mt-1">Tu envío #{{ envio.id }} está esperando conductor</h1>
-          <p class="mt-3 text-piedra">
-            Avisamos a los conductores disponibles. Te notificaremos cuando uno lo acepte; mientras
-            tanto, guarda tu PIN.
-          </p>
+          <p class="mt-3 text-piedra">{{ textoCreado() }}</p>
+          @if (envio.pago?.metodo === 'nequi') {
+            <ti-pago-panel
+              class="mx-auto mt-6 block max-w-md text-left"
+              [idEnvio]="envio.id"
+              [pagoInicial]="envio.pago"
+              (cambio)="alCambiarPago(envio, $event)"
+            />
+          }
           <div class="tarjeta mx-auto mt-8 max-w-md border-2 border-tinta p-6 text-left">
             <p class="flex items-center gap-2 font-semibold">
               <ti-icono nombre="lock" class="text-marca" /> PIN de entrega
@@ -135,6 +177,14 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
             <dd class="font-medium">{{ envio.categoria ?? 'Cualquiera' }}</dd>
             <dt class="text-piedra">Tarifa</dt>
             <dd class="numeros font-bold">{{ envio.tarifa | cop }}</dd>
+            <dt class="text-piedra">Pago</dt>
+            <dd class="font-medium">
+              {{ envio.metodoPago === 'nequi' ? 'Nequi' : 'Efectivo al recibir' }}
+            </dd>
+            @if (envio.fechaProgramada) {
+              <dt class="text-piedra">Programado</dt>
+              <dd class="font-medium">{{ envio.fechaProgramada | fechaLocal }}</dd>
+            }
           </dl>
           <div class="mt-8 flex flex-wrap justify-center gap-3">
             <a class="btn-primario" [routerLink]="['/cliente/envios', envio.id]"
@@ -146,8 +196,8 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
       } @else {
         <h1>Nuevo envío</h1>
         <p class="mt-2 text-piedra">
-          Busca las direcciones o márcalas en el mapa: el precio se calcula solo, según la distancia
-          real, el vehículo y la zona.
+          Elige cada dirección de las sugerencias, con tu ubicación o en el mapa: el precio se
+          calcula solo, según la distancia real, el vehículo y la zona.
         </p>
 
         <div class="mt-8 grid items-start gap-6 lg:grid-cols-[1fr_23rem]">
@@ -182,8 +232,42 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                 />
                 @if (err('origen')) {
                   <p id="origen-error" class="error-campo">Escribe entre 3 y 200 caracteres.</p>
+                } @else if (sinUbicar('origen')) {
+                  <p id="origen-error" class="error-campo">{{ textoSinUbicar }}</p>
                 }
               </div>
+              @for (p of paradas(); track p.clave; let i = $index) {
+                <div class="relative">
+                  <span
+                    class="absolute -left-9 top-8 grid size-7 place-items-center rounded-full border-2 border-tinta bg-papel text-xs font-bold"
+                    aria-hidden="true"
+                    >{{ i + 1 }}</span
+                  >
+                  <div class="flex items-center justify-between">
+                    <label [for]="'parada-' + p.clave" class="etiqueta">Parada {{ i + 1 }}</label>
+                    <button
+                      type="button"
+                      class="btn-texto -mt-1 text-sm text-alerta"
+                      (click)="quitarParada(p.clave)"
+                      [attr.aria-label]="'Quitar parada ' + (i + 1)"
+                    >
+                      <ti-icono nombre="trash" class="size-4" /> Quitar
+                    </button>
+                  </div>
+                  <ti-campo-direccion
+                    [idCampo]="'parada-' + p.clave"
+                    [etiqueta]="'parada ' + (i + 1)"
+                    [formControl]="p.control"
+                    placeholder="Dirección de la parada"
+                    [(coords)]="p.coords"
+                    [zonas]="zonas()"
+                    [invalido]="paradaSinUbicar(p)"
+                  />
+                  @if (paradaSinUbicar(p)) {
+                    <p class="error-campo">{{ textoSinUbicar }}</p>
+                  }
+                </div>
+              }
               <div class="relative">
                 <span
                   class="absolute -left-9 top-8 grid size-7 place-items-center rounded-full bg-marca text-white"
@@ -207,51 +291,24 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                   </p>
                 } @else if (err('destino')) {
                   <p id="destino-error" class="error-campo">Escribe entre 3 y 200 caracteres.</p>
+                } @else if (sinUbicar('destino')) {
+                  <p id="destino-error" class="error-campo">{{ textoSinUbicar }}</p>
                 }
               </div>
             </div>
+            @if (paradas().length < maxParadas) {
+              <button type="button" class="btn-texto -mt-2 text-sm" (click)="agregarParada()">
+                <ti-icono nombre="plus" class="size-4" /> Agregar una parada
+                <span class="font-normal text-piedra">(+{{ recargoParada | cop }} c/u)</span>
+              </button>
+            }
 
             @if (rutaEnMapa(); as ruta) {
               <ti-mapa-envio [seguimiento]="ruta" />
             }
 
             <div class="grid gap-5 sm:grid-cols-2">
-              @if (!destinoCoords()) {
-                <div>
-                  <label for="zona" class="etiqueta"
-                    >Zona del destino
-                    <span class="font-normal text-piedra">(si no aparece en el mapa)</span></label
-                  >
-                  <select
-                    id="zona"
-                    class="campo"
-                    formControlName="idZona"
-                    aria-describedby="zona-ayuda"
-                  >
-                    <option [ngValue]="null">
-                      {{ zonasCargando() ? 'Cargando zonas…' : 'Detectar automáticamente' }}
-                    </option>
-                    @for (z of zonas(); track z.id) {
-                      <option [ngValue]="z.id">
-                        {{ z.nombre
-                        }}{{ z.tarifaBase > 0 ? ' · recargo ' + (z.tarifaBase | cop) : '' }}
-                      </option>
-                    }
-                  </select>
-                  <p id="zona-ayuda" class="ayuda">
-                    Solo se usa si no encontramos la dirección de destino.
-                  </p>
-                  @if (errorZonas()) {
-                    <p class="error-campo">
-                      No se pudieron cargar las zonas.
-                      <button type="button" class="btn-texto" (click)="cargarZonas()">
-                        Reintentar
-                      </button>
-                    </p>
-                  }
-                </div>
-              }
-              <div>
+              <div class="sm:col-span-2">
                 <label for="tipoCarga" class="etiqueta">Tipo de carga</label>
                 <select
                   id="tipoCarga"
@@ -316,6 +373,164 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                 Moto Express.
               </p>
             </fieldset>
+            <fieldset>
+              <legend class="etiqueta">Opciones del servicio</legend>
+              <div class="grid gap-2 sm:grid-cols-2">
+                <label
+                  class="flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-sm"
+                  [class]="valores().idaYVuelta ? 'border-marca bg-marca-suave' : 'border-linea'"
+                >
+                  <input
+                    type="checkbox"
+                    class="mt-1 accent-[var(--color-marca)]"
+                    formControlName="idaYVuelta"
+                  />
+                  <span>
+                    <span class="flex items-center gap-1.5 font-semibold"
+                      ><ti-icono nombre="repeat" class="size-4" /> Ida y vuelta</span
+                    >
+                    <span class="block text-piedra"
+                      >El conductor regresa al origen (con el recibido, un cambio, etc.).</span
+                    >
+                  </span>
+                </label>
+                <label
+                  class="flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-sm"
+                  [class]="valores().programar ? 'border-marca bg-marca-suave' : 'border-linea'"
+                >
+                  <input
+                    type="checkbox"
+                    class="mt-1 accent-[var(--color-marca)]"
+                    formControlName="programar"
+                  />
+                  <span>
+                    <span class="flex items-center gap-1.5 font-semibold"
+                      ><ti-icono nombre="calendar-clock" class="size-4" /> Programar</span
+                    >
+                    <span class="block text-piedra"
+                      >Para más tarde o hasta {{ maxDias }} días después.</span
+                    >
+                  </span>
+                </label>
+              </div>
+              @if (valores().programar) {
+                <div class="mt-3">
+                  <label for="fecha" class="etiqueta">Fecha y hora de recogida</label>
+                  <input
+                    id="fecha"
+                    type="datetime-local"
+                    class="campo"
+                    formControlName="fecha"
+                    [min]="fechaMin()"
+                    [max]="fechaMax()"
+                    [attr.aria-invalid]="!!errorFecha()"
+                    [attr.aria-describedby]="errorFecha() ? 'fecha-error' : 'fecha-ayuda'"
+                  />
+                  @if (errorFecha()) {
+                    <p id="fecha-error" class="error-campo">{{ errorFecha() }}</p>
+                  } @else {
+                    <p id="fecha-ayuda" class="ayuda">
+                      Los conductores lo ven una hora antes. Mínimo {{ minMinutos }} minutos desde
+                      ahora.
+                    </p>
+                  }
+                </div>
+              }
+            </fieldset>
+
+            <fieldset>
+              <legend class="etiqueta">
+                ¿Quién recibe? <span class="font-normal text-piedra">(opcional)</span>
+              </legend>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label for="destNombre" class="sr-only">Nombre de quien recibe</label>
+                  <input
+                    id="destNombre"
+                    class="campo"
+                    formControlName="destinatarioNombre"
+                    maxlength="120"
+                    autocomplete="off"
+                    placeholder="Nombre"
+                  />
+                </div>
+                <div>
+                  <label for="destTelefono" class="sr-only">Celular de quien recibe</label>
+                  <input
+                    id="destTelefono"
+                    class="campo"
+                    formControlName="destinatarioTelefono"
+                    maxlength="20"
+                    inputmode="tel"
+                    autocomplete="off"
+                    placeholder="Celular"
+                    [attr.aria-invalid]="errTelDestino()"
+                  />
+                </div>
+              </div>
+              @if (errTelDestino()) {
+                <p class="error-campo">Escribe un teléfono de 7 a 15 dígitos.</p>
+              } @else {
+                <p class="ayuda">
+                  El conductor podrá llamarle y tú podrás enviarle el enlace de seguimiento por
+                  WhatsApp.
+                </p>
+              }
+            </fieldset>
+
+            <fieldset>
+              <legend class="etiqueta">¿Cómo vas a pagar?</legend>
+              <div class="grid grid-cols-2 gap-2">
+                @for (m of metodos; track m.valor) {
+                  <label
+                    class="flex cursor-pointer flex-col gap-1 rounded-xl border-2 p-3 text-sm transition-colors"
+                    [class]="
+                      valores().metodoPago === m.valor
+                        ? 'border-marca bg-marca-suave'
+                        : 'border-linea hover:border-marca/40'
+                    "
+                  >
+                    <input
+                      type="radio"
+                      class="sr-only"
+                      formControlName="metodoPago"
+                      [value]="m.valor"
+                    />
+                    <span class="flex items-center gap-2 font-semibold"
+                      ><ti-icono [nombre]="m.icono" class="size-5 text-marca" /> {{ m.texto }}</span
+                    >
+                    <span class="text-piedra">{{ m.ayuda }}</span>
+                  </label>
+                }
+              </div>
+              @if (valores().metodoPago === 'nequi') {
+                <div class="mt-3">
+                  <label for="telNequi" class="etiqueta">Celular registrado en Nequi</label>
+                  <input
+                    id="telNequi"
+                    class="campo"
+                    formControlName="telefonoNequi"
+                    inputmode="numeric"
+                    autocomplete="tel-national"
+                    maxlength="13"
+                    placeholder="300 123 4567"
+                    [attr.aria-invalid]="errNequi()"
+                    [attr.aria-describedby]="errNequi() ? 'nequi-error' : 'nequi-ayuda'"
+                  />
+                  @if (errNequi()) {
+                    <p id="nequi-error" class="error-campo">
+                      Escribe los 10 dígitos de tu celular (empieza por 3).
+                    </p>
+                  } @else {
+                    <p id="nequi-ayuda" class="ayuda">
+                      Al confirmar te llega una notificación de cobro en la app Nequi. Tu envío se
+                      publica cuando la aceptes.
+                    </p>
+                  }
+                </div>
+              }
+            </fieldset>
+
             <div>
               <label for="notas" class="etiqueta"
                 >Indicaciones para el conductor
@@ -404,10 +619,9 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                     />
                   }
                   <p class="mt-3 text-xs text-white/75">
-                    @if (c.distanciaExacta === false) {
-                      No encontramos alguna dirección en el mapa: la distancia es aproximada.
-                    } @else {
-                      Distancia y tiempo por carretera (OpenStreetMap).
+                    Distancia y tiempo por carretera (OpenStreetMap).
+                    @if (valores().metodoPago === 'efectivo') {
+                      Pagas en efectivo al recibir.
                     }
                   </p>
                 </div>
@@ -421,7 +635,11 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                     @if (creando()) {
                       <ti-icono nombre="loader" class="animate-spin" /> Enviando solicitud…
                     } @else {
-                      <ti-icono nombre="check" /> Confirmar por {{ precioElegido() | cop }}
+                      <ti-icono
+                        [nombre]="valores().metodoPago === 'nequi' ? 'smartphone' : 'check'"
+                      />
+                      {{ valores().metodoPago === 'nequi' ? 'Pagar con Nequi' : 'Confirmar' }}
+                      {{ precioElegido() | cop }}
                     }
                   </button>
                 </div>
@@ -443,8 +661,8 @@ const tipoCargaValidator: ValidatorFn = (g: AbstractControl): ValidationErrors |
                   {{ cotizando() ? 'Calculando tu precio…' : 'Tu precio aparecerá aquí' }}
                 </p>
                 <p class="mt-1 text-sm text-piedra">
-                  Elige las direcciones de las sugerencias o en el mapa y lo calculamos al instante.
-                  También puedes escribirlas y pulsar Cotizar.
+                  Ubica la recogida y la entrega (sugerencia, tu ubicación o el mapa) y lo
+                  calculamos al instante.
                 </p>
               </section>
             }
@@ -484,12 +702,37 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     })),
   ];
   protected readonly duracion = formatoDuracion;
+  protected readonly maxParadas = MAX_PARADAS;
+  protected readonly recargoParada = RECARGO_PARADA;
+  protected readonly maxDias = PROGRAMAR_MAXIMO_DIAS;
+  protected readonly minMinutos = PROGRAMAR_MINIMO_MIN;
+  protected readonly textoSinUbicar = TEXTO_SIN_UBICAR;
+  protected readonly metodos: {
+    valor: MetodoPago;
+    texto: string;
+    icono: NombreIcono;
+    ayuda: string;
+  }[] = [
+    {
+      valor: 'efectivo',
+      texto: 'Efectivo',
+      icono: 'banknote',
+      ayuda: 'Pagas al conductor al recibir',
+    },
+    { valor: 'nequi', texto: 'Nequi', icono: 'smartphone', ayuda: 'Pagas ahora desde tu app' },
+  ];
 
   protected readonly form = this.fb.group(
     {
       origen: ['', [Validators.required, textoValidator(3, 200)]],
       destino: ['', [Validators.required, textoValidator(3, 200)]],
-      idZona: this.fb.control<number | null>(null),
+      idaYVuelta: [false],
+      programar: [false],
+      fecha: [''],
+      destinatarioNombre: ['', Validators.maxLength(120)],
+      destinatarioTelefono: ['', Validators.pattern(/^\+?[\d\s-]{7,20}$/)],
+      metodoPago: this.fb.control<MetodoPago>('efectivo'),
+      telefonoNequi: [''],
       tipoCarga: [''],
       otroTipo: [''],
       categoria: this.fb.control<CategoriaVehiculo | ''>(''),
@@ -501,11 +744,14 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     initialValue: this.form.getRawValue(),
   });
   protected readonly origenCoords = signal<Coordenadas | null>(null);
+  protected readonly paradas = signal<ParadaForm[]>([]);
+  private claveParada = 0;
+  /** Se intentó cotizar o confirmar: se muestran los campos sin ubicar. */
+  private readonly intento = signal(false);
+  private readonly reloj = signal(new Date());
   protected readonly destinoCoords = signal<Coordenadas | null>(null);
 
   protected readonly zonas = signal<Zona[]>([]);
-  protected readonly zonasCargando = signal(false);
-  protected readonly errorZonas = signal(false);
   protected readonly cotizacion = signal<Cotizacion | null>(null);
   private readonly firmaCotizada = signal('');
   private readonly textosCotizados = signal('');
@@ -527,8 +773,45 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     );
   });
   private readonly firmaActual = computed(() =>
-    this.firma(this.valores(), this.origenCoords(), this.destinoCoords()),
+    this.firma(
+      this.valores(),
+      this.origenCoords(),
+      this.destinoCoords(),
+      this.paradas().map((p) => p.coords()),
+    ),
   );
+  protected readonly fechaMin = computed(() =>
+    fechaLocalInput(new Date(this.reloj().getTime() + PROGRAMAR_MINIMO_MIN * 60_000)),
+  );
+  protected readonly fechaMax = computed(() =>
+    fechaLocalInput(new Date(this.reloj().getTime() + PROGRAMAR_MAXIMO_DIAS * 86_400_000)),
+  );
+  protected readonly errorFecha = computed(() => {
+    const v = this.valores();
+    if (!v.programar) return '';
+    const tocado = this.intento() || this.form.controls.fecha.touched;
+    const e = errorFechaProgramada(v.fecha ?? '', this.reloj());
+    return tocado || v.fecha ? e : '';
+  });
+  protected readonly errNequi = computed(() => {
+    const v = this.valores();
+    if (v.metodoPago !== 'nequi') return false;
+    const tocado = this.intento() || this.form.controls.telefonoNequi.touched;
+    return tocado && !celularValido(v.telefonoNequi ?? '');
+  });
+  protected readonly errTelDestino = computed(() => {
+    this.valores();
+    return this.form.controls.destinatarioTelefono.invalid;
+  });
+  protected readonly textoCreado = computed(() => {
+    const e = this.creado();
+    if (!e) return '';
+    if (e.pago?.metodo === 'nequi' && e.pago.estado !== 'aprobado')
+      return 'Acepta el cobro en tu app Nequi y lo publicamos para los conductores. Guarda tu PIN de entrega.';
+    if (e.fechaProgramada)
+      return 'Lo publicaremos para los conductores una hora antes de la hora programada. Guarda tu PIN de entrega.';
+    return 'Avisamos a los conductores disponibles. Te notificaremos cuando uno lo acepte; mientras tanto, guarda tu PIN.';
+  });
   protected readonly vigente = computed(
     () =>
       this.cotizacion() !== null && !this.vencida() && this.firmaCotizada() === this.firmaActual(),
@@ -586,16 +869,47 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     if (this.temporizadorAuto) clearTimeout(this.temporizadorAuto);
   }
 
+  /** Zonas de cobertura para dibujarlas en el mapa (si fallan, el mapa funciona igual). */
   async cargarZonas(): Promise<void> {
-    this.zonasCargando.set(true);
-    this.errorZonas.set(false);
     try {
       this.zonas.set(await this.zonesPort.listar());
-    } catch {
-      this.errorZonas.set(true);
-    } finally {
-      this.zonasCargando.set(false);
+    } catch (e) {
+      this.log.debug('Zonas', 'No se pudieron cargar las zonas', e);
     }
+  }
+
+  agregarParada(): void {
+    if (this.paradas().length >= MAX_PARADAS) return;
+    const p: ParadaForm = {
+      clave: ++this.claveParada,
+      control: new FormControl('', { nonNullable: true }),
+      coords: signal<Coordenadas | null>(null),
+    };
+    this.paradas.update((l) => [...l, p]);
+  }
+
+  quitarParada(clave: number): void {
+    this.paradas.update((l) => l.filter((p) => p.clave !== clave));
+  }
+
+  protected sinUbicar(c: 'origen' | 'destino'): boolean {
+    const coords = c === 'origen' ? this.origenCoords() : this.destinoCoords();
+    const ctrl = this.form.controls[c];
+    return !coords && (this.intento() || (ctrl.touched && ctrl.value.trim().length >= 3));
+  }
+
+  protected paradaSinUbicar(p: ParadaForm): boolean {
+    return !p.coords() && (this.intento() || p.control.touched);
+  }
+
+  private todoUbicado(): boolean {
+    return (
+      !!this.origenCoords() && !!this.destinoCoords() && this.paradas().every((p) => !!p.coords())
+    );
+  }
+
+  protected alCambiarPago(e: Envio, pago: PagoResumen): void {
+    this.creado.set({ ...e, pago, metodoPago: pago.metodo });
   }
 
   protected err(c: 'origen' | 'destino'): boolean {
@@ -616,19 +930,15 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     );
   }
 
-  /**
-   * Con las dos direcciones ubicadas en el mapa no hace falta pulsar Cotizar. Si se escribieron a
-   * mano, solo se recotiza sola cuando cambia el vehículo o la zona (no mientras se escribe).
-   */
+  /** Con todo ubicado en el mapa (y la fecha válida si se programa) se cotiza solo. */
   private listoParaAutocotizar(): boolean {
     const v = this.valores();
     const rutaValida =
       this.form.controls.origen.valid &&
       this.form.controls.destino.valid &&
       !this.form.errors?.['iguales'];
-    const ubicadas = !!this.origenCoords() && !!this.destinoCoords();
-    const mismosTextos = this.textosCotizados() === this.textos(v.origen, v.destino);
-    return rutaValida && (ubicadas || (this.cotizacion() !== null && mismosTextos));
+    const fechaOk = !v.programar || errorFechaProgramada(v.fecha ?? '') === '';
+    return rutaValida && fechaOk && this.todoUbicado();
   }
 
   private textos(o = '', d = ''): string {
@@ -643,27 +953,28 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
   /** Con `marcar` (botón Cotizar) se muestran los errores de todos los campos. */
   async cotizar(marcar = true): Promise<void> {
     if (this.temporizadorAuto) clearTimeout(this.temporizadorAuto);
+    this.reloj.set(new Date());
     if (marcar) {
+      this.intento.set(true);
       this.form.controls.origen.markAsTouched();
       this.form.controls.destino.markAsTouched();
+      this.form.controls.fecha.markAsTouched();
     }
     this.form.updateValueAndValidity();
     const { origen, destino } = this.form.controls;
     if (origen.invalid || destino.invalid || this.form.errors?.['iguales']) return;
+    if (!this.todoUbicado()) {
+      if (marcar) this.error.set('Ubica en el mapa todas las direcciones para calcular el precio.');
+      return;
+    }
     const v = this.form.getRawValue();
+    if (v.programar && errorFechaProgramada(v.fecha)) return;
     const firma = this.firmaActual();
     const n = ++this.consulta;
     this.cotizando.set(true);
     this.error.set('');
     try {
-      const c = await this.quotePort.cotizar({
-        origen: limpiarTexto(v.origen),
-        destino: limpiarTexto(v.destino),
-        idZona: this.destinoCoords() ? null : v.idZona,
-        categoria: v.categoria || undefined,
-        origenCoords: this.origenCoords(),
-        destinoCoords: this.destinoCoords(),
-      });
+      const c = await this.quotePort.cotizar(this.solicitudRuta());
       if (n !== this.consulta) return;
       this.cotizacion.set(c);
       this.firmaCotizada.set(firma);
@@ -675,11 +986,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       if (n !== this.consulta) return;
       this.cotizacion.set(null);
       this.firmaCotizada.set(firma);
-      this.error.set(
-        e instanceof ApiError && e.status === 404
-          ? 'La zona elegida no existe. Elige otra zona.'
-          : this.mapper.traducir(e),
-      );
+      this.error.set(this.mapper.traducir(e));
     } finally {
       if (n === this.consulta) this.cotizando.set(false);
     }
@@ -687,26 +994,34 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
 
   async confirmar(): Promise<void> {
     if (!this.vigente() || this.creando()) return;
+    this.intento.set(true);
     this.form.markAllAsTouched();
     this.form.updateValueAndValidity();
     if (this.form.invalid) return;
     const v = this.form.getRawValue();
+    if (v.metodoPago === 'nequi' && !celularValido(v.telefonoNequi)) {
+      this.error.set('Escribe tu celular de Nequi para pagar.');
+      return;
+    }
+    if (v.programar && errorFechaProgramada(v.fecha)) {
+      this.error.set(errorFechaProgramada(v.fecha));
+      return;
+    }
     this.creando.set(true);
     this.error.set('');
     try {
       const envio = await this.shipments.crear({
-        origen: limpiarTexto(v.origen),
-        destino: limpiarTexto(v.destino),
-        idZona: this.destinoCoords() ? null : v.idZona,
-        origenCoords: this.origenCoords(),
-        destinoCoords: this.destinoCoords(),
+        ...this.solicitudRuta(),
         tipoCarga: this.tipoCargaFinal(),
-        categoria: v.categoria || undefined,
         notas: v.notas.trim() || undefined,
+        metodoPago: v.metodoPago,
+        telefonoNequi: v.metodoPago === 'nequi' ? v.telefonoNequi.replace(/[\s-]/g, '') : undefined,
+        destinatarioNombre: limpiarTexto(v.destinatarioNombre) || undefined,
+        destinatarioTelefono: v.destinatarioTelefono.replace(/[\s-]/g, '') || undefined,
       });
       this.log.info('Envios', `Envío creado #${envio.id}`, {
         tarifa: envio.tarifa,
-        idZona: envio.idZona,
+        pago: envio.metodoPago,
       });
       this.creado.set(envio);
       this.toast.exito('Solicitud enviada');
@@ -723,7 +1038,26 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     this.firmaCotizada.set('');
     this.origenCoords.set(null);
     this.destinoCoords.set(null);
+    this.paradas.set([]);
+    this.intento.set(false);
     this.form.reset();
+  }
+
+  private solicitudRuta() {
+    const v = this.form.getRawValue();
+    return {
+      origen: limpiarTexto(v.origen),
+      destino: limpiarTexto(v.destino),
+      categoria: v.categoria || undefined,
+      origenCoords: this.origenCoords(),
+      destinoCoords: this.destinoCoords(),
+      paradas: this.paradas().map((p) => ({
+        direccion: limpiarTexto(p.control.value) || 'Parada',
+        coords: p.coords() as Coordenadas,
+      })),
+      idaYVuelta: v.idaYVuelta,
+      fechaProgramada: v.programar && v.fecha ? new Date(v.fecha) : null,
+    };
   }
 
   private tipoCargaFinal(): string {
@@ -731,19 +1065,29 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     return v.tipoCarga === OTRO ? limpiarTexto(v.otroTipo) : v.tipoCarga;
   }
 
-  /** Lo que define el precio: textos, coordenadas, zona (si aplica) y vehículo. */
+  /** Lo que define el precio: ruta (con paradas), vehículo, ida y vuelta y hora del servicio. */
   private firma(
-    v: Partial<{ origen: string; destino: string; idZona: number | null; categoria: string }>,
+    v: Partial<{
+      origen: string;
+      destino: string;
+      categoria: string;
+      idaYVuelta: boolean;
+      programar: boolean;
+      fecha: string;
+    }>,
     o: Coordenadas | null,
     d: Coordenadas | null,
+    paradas: (Coordenadas | null)[],
   ): string {
     return JSON.stringify([
       limpiarTexto(v.origen ?? '').toLowerCase(),
       limpiarTexto(v.destino ?? '').toLowerCase(),
       o,
       d,
-      d ? null : (v.idZona ?? null),
+      paradas,
       v.categoria ?? '',
+      !!v.idaYVuelta,
+      v.programar ? (v.fecha ?? '') : '',
     ]);
   }
 }

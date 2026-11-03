@@ -71,3 +71,20 @@ CU-001 a CU-011, (3) historias de usuario, (4) README.
   pertenece a la zona más pequeña que lo contiene.
 - **La fórmula vive en el backend.** El frontend solo replica `precioEstimado` para ejemplos y la calculadora pública;
   el precio cobrado siempre es el del servidor.
+
+## Decisiones v2.3 (pagos, tiempo real y servicio completo)
+
+- **Sin selector de zona:** el precio exige coordenadas (sugerencia, ubicación o mapa). Escribir a mano ya no basta,
+  así nunca se cobra con una distancia adivinada.
+- **"Usar mi ubicación" en Windows:** desde Chrome 144 la ubicación depende también del permiso de Windows; si el
+  sitio tiene permiso pero Windows lo bloquea, el navegador responde "permiso denegado". Se cruza el error con
+  `navigator.permissions` para decir exactamente qué activar. Primero se pide una ubicación rápida de baja precisión y,
+  si no llega, una con GPS.
+- **Nequi:** el backend usa la API Nequi Conecta (pago con notificación push al celular). En desarrollo corre en modo
+  simulado. El envío no se publica a los conductores hasta que el pago queda aprobado (o el cliente elige efectivo).
+- **SSE en vez de WebSocket:** los eventos solo van del servidor al cliente; SSE funciona sobre HTTP normal, atraviesa
+  proxies y reconecta fácil. Como `EventSource` no envía encabezados, se usa un ticket de un solo uso de 60 s.
+- **App híbrida:** `PushService` detecta `window.Capacitor`; en la app usa el plugin nativo (FCM) y en el navegador
+  Web Push con el service worker de Angular. Las rutas `/envios/:id` hacen que el mismo enlace de la notificación sirva
+  para cliente y conductor.
+- **Presupuesto del bundle inicial:** se subió el aviso a 600 kB por el canal de eventos y el push en la cabecera.

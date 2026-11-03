@@ -42,7 +42,7 @@ describe('rutaDeNotificacion e iniciales', () => {
       '/conductor/ganancias',
     );
     expect(rutaDeNotificacion({ tipo: 'envio_cancelado', idEnvio: 9 }, '3')).toBe(
-      '/conductor/tablero',
+      '/conductor/servicio/9',
     );
     expect(rutaDeNotificacion({ tipo: 'envio_cancelado', idEnvio: 9 }, '1')).toBeNull();
     expect(iniciales('Laura Méndez Ríos')).toBe('LM');
@@ -129,7 +129,7 @@ describe('CampanaComponent', () => {
     await estable();
     expect(el.querySelectorAll('#panel-notificaciones li')).toHaveLength(2);
     expect(el.textContent).toContain('hace un momento');
-    (el.querySelector('#panel-notificaciones li button') as HTMLButtonElement).click();
+    (el.querySelector('#panel-notificaciones li button + button') as HTMLButtonElement).click();
     await estable();
     expect(navegarUrl).toHaveBeenCalledWith('/cliente/envios/9');
     expect(el.querySelector('#panel-notificaciones')).toBeNull();
@@ -146,7 +146,7 @@ describe('CampanaComponent', () => {
     await estable();
     (
       Array.from(el.querySelectorAll('button')).find((b) =>
-        b.textContent?.includes('Marcar todas'),
+        b.textContent?.includes('Marcar leídas'),
       ) as HTMLButtonElement
     ).click();
     await estable();

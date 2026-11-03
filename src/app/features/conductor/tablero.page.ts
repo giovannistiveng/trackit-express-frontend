@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnDestroy,
   OnInit,
   computed,
@@ -17,6 +18,8 @@ import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.co
 import { ModalComponent } from '../../shared/ui/modal.component';
 import { ToastService } from '../../shared/ui/toast.service';
 import { Sondeo } from '../../shared/util/sondeo';
+import { EventosService } from '../../core/realtime/eventos.service';
+import { ApiNotificacion } from '../../core/adapters/http/backend.types';
 import { AvisoPerfilComponent } from './components/aviso-perfil.component';
 import { IconoComponent } from '../../shared/ui/icono.component';
 import { DriverProfileStore } from './state/driver-profile.store';
@@ -49,7 +52,7 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
                 ></span
                 ><span class="relative inline-flex size-2.5 rounded-full bg-exito"></span
               ></span>
-              Se actualiza cada 15 segundos.
+              Los pedidos nuevos aparecen al instante.
             </p>
             <p class="mt-1 text-sm text-piedra">
               @if (vehiculo(); as v) {
@@ -111,6 +114,33 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
                         @if (e.categoria) {
                           <span class="insignia bg-bosque-suave text-bosque"
                             ><ti-icono nombre="bike" class="size-3.5" /> {{ e.categoria }}</span
+                          >
+                        }
+                        @if (e.metodoPago === 'nequi') {
+                          <span class="insignia bg-exito-suave text-exito"
+                            ><ti-icono nombre="smartphone" class="size-3.5" /> Pagado</span
+                          >
+                        } @else {
+                          <span class="insignia bg-aviso-suave"
+                            ><ti-icono nombre="banknote" class="size-3.5" /> Efectivo</span
+                          >
+                        }
+                        @if (e.fechaProgramada) {
+                          <span class="insignia bg-marca-suave text-marca"
+                            ><ti-icono nombre="calendar-clock" class="size-3.5" />
+                            {{ hora(e.fechaProgramada) }}</span
+                          >
+                        }
+                        @if (e.paradas?.length) {
+                          <span class="insignia bg-niebla"
+                            ><ti-icono nombre="map-pinned" class="size-3.5" />
+                            {{ e.paradas!.length }}
+                            {{ e.paradas!.length === 1 ? 'parada' : 'paradas' }}</span
+                          >
+                        }
+                        @if (e.idaYVuelta) {
+                          <span class="insignia bg-niebla"
+                            ><ti-icono nombre="repeat" class="size-3.5" /> Ida y vuelta</span
                           >
                         }
                       </p>
@@ -244,6 +274,22 @@ export class TableroPage implements OnInit, OnDestroy {
           ? 'vacio'
           : 'listo',
   );
+
+  constructor() {
+    // Un servicio nuevo llega por el canal de eventos: se refresca el tablero al instante
+    const sub = inject(EventosService)
+      .de<ApiNotificacion>('notificacion')
+      .subscribe((n) => {
+        if (n.tipo === 'nuevo_servicio' || n.tipo === 'envio_cancelado') void this.refrescar();
+      });
+    inject(DestroyRef).onDestroy(() => sub.unsubscribe());
+  }
+
+  protected hora(f: Date): string {
+    const hoy = new Date().toDateString() === f.toDateString();
+    const h = f.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' });
+    return hoy ? h : `${f.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric' })} ${h}`;
+  }
 
   async ngOnInit(): Promise<void> {
     if (!this.habilitado()) return;

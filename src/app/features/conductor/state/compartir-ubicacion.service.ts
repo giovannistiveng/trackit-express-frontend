@@ -1,6 +1,8 @@
 import { Injectable, OnDestroy, inject, signal } from '@angular/core';
 import { LocationQueue } from '../../../core/adapters/local/location-queue';
 import { LoggerPort } from '../../../core/ports';
+import { ENTORNO_UBICACION } from '../../../shared/ui/campo-direccion.component';
+import { mensajeUbicacion, motivoDenegado } from '../../../shared/util/ubicacion';
 import { GEOLOCALIZACION } from './geolocalizacion';
 
 export type EstadoUbicacion = 'apagado' | 'activo' | 'denegado' | 'no-disponible';
@@ -17,8 +19,11 @@ export class CompartirUbicacionService implements OnDestroy {
   private readonly geo = inject(GEOLOCALIZACION);
   private readonly cola = inject(LocationQueue);
   private readonly log = inject(LoggerPort);
+  private readonly entorno = inject(ENTORNO_UBICACION);
 
   readonly estado = signal<EstadoUbicacion>('apagado');
+  /** Explicación de por qué se negó la ubicación (sitio bloqueado o ubicación del sistema apagada). */
+  readonly motivo = signal('');
   readonly ultimaEnvio = signal<Date | null>(null);
   readonly ultimaPosicion = signal<{ lat: number; lon: number } | null>(null);
   private watchId: number | null = null;
@@ -43,6 +48,7 @@ export class CompartirUbicacionService implements OnDestroy {
     this.detener();
     this.ultimaPosicion.set(null);
     this.idEnvio = idEnvio;
+    this.motivo.set('');
     this.estado.set('activo');
     this.watchId = this.geo.watchPosition(
       (pos) => void this.alPosicion(pos),
@@ -50,6 +56,9 @@ export class CompartirUbicacionService implements OnDestroy {
         this.log.warn('Ubicacion', `Error de geolocalización (código ${err.code})`);
         if (err.code === err.PERMISSION_DENIED) {
           this.estado.set('denegado');
+          void motivoDenegado(this.entorno).then((m) =>
+            this.motivo.set(mensajeUbicacion(m, this.entorno.esWindows)),
+          );
           this.detener(false);
           return;
         }
