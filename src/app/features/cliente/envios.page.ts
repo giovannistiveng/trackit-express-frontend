@@ -13,7 +13,7 @@ import { ClientShipmentsPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { FechaLocalPipe } from '../../shared/pipes/fecha-local.pipe';
 import { EstadoBadgeComponent } from '../../shared/ui/estado-badge.component';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { PlacaComponent } from '../../shared/ui/placa.component';
 import { PinEnvioComponent } from './components/pin-envio.component';
 import { IconoComponent } from '../../shared/ui/icono.component';
@@ -197,13 +197,7 @@ export class EnviosPage implements OnInit {
     this.pestana() === 'activos' ? this.activos() : this.entregados(),
   );
   protected readonly fase = computed<FaseCarga>(() =>
-    this.cargando()
-      ? 'cargando'
-      : this.error()
-        ? 'error'
-        : this.visibles().length === 0
-          ? 'vacio'
-          : 'listo',
+    faseDe({ cargando: this.cargando(), error: this.error(), vacio: this.visibles().length === 0 }),
   );
 
   ngOnInit(): void {

@@ -84,3 +84,17 @@ export function ordenarRecientes<T extends Pick<Envio, 'id' | 'fechaUltimoCambio
 export function fechaCreacion(envio: Pick<Envio, 'historial' | 'fechaCreacion'>): Date | undefined {
   return envio.fechaCreacion ?? envio.historial[0]?.fecha;
 }
+
+/** Número para wa.me: celular colombiano de 10 dígitos → 57XXXXXXXXXX; sin número, vacío. */
+export function telefonoWhatsapp(tel: string | null | undefined): string {
+  const t = (tel ?? '').replace(/[^\d+]/g, '');
+  if (/^3\d{9}$/.test(t)) return `57${t}`;
+  if (/^\+\d{8,15}$/.test(t)) return t.slice(1);
+  if (/^57\d{10}$/.test(t)) return t;
+  return '';
+}
+
+/** El aviso o evento corresponde al envío que está abierto en pantalla. */
+export function esDelEnvio(idEnvio: number | null, envio: Envio | null): boolean {
+  return envio !== null && idEnvio === envio.id;
+}

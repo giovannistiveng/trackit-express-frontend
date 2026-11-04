@@ -1,6 +1,8 @@
 import { buildEnvio, crearJwt } from '../../../testing/fixtures';
 import {
   esActivo,
+  esDelEnvio,
+  telefonoWhatsapp,
   esTransicionValida,
   fechaCreacion,
   ordenarRecientes,
@@ -103,5 +105,24 @@ describe('reglas ampliadas (cancelación y tiempos)', () => {
     expect(r.formatoDuracion(25)).toBe('25 min');
     expect(r.formatoDuracion(60)).toBe('1 h');
     expect(r.formatoDuracion(70)).toBe('1 h 10 min');
+  });
+});
+
+describe('Contacto y eventos del envío', () => {
+  it('telefonoWhatsapp normaliza celulares colombianos e internacionales', () => {
+    expect(telefonoWhatsapp('300 123 4567')).toBe('573001234567');
+    expect(telefonoWhatsapp('+57 300-123-4567')).toBe('573001234567');
+    expect(telefonoWhatsapp('573001234567')).toBe('573001234567');
+    expect(telefonoWhatsapp('+14155550100')).toBe('14155550100');
+    expect(telefonoWhatsapp('123')).toBe('');
+    expect(telefonoWhatsapp(undefined)).toBe('');
+  });
+
+  it('esDelEnvio solo acepta el envío abierto', () => {
+    const e = buildEnvio({ id: 7 });
+    expect(esDelEnvio(7, e)).toBe(true);
+    expect(esDelEnvio(8, e)).toBe(false);
+    expect(esDelEnvio(null, e)).toBe(false);
+    expect(esDelEnvio(7, null)).toBe(false);
   });
 });

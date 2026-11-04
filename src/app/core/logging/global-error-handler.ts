@@ -8,7 +8,7 @@ const ORIGEN_EXTENSION = /(chrome|moz|safari-web|ms-browser)-extension:\/\//;
 export const VENTANA_REPETIDOS_MS = 10_000;
 
 /**
- * Registra como ERROR todo error no capturado (con el stack recortado a 15 líneas).
+ * Registra como ERROR cualquier error no capturado (con el stack recortado a 15 líneas).
  * Ignora los que vienen de extensiones y agrupa los repetidos para no inundar los logs.
  */
 @Injectable()

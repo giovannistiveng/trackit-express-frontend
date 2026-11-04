@@ -3,6 +3,13 @@ import { IconoComponent } from './icono.component';
 
 export type FaseCarga = 'cargando' | 'vacio' | 'error' | 'listo';
 
+/** Fase de una pantalla a partir de su estado: primero carga, luego error, luego vacío o listo. */
+export function faseDe(estado: { cargando: boolean; error: unknown; vacio?: boolean }): FaseCarga {
+  if (estado.cargando) return 'cargando';
+  if (estado.error) return 'error';
+  return estado.vacio ? 'vacio' : 'listo';
+}
+
 /** Envoltorio de los cuatro estados de una pantalla con datos. */
 @Component({
   selector: 'ti-estado-carga',

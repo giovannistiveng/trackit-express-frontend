@@ -19,20 +19,17 @@ import {
 } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
-import { DriverServicePort, LoggerPort, TrackingPort } from '../../core/ports';
-import { Coordenadas, Seguimiento } from '../../core/domain';
+import { DriverServicePort, EventosPort, LoggerPort, TrackingPort } from '../../core/ports';
+import { Coordenadas, Seguimiento, esDelEnvio, telefonoWhatsapp } from '../../core/domain';
 import { IconoComponent, NombreIcono } from '../../shared/ui/icono.component';
 import { MapaEnvioComponent } from '../../shared/ui/mapa-envio.component';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { EstadoBadgeComponent } from '../../shared/ui/estado-badge.component';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { ToastService } from '../../shared/ui/toast.service';
 import { EntregaModalComponent } from './components/entrega-modal.component';
 import { RecogidaModalComponent } from './components/recogida-modal.component';
 import { ChatEnvioComponent } from '../../shared/ui/chat-envio.component';
-import { EventosService } from '../../core/realtime/eventos.service';
-import { ApiNotificacion } from '../../core/adapters/http/backend.types';
-import { telefonoWhatsapp } from '../cliente/envio-detalle.page';
 import { CompartirUbicacionService } from './state/compartir-ubicacion.service';
 import { DriverProfileStore } from './state/driver-profile.store';
 
@@ -432,7 +429,7 @@ export class ServicioPage implements OnInit, OnDestroy {
   protected readonly recogida = signal(false);
   private chatEnfocado = false;
   protected readonly ocupado = signal(false);
-  private readonly eventos = inject(EventosService);
+  private readonly eventos = inject(EventosPort);
 
   protected readonly paradasPendientes = computed(
     () => (this.envio()?.paradas ?? []).filter((p) => !p.completadaEn).length,
@@ -443,14 +440,16 @@ export class ServicioPage implements OnInit, OnDestroy {
     if (!e) return '';
     const n = this.paradasPendientes();
     if (n > 0)
-      return `Te ${n === 1 ? 'falta 1 parada' : `faltan ${n} paradas`} por marcar como hecha.`;
+      return n === 1
+        ? 'Te falta 1 parada por marcar como hecha.'
+        : `Te faltan ${n} paradas por marcar como hecha.`;
     if (e.idaYVuelta && !e.destinoVisitadoEn)
       return 'Marca la llegada al destino; la entrega se cierra al regresar al origen.';
     return '';
   });
 
   protected readonly fase = computed<FaseCarga>(() =>
-    this.envio() ? 'listo' : this.error() ? 'error' : 'cargando',
+    faseDe({ cargando: !this.envio() && !this.error(), error: !this.envio() && this.error() }),
   );
   protected readonly puedeIniciar = computed(
     () => !!this.envio() && puedeIniciarRuta(this.envio() as Envio),
@@ -495,8 +494,8 @@ export class ServicioPage implements OnInit, OnDestroy {
 
   constructor() {
     // Cancelaciones o cambios del cliente llegan al instante
-    const sub = this.eventos.de<ApiNotificacion>('notificacion').subscribe((n) => {
-      if (n.id_envio === this.envio()?.id && n.tipo !== 'mensaje_chat') void this.cargar();
+    const sub = this.eventos.notificaciones().subscribe((n) => {
+      if (esDelEnvio(n.idEnvio, this.envio()) && n.tipo !== 'mensaje_chat') void this.cargar();
     });
     inject(DestroyRef).onDestroy(() => sub.unsubscribe());
   }

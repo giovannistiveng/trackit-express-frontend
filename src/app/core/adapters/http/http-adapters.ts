@@ -1066,8 +1066,9 @@ export class HttpRealtimeAdapter implements RealtimePort {
     ).ticket;
   }
 
+  /** ngsw-bypass: el service worker de Angular no debe intervenir el flujo de eventos (SSE). */
   urlEventos(ticket: string): string {
-    return `${this.url('/eventos')}?ticket=${encodeURIComponent(ticket)}`;
+    return `${this.url('/eventos')}?ticket=${encodeURIComponent(ticket)}&ngsw-bypass=true`;
   }
 
   async clavePush(): Promise<string | null> {

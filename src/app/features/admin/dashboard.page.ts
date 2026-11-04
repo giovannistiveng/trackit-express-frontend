@@ -11,7 +11,7 @@ import { MetricasAdmin } from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { AdminMetricsPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { IconoComponent, NombreIcono } from '../../shared/ui/icono.component';
 import { RouterLink } from '@angular/router';
 
@@ -184,7 +184,7 @@ export class DashboardPage implements OnInit {
   protected readonly m = signal<MetricasAdmin | null>(null);
   protected readonly error = signal('');
   protected readonly fase = computed<FaseCarga>(() =>
-    this.m() ? 'listo' : this.error() ? 'error' : 'cargando',
+    faseDe({ cargando: !this.m() && !this.error(), error: !this.m() && this.error() }),
   );
   protected readonly maxZona = computed(() =>
     Math.max(1, ...(this.m()?.porZona.map((z) => z.envios) ?? [1])),

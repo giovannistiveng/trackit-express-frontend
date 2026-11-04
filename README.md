@@ -33,7 +33,8 @@ Scripts:
 | `npm run build`         | Compilación de producción en `dist/` (con Service Worker)                                      |
 | `npm test`              | Pruebas unitarias                                                                              |
 | `npm run test:coverage` | Pruebas con cobertura y umbrales (80 % global, 75 % ramas, 90 % en dominio y adaptadores HTTP) |
-| `npm run lint`          | Linter                                                                                         |
+| `npm run lint`          | ESLint (reglas de SonarJS) + verificación de la arquitectura hexagonal                         |
+| `npm run lint:sonar`    | Reporte de ESLint en `reports/eslint.json` para SonarQube                                      |
 | `npm run sonar`         | Análisis de SonarQube (ver abajo)                                                              |
 
 ## Configuración
@@ -59,24 +60,26 @@ Todo el frontend habla con el backend real: no hay datos simulados.
 ```
 src/app/
 ├── core/
-│   ├── domain/        Modelos y reglas puras (validadores, transiciones, JWT)
-│   ├── ports/         Contratos (clases abstractas usadas como tokens)
+│   ├── domain/        Modelos y reglas puras (validadores, transiciones, JWT): sin Angular
+│   ├── ports/         Contratos (clases abstractas usadas como tokens): API, eventos en vivo, push, logs…
 │   ├── adapters/
 │   │   ├── http/      Adaptadores del backend (único lugar con snake_case)
-│   │   └── local/     Almacenamiento del navegador y cola de ubicaciones sin conexión
+│   │   ├── sse/       EventosSseAdapter: avisos, chat y cambios de envío en vivo
+│   │   ├── push/      PushHibridoAdapter: Web Push y Firebase (Capacitor)
+│   │   └── local/     Almacenamiento del navegador
 │   ├── auth/          Sesión, guards, interceptor de autenticación
 │   ├── http/          Interceptor de errores/tiempo/reintento, ApiError, traductor de mensajes
 │   ├── logging/       LoggerService (logs al backend), ErrorHandler global
-│   └── config/        Configuración y registro de adaptadores
-├── shared/            UI (modal, toasts, estrellas, teclado PIN, carga de archivo, placa), pipes, utilidades
-├── layout/            Shell por rol, banner sin conexión, 404
-└── features/
-    ├── auth/          CU-001 Registro, CU-002 Login
-    ├── cliente/       CU-005, CU-006, CU-008, CU-010, historial
-    ├── conductor/     CU-003, CU-004, CU-007, CU-008, CU-009
-    └── admin/         CU-011, métricas y auditoría
+│   └── config/        app-config y ports.providers (qué adaptador implementa cada puerto)
+├── shared/            UI (modal, toasts, mapa, estado de carga, PIN, placa), pipes, utilidades
+├── layout/            Shell por rol, sincronización de sesión, banner sin conexión, 404
+└── features/          Pantallas por rol (auth, cliente, conductor, admin, público); solo usan puertos
 src/testing/           Dobles, fixtures (Apéndice A) y helpers de pruebas
 ```
+
+Reglas de dependencia (las verifica `scripts/verificar-arquitectura.mjs` en cada `npm run lint`):
+`domain` no importa nada; `ports` solo dominio, rxjs y señales; `features`, `layout` y `shared` nunca
+importan adaptadores; solo `app.config` usa `ports.providers`.
 
 ## Rutas
 
@@ -139,8 +142,8 @@ src/testing/           Dobles, fixtures (Apéndice A) y helpers de pruebas
 - **Cuenta:** recuperar la contraseña por correo y verificar el correo (aviso en la cabecera con "Reenviar enlace").
 - **Pagos:** efectivo contra entrega o **Nequi** (cobro al celular con espera en vivo, reintento o cambio a efectivo).
   El conductor confirma el efectivo al entregar y ve su liquidación semanal; el administrador la genera y la marca pagada.
-- **Tiempo real:** los avisos, mensajes y cambios de envío llegan por SSE (`EventosService`); si el canal se cae, se
-  reconecta y mientras tanto se consulta cada 30 s. **Notificaciones push** (`PushService`): Web Push en el navegador
+- **Tiempo real:** los avisos, mensajes y cambios de envío llegan por SSE (`EventosPort` → `EventosSseAdapter`); si el canal se cae, se
+  reconecta y mientras tanto se consulta cada 30 s. **Notificaciones push** (`PushPort` → `PushHibridoAdapter`): Web Push en el navegador
   (requiere el build de producción por el service worker) y Firebase en la app Android/iOS si se empaqueta con Capacitor.
 - **Enlace de seguimiento** para quien recibe (WhatsApp, copiar o compartir), sin cuenta ni datos privados.
 - **Envíos programados, hasta 3 paradas e ida y vuelta**, con su recargo en el desglose.
@@ -159,14 +162,18 @@ Nunca se registran contraseñas, PIN, tokens ni cuerpos de peticiones.
 3. Ejecuta:
    ```bash
    npm run test:coverage
+   npm run lint:sonar
    npm run sonar -- -Dsonar.host.url=http://localhost:9000 -Dsonar.token=TU_TOKEN
    ```
 
 ## Despliegue
 
-1. `npm ci && npm run build`. El resultado queda en `dist/trackit-express-frontend/browser`.
-2. Sírvelo como sitio estático con _fallback_ a `index.html` (rutas de Angular) y HTTPS (lo exige el Service Worker y la geolocalización).
-3. La compilación de producción llama a `/api`: publica el backend en el mismo dominio (proxy inverso de `/api` y `/uploads` al backend) o cambia `apiBaseUrl` en `src/environments/environment.ts` por la URL pública de la API y agrega el dominio del frontend a `CORS_ORIGINS` del backend.
+- **Docker** (recomendado): el `Dockerfile` compila Angular en producción y lo sirve con Nginx, que además hace de
+  proxy de `/api` y `/uploads` hacia la API (variable `API_UPSTREAM`, por defecto `http://api:3000`) sin búfer para
+  los eventos en vivo. La aplicación completa (base de datos + API + web) se levanta con el compose del backend:
+  ver `trackit-express-backend/deploy/README.md`, que también trae el plan para VirtualBox/Ubuntu y la nube.
+- Sin Docker: `npm ci && npm run build` y servir `dist/trackit-express-frontend/browser` como sitio estático con
+  _fallback_ a `index.html`, HTTPS y un proxy de `/api` y `/uploads` al backend.
 
 ## Documentación
 

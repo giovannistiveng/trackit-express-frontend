@@ -1,9 +1,8 @@
 import { Injectable, InjectionToken, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { SwPush } from '@angular/service-worker';
-import { LoggerPort, RealtimePort } from '../ports';
-
-export type EstadoPush = 'no-soportado' | 'bloqueado' | 'inactivo' | 'activo' | 'activando';
+import { EstadoPush } from '../../domain';
+import { LoggerPort, PushPort, RealtimePort } from '../../ports';
 
 /** Plugin PushNotifications de Capacitor (solo existe dentro de la app Android/iOS). */
 export interface PluginPushCapacitor {
@@ -38,7 +37,7 @@ export const CAPACITOR = new InjectionToken<CapacitorGlobal | null>('CAPACITOR',
  *  - App Android/iOS empaquetada con Capacitor: Firebase Cloud Messaging con el plugin nativo.
  */
 @Injectable({ providedIn: 'root' })
-export class PushService {
+export class PushHibridoAdapter extends PushPort {
   private readonly sw = inject(SwPush);
   private readonly puerto = inject(RealtimePort);
   private readonly router = inject(Router);

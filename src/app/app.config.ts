@@ -20,7 +20,7 @@ import { provideServiceWorker } from '@angular/service-worker';
 import { routes } from './app.routes';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { SessionService } from './core/auth/session.service';
-import { SincronizacionSesion } from './core/auth/sincronizacion-sesion';
+import { SincronizacionSesion } from './layout/sincronizacion-sesion';
 import { providePorts } from './core/config/ports.providers';
 import { apiInterceptor } from './core/http/api.interceptor';
 import { GlobalErrorHandler } from './core/logging/global-error-handler';

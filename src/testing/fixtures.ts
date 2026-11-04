@@ -134,7 +134,7 @@ export const ADMIN: Usuario = { id: 9, nombre: 'Adm', correo: 'adm@t.co', rol: '
 /** JWT sin firma válida (el frontend solo lee exp). */
 export function crearJwt(expSegundos: number, payload: Record<string, unknown> = {}): string {
   const b64 = (o: unknown) =>
-    btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+    btoa(JSON.stringify(o)).replaceAll('=', '').replaceAll('+', '-').replaceAll('/', '_');
   return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ userId: 1, role: '2', exp: expSegundos, ...payload })}.firma`;
 }
 

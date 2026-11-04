@@ -11,7 +11,7 @@ import { Pagina, RegistroAuditoria } from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { AdminMetricsPort, LoggerPort } from '../../core/ports';
 import { FechaLocalPipe, formatearFechaLocal } from '../../shared/pipes/fecha-local.pipe';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { aCsv, descargarArchivo } from '../../shared/util/csv';
 
 export const TAMANO_PAGINA = 15;
@@ -184,13 +184,7 @@ export class AuditoriaPage implements OnInit {
     Math.max(1, Math.ceil((this.pagina()?.total ?? 0) / TAMANO_PAGINA)),
   );
   protected readonly fase = computed<FaseCarga>(() =>
-    this.cargando()
-      ? 'cargando'
-      : this.error()
-        ? 'error'
-        : !this.pagina()?.items.length
-          ? 'vacio'
-          : 'listo',
+    faseDe({ cargando: this.cargando(), error: this.error(), vacio: !this.pagina()?.items.length }),
   );
 
   ngOnInit(): void {

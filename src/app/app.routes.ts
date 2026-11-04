@@ -1,8 +1,8 @@
 import { inject } from '@angular/core';
-import { ActivatedRouteSnapshot, Router, Routes } from '@angular/router';
+import { ActivatedRouteSnapshot, Router, Routes, UrlTree } from '@angular/router';
 import { authGuard, invitadoGuard, roleGuard } from './core/auth/guards';
 import { SessionService } from './core/auth/session.service';
-import { ROL } from './core/domain';
+import { ROL, Rol } from './core/domain';
 import { ShellComponent } from './layout/shell.component';
 import { NoEncontradaComponent } from './layout/no-encontrada.component';
 
@@ -12,7 +12,7 @@ export const routes: Routes = [
     path: '',
     pathMatch: 'full',
     canActivate: [
-      () => {
+      (): boolean | UrlTree => {
         const session = inject(SessionService);
         return session.estaAutenticado() ? inject(Router).parseUrl(session.inicioDelRol()) : true;
       },
@@ -73,13 +73,11 @@ export const routes: Routes = [
         const id = ruta.paramMap.get('id');
         const chat = ruta.queryParamMap.get('chat') ? '?chat=1' : '';
         const rol = session.rol();
-        const destino =
-          rol === ROL.CLIENTE
-            ? `/cliente/envios/${id}${chat}`
-            : rol === ROL.CONDUCTOR
-              ? `/conductor/servicio/${id}${chat}`
-              : '/admin/envios';
-        return inject(Router).parseUrl(destino);
+        const destinos: Partial<Record<Rol, string>> = {
+          [ROL.CLIENTE]: `/cliente/envios/${id}${chat}`,
+          [ROL.CONDUCTOR]: `/conductor/servicio/${id}${chat}`,
+        };
+        return inject(Router).parseUrl((rol && destinos[rol]) || '/admin/envios');
       },
     ],
     children: [],

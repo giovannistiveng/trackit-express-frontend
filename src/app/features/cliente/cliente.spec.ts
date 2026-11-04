@@ -83,7 +83,7 @@ function puertosNuevoEnvio() {
   return {
     zonas: { listar: vi.fn(async () => ZONAS) },
     cotizar: {
-      cotizar: vi.fn(async (s: SolicitudCotizacion): Promise<Cotizacion> => (void s, COTIZACION)),
+      cotizar: vi.fn(async (_s: SolicitudCotizacion): Promise<Cotizacion> => COTIZACION),
     },
     envios: {
       crear: vi.fn(async () => buildEnvio({ id: 2, pin: '6175', tarifa: 31600 })),
@@ -148,6 +148,16 @@ async function llenarCotizacion(fixture: ComponentFixture<unknown>, el: HTMLElem
   ubicar(fixture, 'destino', 'Silvania', SILVANIA);
   elegir(q(el, '#tipoCarga'), tipo);
 }
+
+/** Avanza los temporizadores falsos y redibuja (dos veces: para las promesas que encadenan). */
+const pasoCon =
+  (fixture: ComponentFixture<unknown>) =>
+  async (ms = 0): Promise<void> => {
+    await vi.advanceTimersByTimeAsync(ms);
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(0);
+    fixture.detectChanges();
+  };
 
 const confirmar = (el: HTMLElement) => botonPorTexto(el, /Confirmar|Pagar con Nequi/);
 
@@ -445,12 +455,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
   it('al cambiar de vehículo recotiza solo y crea con la categoría y las notas', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { el, p, fixture } = await montarNuevo();
-    const paso = async (ms = 0) => {
-      await vi.advanceTimersByTimeAsync(ms);
-      fixture.detectChanges();
-      await vi.advanceTimersByTimeAsync(0);
-      fixture.detectChanges();
-    };
+    const paso = pasoCon(fixture);
     expect(q<HTMLInputElement>(el, '#categoria').checked).toBe(true);
     await llenarCotizacion(fixture, el);
     await paso(ESPERA_AUTOCOTIZAR_MS);
@@ -477,12 +482,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
   it('con las dos direcciones elegidas de las sugerencias cotiza solo, con coordenadas y vista del mapa', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { el, p, fixture, geo } = await montarNuevo();
-    const paso = async (ms = 0) => {
-      await vi.advanceTimersByTimeAsync(ms);
-      fixture.detectChanges();
-      await vi.advanceTimersByTimeAsync(0);
-      fixture.detectChanges();
-    };
+    const paso = pasoCon(fixture);
     geo.resultados = [
       {
         nombre: 'Parque principal, Fusagasugá',

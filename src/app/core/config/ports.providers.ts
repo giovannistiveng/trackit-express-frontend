@@ -25,6 +25,8 @@ import {
   PaymentsPort,
   ChatPort,
   RealtimePort,
+  EventosPort,
+  PushPort,
   RatingPort,
   SessionStoragePort,
   ShipmentsPort,
@@ -35,6 +37,8 @@ import {
 import * as http from '../adapters/http/http-adapters';
 import { LocalForageAdapter, LocalStorageSessionAdapter } from '../adapters/local/browser-storage';
 import { LoggerService } from '../logging/logger.service';
+import { EventosSseAdapter } from '../adapters/sse/eventos-sse.adapter';
+import { PushHibridoAdapter } from '../adapters/push/push-hibrido.adapter';
 
 /** Registra el adaptador de cada puerto. */
 export function providePorts(): EnvironmentProviders {
@@ -44,6 +48,8 @@ export function providePorts(): EnvironmentProviders {
     { provide: KeyValueStorePort, useExisting: LocalForageAdapter },
     { provide: LoggerPort, useExisting: LoggerService },
     { provide: LogTransportPort, useExisting: http.HttpLogTransportAdapter },
+    { provide: EventosPort, useExisting: EventosSseAdapter },
+    { provide: PushPort, useExisting: PushHibridoAdapter },
 
     // API del backend
     { provide: AuthPort, useExisting: http.HttpAuthAdapter },

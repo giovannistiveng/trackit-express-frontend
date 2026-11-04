@@ -12,7 +12,7 @@ import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { AdminOperationsPort, LoggerPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { FechaLocalPipe } from '../../shared/pipes/fecha-local.pipe';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { IconoComponent } from '../../shared/ui/icono.component';
 import { ModalComponent } from '../../shared/ui/modal.component';
 import { ToastService } from '../../shared/ui/toast.service';
@@ -28,6 +28,11 @@ export const TEXTO_ESTADO_PAGO: Record<EstadoPago, string> = {
   reembolso_pendiente: 'Reembolso pendiente',
   reembolsado: 'Reembolsado',
 };
+
+function textoGeneradas(n: number): string {
+  if (n === 0) return 'La semana ya estaba liquidada o no tuvo servicios.';
+  return n === 1 ? '1 liquidación generada' : `${n} liquidaciones generadas`;
+}
 
 const CLASE_ESTADO: Partial<Record<EstadoPago, string>> = {
   aprobado: 'bg-exito-suave text-exito',
@@ -306,9 +311,11 @@ export class PagosAdminPage implements OnInit {
   protected readonly fasePagos = computed<FaseCarga>(() => this.fase(this.pagos()));
 
   private fase(p: Pagina<unknown> | null): FaseCarga {
-    if (this.cargando()) return 'cargando';
-    if (this.error()) return 'error';
-    return (p?.items.length ?? 0) === 0 ? 'vacio' : 'listo';
+    return faseDe({
+      cargando: this.cargando(),
+      error: this.error(),
+      vacio: (p?.items.length ?? 0) === 0,
+    });
   }
 
   ngOnInit(): void {
@@ -370,11 +377,7 @@ export class PagosAdminPage implements OnInit {
     this.generando.set(true);
     try {
       const nuevas = await this.ops.generarLiquidaciones();
-      this.toast.exito(
-        nuevas.length === 0
-          ? 'La semana ya estaba liquidada o no tuvo servicios.'
-          : `${nuevas.length} ${nuevas.length === 1 ? 'liquidación generada' : 'liquidaciones generadas'}`,
-      );
+      this.toast.exito(textoGeneradas(nuevas.length));
       this.log.info('Admin', 'Liquidaciones generadas', { cantidad: nuevas.length });
       await this.cargarLiquidaciones();
     } catch (e) {

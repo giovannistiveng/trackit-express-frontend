@@ -4,7 +4,7 @@ import { CLIENTE, CONDUCTOR } from '../../testing/fixtures';
 import { FakeNotifications, FakeSessionStorage, q, vaciarPromesas } from '../../testing/fakes';
 import { configurar, montar } from '../../testing/pantallas';
 import { CLAVE_SESION, SessionService } from '../core/auth/session.service';
-import { SincronizacionSesion } from '../core/auth/sincronizacion-sesion';
+import { SincronizacionSesion } from './sincronizacion-sesion';
 import { Notificacion } from '../core/domain';
 import { NotificationsPort, SessionStoragePort } from '../core/ports';
 import { ToastService } from '../shared/ui/toast.service';
@@ -14,7 +14,7 @@ import {
   NotificacionesStore,
   rutaDeNotificacion,
 } from './notificaciones.store';
-import { iniciales } from './shell.component';
+import { iniciales } from '../core/domain';
 
 const aviso = (id: number, p: Partial<Notificacion> = {}): Notificacion => ({
   id,

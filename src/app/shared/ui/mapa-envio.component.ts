@@ -1,3 +1,4 @@
+import { cargarLeaflet } from '../util/leaflet';
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
@@ -69,7 +70,7 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
   }
 
   async ngAfterViewInit(): Promise<void> {
-    this.L = await import('leaflet');
+    this.L = await cargarLeaflet();
     const s = this.seguimiento();
     const centro = s?.ultima ?? s?.origen.coords ?? CENTRO_FUSAGASUGA;
     this.mapa = this.L.map(this.contenedor().nativeElement, {
@@ -108,6 +109,40 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
     return [s?.origen.coords, s?.destino.coords, conductor].filter((p): p is Coordenadas => !!p);
   }
 
+  /** Marcador del conductor y la línea punteada hacia su próxima meta. */
+  private pintarConductor(
+    L: typeof import('leaflet'),
+    s: Seguimiento | null,
+    posicion: Coordenadas,
+    vivo: boolean,
+  ): void {
+    const capa = this.capa as LayerGroup;
+    const meta = s?.estado === 'Asignado' ? s.origen.coords : s?.destino.coords;
+    if (meta) {
+      L.polyline(
+        [
+          [posicion.lat, posicion.lon],
+          [meta.lat, meta.lon],
+        ],
+        { color: '#1f1a17', weight: 2, opacity: 0.55, dashArray: '6 8' },
+      ).addTo(capa);
+    }
+    const icono = L.divIcon({
+      className: '',
+      html: `<span class="marcador-vivo ${vivo ? 'activo' : ''}">${SVG_MOTO}</span>`,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+    });
+    if (this.conductor) this.conductor.setLatLng([posicion.lat, posicion.lon]).setIcon(icono);
+    else
+      this.conductor = L.marker([posicion.lat, posicion.lon], {
+        icon: icono,
+        title: 'Conductor',
+        zIndexOffset: 1000,
+      });
+    this.conductor.addTo(capa);
+  }
+
   private pintar(s: Seguimiento | null, propia: Coordenadas | null): void {
     if (!this.L || !this.mapa || !this.capa) return;
     const L = this.L;
@@ -140,39 +175,9 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
     }
 
     const posicion = propia ?? s?.ultima ?? null;
-    if (posicion) {
-      const meta = s?.estado === 'Asignado' ? s.origen.coords : s?.destino.coords;
-      if (meta) {
-        L.polyline(
-          [
-            [posicion.lat, posicion.lon],
-            [meta.lat, meta.lon],
-          ],
-          { color: '#1f1a17', weight: 2, opacity: 0.55, dashArray: '6 8' },
-        ).addTo(this.capa);
-      }
-      const vivo = !!propia || !!s?.enVivo;
-      const icono = L.divIcon({
-        className: '',
-        html: `<span class="marcador-vivo ${vivo ? 'activo' : ''}">${SVG_MOTO}</span>`,
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
-      });
-      if (this.conductor) this.conductor.setLatLng([posicion.lat, posicion.lon]).setIcon(icono);
-      else
-        this.conductor = L.marker([posicion.lat, posicion.lon], {
-          icon: icono,
-          title: 'Conductor',
-          zIndexOffset: 1000,
-        });
-      this.conductor.addTo(this.capa);
-    } else this.conductor = null;
-
-    this.descripcion.set(
-      posicion
-        ? `Mapa: el conductor está en ${posicion.lat.toFixed(4)}, ${posicion.lon.toFixed(4)}${s?.destino.coords ? `, rumbo a ${s.destino.direccion}` : ''}`
-        : `Mapa del envío${s ? ` de ${s.origen.direccion} a ${s.destino.direccion}` : ''}`,
-    );
+    if (posicion) this.pintarConductor(L, s, posicion, !!propia || !!s?.enVivo);
+    else this.conductor = null;
+    this.descripcion.set(describirMapa(s, posicion));
 
     if (!this.encuadrado && this.puntosVisibles(s, propia).length > 0) {
       this.encuadrado = true;
@@ -181,4 +186,14 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
       this.mapa.panTo([posicion.lat, posicion.lon]);
     }
   }
+}
+
+/** Texto alternativo del mapa para lectores de pantalla. */
+export function describirMapa(s: Seguimiento | null, posicion: Coordenadas | null): string {
+  if (!posicion)
+    return s
+      ? `Mapa del envío de ${s.origen.direccion} a ${s.destino.direccion}`
+      : 'Mapa del envío';
+  const rumbo = s?.destino.coords ? `, rumbo a ${s.destino.direccion}` : '';
+  return `Mapa: el conductor está en ${posicion.lat.toFixed(4)}, ${posicion.lon.toFixed(4)}${rumbo}`;
 }

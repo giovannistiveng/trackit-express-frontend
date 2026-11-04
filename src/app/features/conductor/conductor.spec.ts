@@ -25,7 +25,7 @@ import {
   TrackingPort,
   VehiclesPort,
 } from '../../core/ports';
-import { LocationQueue } from '../../core/adapters/local/location-queue';
+import { LocationQueue } from './state/location-queue';
 import { ToastService } from '../../shared/ui/toast.service';
 import { DocumentoCardComponent } from './components/documento-card.component';
 import {

@@ -40,13 +40,13 @@ describe('apiInterceptor', () => {
     expect(log.de('WARN')[0]).toMatch(/^POST \/x → 400 PIN incorrecto/);
   });
 
-  it('debería usar el texto plano o el statusText si no hay campo error', async () => {
+  it('debería usar el texto plano o el código si no hay campo error', async () => {
     const p1 = firstValueFrom(http.post(`${API_BASE}/a`, {}));
     ctrl.expectOne(`${API_BASE}/a`).flush('texto simple', { status: 400, statusText: 'Bad' });
     await expect(p1).rejects.toMatchObject({ message: 'texto simple' });
     const p2 = firstValueFrom(http.post(`${API_BASE}/b`, {}));
     ctrl.expectOne(`${API_BASE}/b`).flush(null, { status: 503, statusText: 'Unavailable' });
-    await expect(p2).rejects.toMatchObject({ status: 503, message: 'Unavailable' });
+    await expect(p2).rejects.toMatchObject({ status: 503, message: 'Error 503' });
     expect(log.de('ERROR')).toHaveLength(1);
   });
 

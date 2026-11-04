@@ -1,5 +1,5 @@
 import { Injectable, OnDestroy, inject, signal } from '@angular/core';
-import { LocationQueue } from '../../../core/adapters/local/location-queue';
+import { LocationQueue } from './location-queue';
 import { LoggerPort } from '../../../core/ports';
 import { ENTORNO_UBICACION } from '../../../shared/ui/campo-direccion.component';
 import { mensajeUbicacion, motivoDenegado } from '../../../shared/util/ubicacion';

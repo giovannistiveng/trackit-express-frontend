@@ -1,10 +1,7 @@
 import { Injectable, OnDestroy, inject, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
-import { ApiNotificacion } from '../core/adapters/http/backend.types';
-import { aNotificacion } from '../core/adapters/http/mappers';
-import { EventosService } from '../core/realtime/eventos.service';
 import { Notificacion, Rol } from '../core/domain';
-import { LoggerPort, NotificationsPort } from '../core/ports';
+import { EventosPort, LoggerPort, NotificationsPort } from '../core/ports';
 import { ToastService } from '../shared/ui/toast.service';
 
 /**
@@ -36,7 +33,7 @@ export class NotificacionesStore implements OnDestroy {
   private readonly puerto = inject(NotificationsPort);
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
-  private readonly eventos = inject(EventosService);
+  private readonly eventos = inject(EventosPort);
 
   readonly noLeidas = signal(0);
   readonly items = signal<Notificacion[]>([]);
@@ -55,9 +52,7 @@ export class NotificacionesStore implements OnDestroy {
     this.iniciado = true;
     void this.revisar(false);
     this.eventos.iniciar();
-    this.suscripcion = this.eventos
-      .de<ApiNotificacion>('notificacion')
-      .subscribe((n) => this.recibir(n));
+    this.suscripcion = this.eventos.notificaciones().subscribe((n) => this.recibir(n));
     this.temporizador = setInterval(() => {
       const visible = typeof document === 'undefined' || document.visibilityState !== 'hidden';
       if (visible && !this.eventos.conectado()) void this.revisar();
@@ -66,14 +61,7 @@ export class NotificacionesStore implements OnDestroy {
   }
 
   /** Aviso que llega al instante por el canal de eventos. */
-  private recibir(api: ApiNotificacion): void {
-    // Sin id (no se pudo guardar) se usa uno negativo: no existe en el servidor
-    const n = aNotificacion({
-      ...api,
-      id: api.id ?? -Date.now(),
-      leida: false,
-      fecha: api.fecha ?? new Date().toISOString(),
-    });
+  private recibir(n: Notificacion): void {
     this.items.update((l) => [n, ...l.filter((x) => x.id !== n.id)].slice(0, 30));
     this.noLeidas.update((c) => c + 1);
     this.toast.mostrar(n.titulo);

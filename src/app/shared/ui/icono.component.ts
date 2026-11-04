@@ -1,5 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  effect,
+  inject,
+  input,
+} from '@angular/core';
 import {
   ArrowLeft,
   ArrowRight,
@@ -203,14 +209,21 @@ const ICONOS = {
 
 export type NombreIcono = keyof typeof ICONOS;
 
-/** Quita el tamaño fijo del SVG: el tamaño lo da la clase del host (size-5, size-6…). */
-function limpiar(svg: string): string {
-  return svg
-    .replace(/\s(width|height)="24"/g, '')
-    .replace('<svg', '<svg aria-hidden="true" focusable="false"');
-}
+const cache: Partial<Record<NombreIcono, SVGElement>> = {};
 
-const cache: Partial<Record<NombreIcono, string>> = {};
+/**
+ * Convierte el SVG de lucide-static (constante del build, nunca datos del usuario) en un nodo,
+ * sin pasar por innerHTML. Se quita el tamaño fijo: el tamaño lo da la clase del host.
+ */
+function nodoIcono(nombre: NombreIcono): SVGElement {
+  const doc = new DOMParser().parseFromString(ICONOS[nombre], 'image/svg+xml');
+  const svg = doc.documentElement as unknown as SVGElement;
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  return svg;
+}
 
 /**
  * Ícono decorativo. Por defecto mide 1.25rem; cambia el tamaño con clases (class="size-6").
@@ -224,19 +237,19 @@ const cache: Partial<Record<NombreIcono, string>> = {};
     '[attr.role]': 'etiqueta() ? "img" : null',
     '[attr.aria-label]': 'etiqueta() || null',
     '[attr.aria-hidden]': 'etiqueta() ? null : "true"',
-    '[innerHTML]': 'svg()',
   },
   template: '',
 })
 export class IconoComponent {
   readonly nombre = input.required<NombreIcono>();
   readonly etiqueta = input('');
-  private readonly sanitizer = inject(DomSanitizer);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
-  // Los SVG vienen del paquete lucide-static (constantes del build), no de datos del usuario
-  protected readonly svg = computed<SafeHtml>(() => {
-    const n = this.nombre();
-    cache[n] ??= limpiar(ICONOS[n]);
-    return this.sanitizer.bypassSecurityTrustHtml(cache[n] as string);
-  });
+  constructor() {
+    effect(() => {
+      const n = this.nombre();
+      cache[n] ??= nodoIcono(n);
+      this.host.nativeElement.replaceChildren(document.importNode(cache[n] as SVGElement, true));
+    });
+  }
 }

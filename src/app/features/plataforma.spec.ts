@@ -12,7 +12,14 @@ import {
 } from '../../testing/fakes';
 import { configurar, montar } from '../../testing/pantallas';
 import { SessionService } from '../core/auth/session.service';
-import { Envio, MensajeChat, PagoResumen, Seguimiento, SeguimientoPublico } from '../core/domain';
+import {
+  Envio,
+  MensajeChat,
+  PagoResumen,
+  Seguimiento,
+  SeguimientoPublico,
+  telefonoWhatsapp,
+} from '../core/domain';
 import { ApiError } from '../core/http/api-error';
 import {
   AuthPort,
@@ -28,8 +35,16 @@ import {
   ShipmentsPort,
   TrackingPort,
 } from '../core/ports';
-import { EventosService, FUENTE_EVENTOS, esperaReconexion } from '../core/realtime/eventos.service';
-import { CAPACITOR, CapacitorGlobal, PushService } from '../core/realtime/push.service';
+import {
+  EventosSseAdapter,
+  FUENTE_EVENTOS,
+  esperaReconexion,
+} from '../core/adapters/sse/eventos-sse.adapter';
+import {
+  CAPACITOR,
+  CapacitorGlobal,
+  PushHibridoAdapter,
+} from '../core/adapters/push/push-hibrido.adapter';
 import { CampanaComponent } from '../layout/campana.component';
 import { NotificacionesStore } from '../layout/notificaciones.store';
 import { ChatEnvioComponent } from '../shared/ui/chat-envio.component';
@@ -48,7 +63,7 @@ import {
   VerificarCorreoPage,
 } from './auth/recuperacion.pages';
 import { PagoPanelComponent, celularValido } from './cliente/components/pago-panel.component';
-import { EnvioDetallePage, telefonoWhatsapp } from './cliente/envio-detalle.page';
+import { EnvioDetallePage } from './cliente/envio-detalle.page';
 import { GananciasPage } from './conductor/ganancias.page';
 import { TableroPage } from './conductor/tablero.page';
 import { DriverProfileStore } from './conductor/state/driver-profile.store';
@@ -57,12 +72,15 @@ import { SeguimientoPublicoPage } from './publico/seguimiento.page';
 // ------------------------------------------------------------------ canal de eventos falso
 
 class FuenteFalsa {
-  static ultima: FuenteFalsa | null = null;
+  static readonly instancias: FuenteFalsa[] = [];
+  static get ultima(): FuenteFalsa | null {
+    return FuenteFalsa.instancias.at(-1) ?? null;
+  }
   onerror: (() => void) | null = null;
   cerrada = false;
   private readonly oyentes = new Map<string, ((e: MessageEvent) => void)[]>();
   constructor(readonly url: string) {
-    FuenteFalsa.ultima = this;
+    FuenteFalsa.instancias.push(this);
   }
   addEventListener(tipo: string, fn: (e: MessageEvent) => void) {
     this.oyentes.set(tipo, [...(this.oyentes.get(tipo) ?? []), fn]);
@@ -82,7 +100,7 @@ const canalFalso = {
 };
 
 async function abrirCanal(): Promise<FuenteFalsa> {
-  TestBed.inject(EventosService).iniciar();
+  TestBed.inject(EventosSseAdapter).iniciar();
   await vaciarPromesas(10);
   const f = FuenteFalsa.ultima!;
   f.emitir('conectado', {});
@@ -660,15 +678,15 @@ describe('ChatEnvioComponent', () => {
 
 // ------------------------------------------------------------------ servicios de tiempo real
 
-describe('EventosService', () => {
+describe('EventosSseAdapter', () => {
   afterEach(() => vi.useRealTimers());
 
   it('se conecta con ticket, reparte eventos y reconecta con espera creciente', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     configurar({ usuario: CLIENTE, providers: [canalFalso] });
-    const s = TestBed.inject(EventosService);
+    const s = TestBed.inject(EventosSseAdapter);
     const vistos: unknown[] = [];
-    s.de('envio').subscribe((d) => vistos.push(d));
+    s.cambiosEnvio().subscribe((d) => vistos.push(d));
     s.iniciar();
     s.iniciar();
     await vi.advanceTimersByTimeAsync(0);
@@ -677,7 +695,7 @@ describe('EventosService', () => {
     f.emitir('conectado', {});
     expect(s.conectado()).toBe(true);
     f.emitir('envio', { id_envio: 1 });
-    expect(vistos).toEqual([{ id_envio: 1 }]);
+    expect(vistos).toEqual([1]);
     f.onerror?.();
     expect(f.cerrada).toBe(true);
     expect(s.conectado()).toBe(false);
@@ -692,7 +710,7 @@ describe('EventosService', () => {
     configurar({ usuario: CLIENTE, providers: [canalFalso] });
     const rt = TestBed.inject(RealtimePort) as FakeRealtime;
     const ticket = vi.spyOn(rt, 'ticket').mockImplementationOnce(rechaza(new ApiError(0, 'x')));
-    const s = TestBed.inject(EventosService);
+    const s = TestBed.inject(EventosSseAdapter);
     s.iniciar();
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(2000);
@@ -702,7 +720,7 @@ describe('EventosService', () => {
     expect(esperaReconexion(10)).toBe(60_000);
     TestBed.resetTestingModule();
     configurar({ usuario: CLIENTE });
-    const sin = TestBed.inject(EventosService);
+    const sin = TestBed.inject(EventosSseAdapter);
     sin.iniciar();
     expect(sin.conectado()).toBe(false);
   });
@@ -748,7 +766,7 @@ describe('NotificacionesStore con el canal de eventos', () => {
   });
 });
 
-describe('PushService', () => {
+describe('PushHibridoAdapter', () => {
   function swFalso(habilitado = true) {
     const clics = new Subject<{ notification: { data?: { url?: string } } }>();
     return {
@@ -767,7 +785,7 @@ describe('PushService', () => {
 
   it('web: sin service worker no es soportado', async () => {
     configurar({ usuario: CLIENTE });
-    const s = TestBed.inject(PushService);
+    const s = TestBed.inject(PushHibridoAdapter);
     expect(await s.comprobar()).toBe('no-soportado');
     await s.activar();
     expect(s.estado()).toBe('no-soportado');
@@ -777,7 +795,7 @@ describe('PushService', () => {
     const { sw, clics } = swFalso();
     vi.stubGlobal('Notification', { permission: 'default' });
     configurar({ usuario: CLIENTE, providers: [{ provide: SwPush, useValue: sw }] });
-    const s = TestBed.inject(PushService);
+    const s = TestBed.inject(PushHibridoAdapter);
     expect(await s.comprobar()).toBe('inactivo');
     await s.activar();
     expect(s.estado()).toBe('activo');
@@ -802,7 +820,7 @@ describe('PushService', () => {
     const { sw } = swFalso();
     vi.stubGlobal('Notification', { permission: 'denied' });
     configurar({ usuario: CLIENTE, providers: [{ provide: SwPush, useValue: sw }] });
-    const s = TestBed.inject(PushService);
+    const s = TestBed.inject(PushHibridoAdapter);
     expect(await s.comprobar()).toBe('bloqueado');
     sw.requestSubscription.mockImplementation(rechaza(new Error('denied')));
     await s.activar();
@@ -830,7 +848,7 @@ describe('PushService', () => {
       Plugins: { PushNotifications: plugin as never },
     };
     configurar({ usuario: CLIENTE, providers: [{ provide: CAPACITOR, useValue: cap }] });
-    const s = TestBed.inject(PushService);
+    const s = TestBed.inject(PushHibridoAdapter);
     await s.comprobar();
     await s.activar();
     await vaciarPromesas();
@@ -855,7 +873,7 @@ describe('PushService', () => {
       Plugins: {},
     };
     configurar({ usuario: CLIENTE, providers: [{ provide: CAPACITOR, useValue: cap }] });
-    const s = TestBed.inject(PushService);
+    const s = TestBed.inject(PushHibridoAdapter);
     expect(await s.comprobar()).toBe('no-soportado');
     await s.activar();
     expect(s.estado()).toBe('no-soportado');
@@ -913,7 +931,7 @@ describe('CampanaComponent: borrar y activar avisos', () => {
         { provide: SwPush, useValue: sw },
       ],
     });
-    await TestBed.inject(PushService).comprobar();
+    await TestBed.inject(PushHibridoAdapter).comprobar();
     q<HTMLButtonElement>(el, 'button[aria-controls="panel-notificaciones"]').click();
     await estable();
     q<HTMLButtonElement>(el, 'button[aria-label="Eliminar notificación: Dos"]').click();
@@ -925,7 +943,7 @@ describe('CampanaComponent: borrar y activar avisos', () => {
     expect(fake.borrarLeidas).toHaveBeenCalled();
     botonPorTexto(el, /Recibir avisos en este dispositivo/).click();
     await estable();
-    expect(TestBed.inject(PushService).estado()).toBe('activo');
+    expect(TestBed.inject(PushHibridoAdapter).estado()).toBe('activo');
     vi.unstubAllGlobals();
   });
 });

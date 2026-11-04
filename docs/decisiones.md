@@ -88,3 +88,17 @@ CU-001 a CU-011, (3) historias de usuario, (4) README.
   Web Push con el service worker de Angular. Las rutas `/envios/:id` hacen que el mismo enlace de la notificación sirva
   para cliente y conductor.
 - **Presupuesto del bundle inicial:** se subió el aviso a 600 kB por el canal de eventos y el push en la cabecera.
+
+## Decisiones v2.4 (limpieza, arquitectura y despliegue)
+
+- Tiempo real y push pasan a ser puertos (`EventosPort`, `PushPort`) con adaptadores en `core/adapters/sse` y
+  `core/adapters/push`; las pantallas ya no conocen `EventSource`, `SwPush` ni Capacitor.
+- La cola de ubicaciones vive en `features/conductor/state` y la sincronización de sesión en `layout`: son estado
+  de pantalla, no adaptadores.
+- Leaflet se carga con `cargarLeaflet()`, que normaliza el módulo CommonJS: en producción `import('leaflet')`
+  llegaba como `{ default }` y el mapa fallaba con "L.map is not a function".
+- `ti-icono` ya no usa `bypassSecurityTrustHtml`: el SVG se parsea con `DOMParser` y se inserta como nodos.
+- Calidad: ESLint con `eslint-plugin-sonarjs` (mismas reglas que SonarQube), verificación de capas en `npm run lint`
+  y reporte `reports/eslint.json` para el análisis.
+- Imagen Docker con Nginx: caché larga para archivos con hash, `index.html` sin caché, encabezados de seguridad y
+  `/api/eventos` sin búfer.

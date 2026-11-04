@@ -507,3 +507,15 @@ export interface Pagina<T> {
   pagina: number;
   tamano: number;
 }
+
+/** Nivel de un registro de log. */
+export type NivelLog = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+
+/** Estado de las notificaciones push en este dispositivo. */
+export type EstadoPush = 'no-soportado' | 'bloqueado' | 'inactivo' | 'activo' | 'activando';
+
+/** Mensaje de chat que llega al instante por el canal de eventos. */
+export interface MensajeEntrante {
+  idEnvio: number;
+  mensaje: MensajeChat;
+}

@@ -278,7 +278,7 @@ describe('adaptadores HTTP de la plataforma', () => {
     const p1 = a.ticket();
     (await req('POST', '/eventos/ticket')).flush({ ticket: 'abc' });
     expect(await p1).toBe('abc');
-    expect(a.urlEventos('a b')).toBe(`${API_BASE}/eventos?ticket=a%20b`);
+    expect(a.urlEventos('a b')).toBe(`${API_BASE}/eventos?ticket=a%20b&ngsw-bypass=true`);
     const p2 = a.clavePush();
     (await req('GET', '/push/clave-publica')).flush({ clave: null });
     expect(await p2).toBeNull();

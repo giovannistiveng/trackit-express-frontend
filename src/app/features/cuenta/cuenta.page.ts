@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { SessionService } from '../../core/auth/session.service';
-import { PerfilUsuario, requisitosContrasena } from '../../core/domain';
+import { PerfilUsuario, iniciales, requisitosContrasena } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { AccountPort, LoggerPort } from '../../core/ports';
@@ -11,7 +11,6 @@ import { FaseCarga, EstadoCargaComponent } from '../../shared/ui/estado-carga.co
 import { IconoComponent } from '../../shared/ui/icono.component';
 import { ToastService } from '../../shared/ui/toast.service';
 import { contrasenaValidator } from '../auth/validators';
-import { iniciales } from '../../layout/shell.component';
 
 const TELEFONO_RE = /^\+?[\d\s-]{7,20}$/;
 

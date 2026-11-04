@@ -1,13 +1,22 @@
 import { Injectable, InjectionToken, OnDestroy, inject, signal } from '@angular/core';
 import { Observable, Subject, filter, map } from 'rxjs';
-import { LoggerPort, RealtimePort } from '../ports';
+import { MensajeEntrante, Notificacion } from '../../domain';
+import { EventosPort, LoggerPort, RealtimePort } from '../../ports';
+import { ApiMensaje, ApiNotificacion } from '../http/backend.types';
+import { aMensaje, aNotificacion } from '../http/mappers';
 
-export type TipoEvento = 'notificacion' | 'chat' | 'envio' | 'pago';
+type TipoEvento = 'notificacion' | 'chat' | 'envio' | 'pago';
 
-export interface EventoServidor {
+interface EventoServidor {
   tipo: TipoEvento;
   datos: unknown;
 }
+
+/** Datos del evento "notificacion": el id puede faltar si el aviso no se guardó. */
+type ApiNotificacionEnVivo = Omit<ApiNotificacion, 'id' | 'leida' | 'fecha'> & {
+  id: number | null;
+  fecha?: string;
+};
 
 /** Fábrica de EventSource (en las pruebas se reemplaza por una falsa). */
 export type FabricaEventSource = (url: string) => EventSource;
@@ -23,13 +32,22 @@ export function esperaReconexion(intento: number): number {
 
 const TIPOS: TipoEvento[] = ['notificacion', 'chat', 'envio', 'pago'];
 
+/** Traduce un aviso en vivo; sin id (no se pudo guardar) usa uno negativo que no existe en el servidor. */
+export function aNotificacionEnVivo(api: ApiNotificacionEnVivo, ahora = Date.now()): Notificacion {
+  return aNotificacion({
+    ...api,
+    id: api.id ?? -ahora,
+    leida: false,
+    fecha: api.fecha ?? new Date(ahora).toISOString(),
+  });
+}
+
 /**
- * Canal de eventos del servidor (Server-Sent Events). Los avisos, mensajes de chat y cambios
- * de envíos llegan al instante, sin consultar cada tantos segundos. Como el ticket de conexión
- * es de un solo uso, al caerse la conexión se pide uno nuevo y se reconecta con espera creciente.
+ * Adaptador de EventosPort con Server-Sent Events. Como el ticket de conexión es de un solo uso,
+ * al caerse la conexión se pide uno nuevo y se reconecta con espera creciente.
  */
 @Injectable({ providedIn: 'root' })
-export class EventosService implements OnDestroy {
+export class EventosSseAdapter extends EventosPort implements OnDestroy {
   private readonly puerto = inject(RealtimePort);
   private readonly fabrica = inject(FUENTE_EVENTOS);
   private readonly log = inject(LoggerPort);
@@ -41,8 +59,21 @@ export class EventosService implements OnDestroy {
   private intentos = 0;
   private temporizador: ReturnType<typeof setTimeout> | null = null;
 
-  /** Eventos de un tipo, con sus datos. */
-  de<T = unknown>(tipo: TipoEvento): Observable<T> {
+  notificaciones(): Observable<Notificacion> {
+    return this.de<ApiNotificacionEnVivo>('notificacion').pipe(map((n) => aNotificacionEnVivo(n)));
+  }
+
+  mensajes(): Observable<MensajeEntrante> {
+    return this.de<{ id_envio: number; mensaje: ApiMensaje }>('chat').pipe(
+      map((d) => ({ idEnvio: d.id_envio, mensaje: aMensaje(d.mensaje) })),
+    );
+  }
+
+  cambiosEnvio(): Observable<number> {
+    return this.de<{ id_envio: number }>('envio').pipe(map((d) => d.id_envio));
+  }
+
+  private de<T>(tipo: TipoEvento): Observable<T> {
     return this.sujeto.pipe(
       filter((e) => e.tipo === tipo),
       map((e) => e.datos as T),

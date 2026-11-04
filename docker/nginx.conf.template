@@ -1,0 +1,85 @@
+# Plantilla: la imagen oficial de Nginx reemplaza ${API_UPSTREAM} al iniciar.
+# Sirve la aplicación Angular y reenvía /api y /uploads a la API (mismo dominio: sin CORS).
+
+# Resolver de Docker: la IP de la API se vuelve a consultar si el contenedor se recrea
+resolver 127.0.0.11 valid=30s ipv6=off;
+
+server {
+  listen 80;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  server_tokens off;
+  client_max_body_size 6m;
+
+  include /etc/nginx/snippets/seguridad.inc;
+
+  gzip on;
+  gzip_types text/plain text/css application/javascript application/json image/svg+xml application/manifest+json;
+  gzip_min_length 1024;
+
+  set $api ${API_UPSTREAM};
+
+  # Comprobación de salud del contenedor web
+  location = /salud {
+    access_log off;
+    default_type text/plain;
+    return 200 "ok";
+  }
+
+  # Canal de eventos en tiempo real (SSE): sin búfer y con conexión larga
+  location = /api/eventos {
+    proxy_pass $api;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 1h;
+    chunked_transfer_encoding on;
+  }
+
+  location /api/ {
+    proxy_pass $api;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 60s;
+  }
+
+  location /uploads/ {
+    proxy_pass $api;
+    proxy_set_header Host $host;
+    expires 7d;
+  }
+
+  location = /health {
+    proxy_pass $api;
+  }
+
+  # El service worker y su manifiesto nunca se guardan en caché (las actualizaciones llegan al momento)
+  location ~ ^/(ngsw-worker\.js|ngsw\.json|safety-worker\.js|worker-basic\.min\.js)$ {
+    include /etc/nginx/snippets/seguridad.inc;
+    add_header Cache-Control "no-cache" always;
+    try_files $uri =404;
+  }
+
+  # Archivos con hash en el nombre: caché de un año
+  location ~* \.(?:js|css|woff2?|ttf|svg|png|jpg|jpeg|webp|ico)$ {
+    include /etc/nginx/snippets/seguridad.inc;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    try_files $uri =404;
+  }
+
+  # Rutas de Angular (/cliente/envios/5, /seguimiento/abc…): siempre index.html
+  location / {
+    include /etc/nginx/snippets/seguridad.inc;
+    add_header Cache-Control "no-cache" always;
+    try_files $uri $uri/ /index.html;
+  }
+}

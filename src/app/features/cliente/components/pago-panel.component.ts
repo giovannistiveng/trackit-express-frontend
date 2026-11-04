@@ -14,10 +14,8 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PagoResumen } from '../../../core/domain';
-import { ApiNotificacion } from '../../../core/adapters/http/backend.types';
 import { ErrorMessageMapper } from '../../../core/http/error-message.mapper';
-import { PaymentsPort } from '../../../core/ports';
-import { EventosService } from '../../../core/realtime/eventos.service';
+import { EventosPort, PaymentsPort } from '../../../core/ports';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { IconoComponent } from '../../../shared/ui/icono.component';
 
@@ -186,7 +184,7 @@ export class PagoPanelComponent implements OnDestroy {
 
   private readonly pagos = inject(PaymentsPort);
   private readonly mapper = inject(ErrorMessageMapper);
-  private readonly eventos = inject(EventosService);
+  private readonly eventos = inject(EventosPort);
 
   protected readonly pago = linkedSignal(() => this.pagoInicial() ?? null);
   protected readonly telefono = signal('');
@@ -215,8 +213,8 @@ export class PagoPanelComponent implements OnDestroy {
       const p = this.pago();
       untracked(() => this.programar(p?.estado === 'pendiente'));
     });
-    const sub = this.eventos.de<ApiNotificacion>('notificacion').subscribe((n) => {
-      if (n.id_envio === this.idEnvio() && n.tipo.startsWith('pago')) void this.consultar();
+    const sub = this.eventos.notificaciones().subscribe((n) => {
+      if (n.idEnvio === this.idEnvio() && n.tipo.startsWith('pago')) void this.consultar();
     });
     inject(DestroyRef).onDestroy(() => sub.unsubscribe());
   }

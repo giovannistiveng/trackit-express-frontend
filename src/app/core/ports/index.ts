@@ -1,3 +1,4 @@
+import { Signal } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   CategoriaVehiculo,
@@ -40,8 +41,10 @@ import {
   Usuario,
   Vehiculo,
   Zona,
+  NivelLog,
+  EstadoPush,
+  MensajeEntrante,
 } from '../domain';
-import { NivelLog } from '../../../environments/environment.model';
 
 /*
  * Puertos: una clase abstracta por capacidad, usada como token de inyección.
@@ -217,6 +220,29 @@ export abstract class RealtimePort {
       | { plataforma: 'android' | 'ios'; token: string },
   ): Promise<void>;
   abstract desuscribirPush(endpoint: string): Promise<void>;
+}
+
+/**
+ * Eventos del servidor que llegan al instante (avisos, mensajes de chat, cambios de envíos),
+ * ya traducidos a modelos del dominio.
+ */
+export abstract class EventosPort {
+  /** true mientras el canal en vivo está abierto (si no, las pantallas consultan cada tanto). */
+  abstract readonly conectado: Signal<boolean>;
+  abstract iniciar(): void;
+  abstract detener(): void;
+  abstract notificaciones(): Observable<Notificacion>;
+  abstract mensajes(): Observable<MensajeEntrante>;
+  /** Id del envío que cambió. */
+  abstract cambiosEnvio(): Observable<number>;
+}
+
+/** Notificaciones push en este dispositivo (navegador o app móvil). */
+export abstract class PushPort {
+  abstract readonly estado: Signal<EstadoPush>;
+  abstract comprobar(): Promise<EstadoPush>;
+  abstract activar(): Promise<EstadoPush>;
+  abstract desactivar(): Promise<void>;
 }
 
 /** Perfil y contraseña del usuario autenticado. */

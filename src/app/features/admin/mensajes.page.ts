@@ -10,7 +10,7 @@ import { MensajeContactoRecibido, Pagina } from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { AdminOperationsPort } from '../../core/ports';
 import { FechaLocalPipe } from '../../shared/pipes/fecha-local.pipe';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { IconoComponent } from '../../shared/ui/icono.component';
 import { ToastService } from '../../shared/ui/toast.service';
 
@@ -128,13 +128,11 @@ export class MensajesPage implements OnInit {
   protected readonly cargando = signal(true);
   protected readonly error = signal('');
   protected readonly fase = computed<FaseCarga>(() =>
-    this.cargando()
-      ? 'cargando'
-      : this.error()
-        ? 'error'
-        : (this.pagina()?.items.length ?? 0) === 0
-          ? 'vacio'
-          : 'listo',
+    faseDe({
+      cargando: this.cargando(),
+      error: this.error(),
+      vacio: (this.pagina()?.items.length ?? 0) === 0,
+    }),
   );
 
   ngOnInit(): void {

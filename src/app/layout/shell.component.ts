@@ -8,13 +8,12 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { AccountPort } from '../core/ports';
-import { PushService } from '../core/realtime/push.service';
+import { AccountPort, PushPort } from '../core/ports';
 import { ToastService } from '../shared/ui/toast.service';
 import { ErrorMessageMapper } from '../core/http/error-message.mapper';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SessionService } from '../core/auth/session.service';
-import { Rol } from '../core/domain';
+import { Rol, iniciales } from '../core/domain';
 import { IconoComponent, NombreIcono } from '../shared/ui/icono.component';
 import { LogoComponent } from '../shared/ui/logo.component';
 import { CampanaComponent } from './campana.component';
@@ -50,17 +49,6 @@ export const MENU: Record<Rol, Enlace[]> = {
 };
 
 const NOMBRE_ROL: Record<Rol, string> = { '1': 'Administración', '2': 'Cliente', '3': 'Conductor' };
-
-/** Iniciales para el avatar: "Laura Méndez Ríos" → "LM". */
-export function iniciales(nombre: string | undefined): string {
-  const partes = (nombre ?? '').trim().split(/\s+/).filter(Boolean);
-  return (
-    partes
-      .slice(0, 2)
-      .map((p) => p[0])
-      .join('') || '?'
-  ).toUpperCase();
-}
 
 /** Marco de las secciones autenticadas: cabecera, notificaciones, menú del usuario y navegación del rol. */
 @Component({
@@ -228,7 +216,7 @@ export class ShellComponent implements OnInit, OnDestroy {
   private readonly el = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly menuUsuario = signal(false);
   private readonly cuenta = inject(AccountPort);
-  private readonly push = inject(PushService);
+  private readonly push = inject(PushPort);
   private readonly toast = inject(ToastService);
   private readonly mapper = inject(ErrorMessageMapper);
   protected readonly avisoCerrado = signal(false);

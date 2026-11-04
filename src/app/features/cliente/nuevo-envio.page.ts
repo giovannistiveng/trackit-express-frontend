@@ -56,6 +56,11 @@ export const ESPERA_AUTOCOTIZAR_MS = 500;
 /** Vehículo con el que se cotiza cuando el cliente elige "Cualquiera". */
 export const VEHICULO_POR_DEFECTO: CategoriaVehiculo = 'Moto Express';
 const OTRO = 'Otro';
+const AYUDA_VEHICULO: Record<CategoriaVehiculo, string> = {
+  'Moto Express': 'Paquetes pequeños',
+  Motocarro: 'Cajas y bultos',
+  Camioneta: 'Carga grande',
+};
 /** Igual que el backend: programar con 30 minutos a 7 días de anticipación. */
 export const PROGRAMAR_MINIMO_MIN = 30;
 export const PROGRAMAR_MAXIMO_DIAS = 7;
@@ -693,12 +698,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       valor: c,
       texto: c,
       icono: (c === 'Camioneta' ? 'truck' : 'bike') as NombreIcono,
-      ayuda:
-        c === 'Moto Express'
-          ? 'Paquetes pequeños'
-          : c === 'Motocarro'
-            ? 'Cajas y bultos'
-            : 'Carga grande',
+      ayuda: AYUDA_VEHICULO[c],
     })),
   ];
   protected readonly duracion = formatoDuracion;
@@ -930,7 +930,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     );
   }
 
-  /** Con todo ubicado en el mapa (y la fecha válida si se programa) se cotiza solo. */
+  /** Con las direcciones ubicadas en el mapa (y la fecha válida si se programa) se cotiza solo. */
   private listoParaAutocotizar(): boolean {
     const v = this.valores();
     const rutaValida =

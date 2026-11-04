@@ -1,3 +1,4 @@
+import { PushPort } from '../core/ports';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -6,7 +7,6 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { PushService } from '../core/realtime/push.service';
 import { Router } from '@angular/router';
 import { SessionService } from '../core/auth/session.service';
 import { Notificacion, TipoNotificacion, haceCuanto } from '../core/domain';
@@ -173,7 +173,7 @@ export class CampanaComponent {
   private readonly router = inject(Router);
   private readonly el = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly abierto = signal(false);
-  protected readonly push = inject(PushService);
+  protected readonly push = inject(PushPort);
   protected readonly hayLeidas = computed(() => this.store.items().some((n) => n.leida));
 
   protected alternar(): void {

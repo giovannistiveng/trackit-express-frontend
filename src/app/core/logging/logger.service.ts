@@ -44,7 +44,8 @@ export class LoggerService implements LoggerPort, OnDestroy {
         window.addEventListener('pagehide', this.alSalir);
         window.addEventListener('online', this.alConectar);
       }
-      void this.reenviarCola();
+      // Lo que quedó guardado de la sesión anterior se envía cuando el navegador esté libre
+      queueMicrotask(() => void this.reenviarCola());
     }
   }
 
@@ -167,15 +168,24 @@ export class LoggerService implements LoggerPort, OnDestroy {
   }
 }
 
+/** Id corto para agrupar los logs de una pestaña (no es un dato de seguridad). */
+function idAleatorio(): string {
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(36).padStart(2, '0'))
+    .join('')
+    .slice(0, 8);
+}
+
 function crearIdSesion(): string {
   const clave = 'trackit.logSession';
   try {
     const existente = sessionStorage.getItem(clave);
     if (existente) return existente;
-    const nuevo = Math.random().toString(36).slice(2, 10).padEnd(8, '0');
+    const nuevo = idAleatorio();
     sessionStorage.setItem(clave, nuevo);
     return nuevo;
   } catch {
-    return Math.random().toString(36).slice(2, 10).padEnd(8, '0');
+    return idAleatorio();
   }
 }

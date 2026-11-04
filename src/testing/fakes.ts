@@ -9,13 +9,16 @@ import {
   NotificationsPort,
   LogTransportPort,
   RealtimePort,
+  EventosPort,
+  PushPort,
   LoggerPort,
   SessionStoragePort,
 } from '../app/core/ports';
 import { Geo, GEOLOCALIZACION } from '../app/features/conductor/state/geolocalizacion';
 import { SwPush } from '@angular/service-worker';
 import { EMPTY, of } from 'rxjs';
-import { FUENTE_EVENTOS } from '../app/core/realtime/eventos.service';
+import { EventosSseAdapter, FUENTE_EVENTOS } from '../app/core/adapters/sse/eventos-sse.adapter';
+import { PushHibridoAdapter } from '../app/core/adapters/push/push-hibrido.adapter';
 import { ENTORNO_UBICACION } from '../app/shared/ui/campo-direccion.component';
 import { EntornoUbicacion } from '../app/shared/util/ubicacion';
 
@@ -204,8 +207,7 @@ export class FakeGeolocation implements Geo {
 export class FakeGeo implements GeoPort {
   resultados: SugerenciaDireccion[] = [];
   fallo: unknown = null;
-  readonly buscar = vi.fn(async (texto: string) => {
-    void texto;
+  readonly buscar = vi.fn(async (_texto: string) => {
     if (this.fallo) throw this.fallo;
     return this.resultados;
   });
@@ -229,6 +231,8 @@ export function provideFakesBase(cfg?: AppEnvironment): EnvironmentProviders {
     { provide: RealtimePort, useClass: FakeRealtime },
     { provide: SwPush, useValue: SW_PUSH_FALSO },
     { provide: FUENTE_EVENTOS, useValue: null },
+    { provide: EventosPort, useExisting: EventosSseAdapter },
+    { provide: PushPort, useExisting: PushHibridoAdapter },
     { provide: ENTORNO_UBICACION, useClass: FakeEntornoUbicacion },
   ]);
 }

@@ -1,3 +1,4 @@
+import { cargarLeaflet } from '../util/leaflet';
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
@@ -58,7 +59,7 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
   }
 
   async ngAfterViewInit(): Promise<void> {
-    this.L = await import('leaflet');
+    this.L = await cargarLeaflet();
     const inicio = this.punto() ?? CENTRO_FUSAGASUGA;
     this.mapa = this.L.map(this.contenedor().nativeElement, { scrollWheelZoom: true }).setView(
       [inicio.lat, inicio.lon],

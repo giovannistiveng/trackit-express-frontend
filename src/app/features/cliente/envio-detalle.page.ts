@@ -21,14 +21,16 @@ import {
   haceCuanto,
   puedeCalificar,
   puedeCancelarCliente,
+  esDelEnvio,
+  telefonoWhatsapp,
 } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
-import { LoggerPort, ShipmentsPort, TrackingPort } from '../../core/ports';
+import { EventosPort, LoggerPort, ShipmentsPort, TrackingPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { FechaLocalPipe } from '../../shared/pipes/fecha-local.pipe';
 import { EstadoBadgeComponent } from '../../shared/ui/estado-badge.component';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { IconoComponent } from '../../shared/ui/icono.component';
 import { ModalComponent } from '../../shared/ui/modal.component';
 import { PlacaComponent } from '../../shared/ui/placa.component';
@@ -41,8 +43,6 @@ import { MapaEnvioComponent } from '../../shared/ui/mapa-envio.component';
 import { PinEnvioComponent } from './components/pin-envio.component';
 import { PagoPanelComponent } from './components/pago-panel.component';
 import { ChatEnvioComponent } from '../../shared/ui/chat-envio.component';
-import { EventosService } from '../../core/realtime/eventos.service';
-import { ApiNotificacion } from '../../core/adapters/http/backend.types';
 
 export const INTERVALO_TRAZABILIDAD_MS = 10_000;
 
@@ -540,7 +540,7 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
-  private readonly eventos = inject(EventosService);
+  private readonly eventos = inject(EventosPort);
 
   protected readonly envio = signal<Envio | null>(null);
   protected readonly seguimiento = signal<Seguimiento | null>(null);
@@ -584,7 +584,7 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
   });
 
   protected readonly fase = computed<FaseCarga>(() =>
-    this.envio() ? 'listo' : this.error() ? 'error' : 'cargando',
+    faseDe({ cargando: !this.envio() && !this.error(), error: !this.envio() && this.error() }),
   );
   protected readonly puedeCalificarAhora = computed(() => {
     const e = this.envio();
@@ -617,11 +617,11 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
 
   constructor() {
     // Cambios del envío al instante (aceptado, recogido, entregado, pago…) por el canal de eventos
-    const sub = this.eventos.de<ApiNotificacion>('notificacion').subscribe((n) => {
-      if (n.id_envio === this.envio()?.id && n.tipo !== 'mensaje_chat') void this.refrescar();
+    const sub = this.eventos.notificaciones().subscribe((n) => {
+      if (esDelEnvio(n.idEnvio, this.envio()) && n.tipo !== 'mensaje_chat') void this.refrescar();
     });
-    const sub2 = this.eventos.de<{ id_envio: number }>('envio').subscribe((d) => {
-      if (d.id_envio === this.envio()?.id) void this.refrescar();
+    const sub2 = this.eventos.cambiosEnvio().subscribe((id) => {
+      if (esDelEnvio(id, this.envio())) void this.refrescar();
     });
     inject(DestroyRef).onDestroy(() => {
       sub.unsubscribe();
@@ -787,13 +787,4 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
       this.error.set(this.mapper.traducir(e));
     }
   }
-}
-
-/** Número para wa.me: celular colombiano de 10 dígitos → 57XXXXXXXXXX; sin número, vacío. */
-export function telefonoWhatsapp(tel: string | null | undefined): string {
-  const t = (tel ?? '').replace(/[^\d+]/g, '');
-  if (/^3\d{9}$/.test(t)) return `57${t}`;
-  if (/^\+\d{8,15}$/.test(t)) return t.slice(1);
-  if (/^57\d{10}$/.test(t)) return t;
-  return '';
 }

@@ -14,7 +14,7 @@ import { ContadorDirective } from '../../shared/directives/contador.directive';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { FechaLocalPipe } from '../../shared/pipes/fecha-local.pipe';
 import { EstadoBadgeComponent } from '../../shared/ui/estado-badge.component';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { IconoComponent } from '../../shared/ui/icono.component';
 
 const MESES = new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' });
@@ -242,7 +242,7 @@ export class GananciasPage implements OnInit {
   protected readonly cargando = signal(true);
   protected readonly mes = MESES.format(new Date());
   protected readonly fase = computed<FaseCarga>(() =>
-    this.cargando() ? 'cargando' : this.error() ? 'error' : 'listo',
+    faseDe({ cargando: this.cargando(), error: this.error() }),
   );
   protected readonly promedio = computed(() => {
     const r = this.resumen();

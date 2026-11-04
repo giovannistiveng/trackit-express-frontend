@@ -1,7 +1,7 @@
 import { Injectable, OnDestroy, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { ToastService } from '../../shared/ui/toast.service';
-import { CLAVE_SESION, SessionService } from './session.service';
+import { ToastService } from '../shared/ui/toast.service';
+import { CLAVE_SESION, SessionService } from '../core/auth/session.service';
 
 /**
  * Escucha los cambios de sesión hechos en otras pestañas (evento "storage") y lleva esta

@@ -83,6 +83,47 @@ function aTipoDocumento(v: string): TipoDocumento {
   return (TIPOS_DOCUMENTO as readonly string[]).includes(v) ? (v as TipoDocumento) : 'Cédula';
 }
 
+// Los campos opcionales del envío solo se copian cuando el backend los envía.
+
+function copiarFechas(e: ApiEnvio, envio: Envio): void {
+  if (e.fecha_creacion) envio.fechaCreacion = new Date(e.fecha_creacion);
+  if (e.fecha_ultimo_cambio) envio.fechaUltimoCambio = new Date(e.fecha_ultimo_cambio);
+  if (e.fecha_programada) envio.fechaProgramada = new Date(e.fecha_programada);
+  if (e.destino_visitado_en) envio.destinoVisitadoEn = new Date(e.destino_visitado_en);
+  if (e.fecha_recogida) envio.fechaRecogida = new Date(e.fecha_recogida);
+}
+
+function copiarCalificacion(e: ApiEnvio, envio: Envio): void {
+  if (e.calificado !== undefined) envio.calificado = e.calificado;
+  if (e.calificacion !== undefined) envio.calificacion = e.calificacion;
+  if (e.comentario) envio.comentario = e.comentario;
+}
+
+function copiarServicio(e: ApiEnvio, envio: Envio): void {
+  if (e.distancia_km !== undefined && e.distancia_km !== null)
+    envio.distanciaKm = Number(e.distancia_km);
+  if (e.duracion_min) envio.duracionMin = e.duracion_min;
+  if (e.notas) envio.notas = e.notas;
+  if (e.motivo_cancelacion) envio.motivoCancelacion = e.motivo_cancelacion;
+  if (e.origen_coords) envio.origenCoords = e.origen_coords;
+  if (e.destino_coords) envio.destinoCoords = e.destino_coords;
+  if (e.desglose) envio.desglose = aDesglose(e.desglose);
+  if (e.ida_y_vuelta) envio.idaYVuelta = true;
+  if (e.url_foto_recogida) envio.urlFotoRecogida = e.url_foto_recogida;
+  if (e.paradas) envio.paradas = e.paradas.map(aParada);
+  if (e.chat_no_leidos !== undefined) envio.chatNoLeidos = e.chat_no_leidos;
+}
+
+function copiarPagoYDestinatario(e: ApiEnvio, envio: Envio, incluirPin: boolean): void {
+  if (incluirPin && e.pin_seguridad) envio.pin = e.pin_seguridad;
+  if (e.ganancia_conductor !== undefined) envio.gananciaConductor = Number(e.ganancia_conductor);
+  if (e.metodo_pago) envio.metodoPago = e.metodo_pago === 'nequi' ? 'nequi' : 'efectivo';
+  if (e.pago !== undefined) envio.pago = e.pago ? aPago(e.pago) : null;
+  if (e.token_seguimiento) envio.tokenSeguimiento = e.token_seguimiento;
+  if (e.destinatario_nombre !== undefined) envio.destinatarioNombre = e.destinatario_nombre;
+  if (e.destinatario_telefono !== undefined) envio.destinatarioTelefono = e.destinatario_telefono;
+}
+
 /**
  * Convierte un envío del backend al dominio. historial_estado llega del más reciente
  * al más antiguo; en el dominio queda en orden cronológico.
@@ -106,33 +147,10 @@ export function aEnvio(e: ApiEnvio, incluirPin: boolean): Envio {
     categoria: aCategoria(e.categoria) ?? null,
     historial,
   };
-  if (e.fecha_creacion) envio.fechaCreacion = new Date(e.fecha_creacion);
-  if (e.fecha_ultimo_cambio) envio.fechaUltimoCambio = new Date(e.fecha_ultimo_cambio);
-  if (incluirPin && e.pin_seguridad) envio.pin = e.pin_seguridad;
-  if (e.calificado !== undefined) envio.calificado = e.calificado;
-  if (e.calificacion !== undefined) envio.calificacion = e.calificacion;
-  if (e.comentario) envio.comentario = e.comentario;
-  if (e.distancia_km !== undefined && e.distancia_km !== null)
-    envio.distanciaKm = Number(e.distancia_km);
-  if (e.notas) envio.notas = e.notas;
-  if (e.motivo_cancelacion) envio.motivoCancelacion = e.motivo_cancelacion;
-  if (e.origen_coords) envio.origenCoords = e.origen_coords;
-  if (e.destino_coords) envio.destinoCoords = e.destino_coords;
-  if (e.ganancia_conductor !== undefined) envio.gananciaConductor = Number(e.ganancia_conductor);
-  if (e.duracion_min) envio.duracionMin = e.duracion_min;
-  if (e.desglose) envio.desglose = aDesglose(e.desglose);
-  if (e.metodo_pago) envio.metodoPago = e.metodo_pago === 'nequi' ? 'nequi' : 'efectivo';
-  if (e.pago !== undefined) envio.pago = e.pago ? aPago(e.pago) : null;
-  if (e.token_seguimiento) envio.tokenSeguimiento = e.token_seguimiento;
-  if (e.destinatario_nombre !== undefined) envio.destinatarioNombre = e.destinatario_nombre;
-  if (e.destinatario_telefono !== undefined) envio.destinatarioTelefono = e.destinatario_telefono;
-  if (e.fecha_programada) envio.fechaProgramada = new Date(e.fecha_programada);
-  if (e.ida_y_vuelta) envio.idaYVuelta = true;
-  if (e.destino_visitado_en) envio.destinoVisitadoEn = new Date(e.destino_visitado_en);
-  if (e.url_foto_recogida) envio.urlFotoRecogida = e.url_foto_recogida;
-  if (e.fecha_recogida) envio.fechaRecogida = new Date(e.fecha_recogida);
-  if (e.paradas) envio.paradas = e.paradas.map(aParada);
-  if (e.chat_no_leidos !== undefined) envio.chatNoLeidos = e.chat_no_leidos;
+  copiarFechas(e, envio);
+  copiarCalificacion(e, envio);
+  copiarServicio(e, envio);
+  copiarPagoYDestinatario(e, envio, incluirPin);
   if (e.conductor) {
     envio.conductor = {
       nombre: e.conductor.nombre,

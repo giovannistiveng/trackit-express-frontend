@@ -1,4 +1,6 @@
-export type NivelLog = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+import { NivelLog } from '../app/core/domain/models';
+
+export type { NivelLog };
 
 export interface AppEnvironment {
   production: boolean;

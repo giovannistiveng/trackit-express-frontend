@@ -14,11 +14,8 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MensajeChat } from '../../core/domain';
-import { ApiMensaje } from '../../core/adapters/http/backend.types';
-import { aMensaje } from '../../core/adapters/http/mappers';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
-import { ChatPort } from '../../core/ports';
-import { EventosService } from '../../core/realtime/eventos.service';
+import { ChatPort, EventosPort } from '../../core/ports';
 import { IconoComponent } from './icono.component';
 
 export const LARGO_MAXIMO_MENSAJE = 500;
@@ -133,7 +130,7 @@ export class ChatEnvioComponent implements OnInit {
   readonly otro = input('el conductor');
 
   private readonly chat = inject(ChatPort);
-  private readonly eventos = inject(EventosService);
+  private readonly eventos = inject(EventosPort);
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly injector = inject(Injector);
   private readonly lista = viewChild<ElementRef<HTMLElement>>('lista');
@@ -149,14 +146,12 @@ export class ChatEnvioComponent implements OnInit {
   private temporizador: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
-    const sub = this.eventos
-      .de<{ id_envio: number; mensaje: ApiMensaje }>('chat')
-      .subscribe((d) => {
-        if (d.id_envio !== this.idEnvio()) return;
-        this.agregar(aMensaje(d.mensaje));
-        // Marcar como leído en el servidor
-        void this.cargar();
-      });
+    const sub = this.eventos.mensajes().subscribe((d) => {
+      if (d.idEnvio !== this.idEnvio()) return;
+      this.agregar(d.mensaje);
+      // Marcar como leído en el servidor
+      void this.cargar();
+    });
     inject(DestroyRef).onDestroy(() => {
       sub.unsubscribe();
       if (this.temporizador) clearInterval(this.temporizador);

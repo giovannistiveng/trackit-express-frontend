@@ -20,7 +20,7 @@ import { AdminOperationsPort, LoggerPort, ZonesPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { FechaLocalPipe } from '../../shared/pipes/fecha-local.pipe';
 import { EstadoBadgeComponent } from '../../shared/ui/estado-badge.component';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { IconoComponent } from '../../shared/ui/icono.component';
 import { ModalComponent } from '../../shared/ui/modal.component';
 import { ToastService } from '../../shared/ui/toast.service';
@@ -248,13 +248,11 @@ export class EnviosAdminPage implements OnInit {
   protected readonly intentoCancelar = signal(false);
 
   protected readonly fase = computed<FaseCarga>(() =>
-    this.cargando()
-      ? 'cargando'
-      : this.error()
-        ? 'error'
-        : (this.pagina()?.items.length ?? 0) === 0
-          ? 'vacio'
-          : 'listo',
+    faseDe({
+      cargando: this.cargando(),
+      error: this.error(),
+      vacio: (this.pagina()?.items.length ?? 0) === 0,
+    }),
   );
   protected readonly totalPaginas = computed(() =>
     Math.max(1, Math.ceil((this.pagina()?.total ?? 0) / TAMANO_PAGINA_ENVIOS)),

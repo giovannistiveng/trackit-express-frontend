@@ -12,14 +12,12 @@ import { Router, RouterLink } from '@angular/router';
 import { Envio, categoriasAtendibles } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
-import { DriverBoardPort, DriverServicePort, LoggerPort } from '../../core/ports';
+import { DriverBoardPort, DriverServicePort, EventosPort, LoggerPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { ModalComponent } from '../../shared/ui/modal.component';
 import { ToastService } from '../../shared/ui/toast.service';
 import { Sondeo } from '../../shared/util/sondeo';
-import { EventosService } from '../../core/realtime/eventos.service';
-import { ApiNotificacion } from '../../core/adapters/http/backend.types';
 import { AvisoPerfilComponent } from './components/aviso-perfil.component';
 import { IconoComponent } from '../../shared/ui/icono.component';
 import { DriverProfileStore } from './state/driver-profile.store';
@@ -266,19 +264,17 @@ export class TableroPage implements OnInit, OnDestroy {
       : (lista[0] ?? '');
   });
   protected readonly fase = computed<FaseCarga>(() =>
-    !this.cargado()
-      ? 'cargando'
-      : this.error() && this.envios().length === 0
-        ? 'error'
-        : this.envios().length === 0
-          ? 'vacio'
-          : 'listo',
+    faseDe({
+      cargando: !this.cargado(),
+      error: this.error() && this.envios().length === 0,
+      vacio: this.envios().length === 0,
+    }),
   );
 
   constructor() {
     // Un servicio nuevo llega por el canal de eventos: se refresca el tablero al instante
-    const sub = inject(EventosService)
-      .de<ApiNotificacion>('notificacion')
+    const sub = inject(EventosPort)
+      .notificaciones()
       .subscribe((n) => {
         if (n.tipo === 'nuevo_servicio' || n.tipo === 'envio_cancelado') void this.refrescar();
       });

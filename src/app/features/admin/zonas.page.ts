@@ -19,7 +19,7 @@ import {
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { AdminOperationsPort, LoggerPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { IconoComponent } from '../../shared/ui/icono.component';
 import { ModalComponent } from '../../shared/ui/modal.component';
 import { SelectorMapaComponent } from '../../shared/ui/selector-mapa.component';
@@ -434,7 +434,7 @@ export class ZonasPage implements OnInit {
   protected readonly errorZona = signal('');
 
   protected readonly fase = computed<FaseCarga>(() =>
-    this.cargando() ? 'cargando' : this.error() ? 'error' : 'listo',
+    faseDe({ cargando: this.cargando(), error: this.error() }),
   );
 
   ngOnInit(): void {
