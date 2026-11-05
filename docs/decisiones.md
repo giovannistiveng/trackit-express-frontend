@@ -102,3 +102,6 @@ CU-001 a CU-011, (3) historias de usuario, (4) README.
   y reporte `reports/eslint.json` para el análisis.
 - Imagen Docker con Nginx: caché larga para archivos con hash, `index.html` sin caché, encabezados de seguridad y
   `/api/eventos` sin búfer.
+- Dependencias: `npm audit` en 0. `overrides` en `package.json` fuerza versiones corregidas de `minimatch` (11),
+  `glob` (14) y `node-forge` (1.4.3), que llegaban por herramientas de desarrollo (Angular CLI, typescript-eslint,
+  sonarqube-scanner). Al actualizar Angular CLI o typescript-eslint, revisar si ya no hacen falta.
