@@ -24,6 +24,7 @@ import { IconoComponent } from '../../shared/ui/icono.component';
 import { ModalComponent } from '../../shared/ui/modal.component';
 import { SelectorMapaComponent } from '../../shared/ui/selector-mapa.component';
 import { ToastService } from '../../shared/ui/toast.service';
+import { desplazarA } from '../../shared/util/desplazar';
 
 /** Tope del recargo de una zona (el backend acepta hasta 200.000 COP). */
 export const TARIFA_MAXIMA = 200_000;
@@ -564,9 +565,7 @@ export class ZonasPage implements OnInit {
   /** Lleva la vista al mapa y al formulario de la zona. */
   private mostrarEditor(): void {
     setTimeout(() => {
-      const el = document.getElementById('titulo-zonas');
-      if (typeof el?.scrollIntoView === 'function')
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      desplazarA('titulo-zonas', 'start');
       document.getElementById('zona-nombre')?.focus({ preventScroll: true });
     }, 50);
   }

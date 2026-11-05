@@ -32,6 +32,7 @@ import { RecogidaModalComponent } from './components/recogida-modal.component';
 import { ChatEnvioComponent } from '../../shared/ui/chat-envio.component';
 import { CompartirUbicacionService } from './state/compartir-ubicacion.service';
 import { DriverProfileStore } from './state/driver-profile.store';
+import { desplazarA } from '../../shared/util/desplazar';
 
 /** Servicio en curso del conductor: iniciar ruta, compartir ubicación y finalizar entrega. Nunca muestra el PIN. */
 @Component({
@@ -538,10 +539,7 @@ export class ServicioPage implements OnInit, OnDestroy {
       this.envio.set(e);
       if (this.chat() && !this.chatEnfocado) {
         this.chatEnfocado = true;
-        setTimeout(
-          () => document.getElementById('chat')?.scrollIntoView({ behavior: 'smooth' }),
-          300,
-        );
+        setTimeout(() => desplazarA('chat'), 300);
       }
       // Si ya va en ruta (por ejemplo, al recargar la página), retoma la ubicación compartida
       if (e.estado === 'En Ruta' && this.ubicacion.estado() === 'apagado')

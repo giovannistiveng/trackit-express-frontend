@@ -43,6 +43,7 @@ import { MapaEnvioComponent } from '../../shared/ui/mapa-envio.component';
 import { PinEnvioComponent } from './components/pin-envio.component';
 import { PagoPanelComponent } from './components/pago-panel.component';
 import { ChatEnvioComponent } from '../../shared/ui/chat-envio.component';
+import { desplazarA } from '../../shared/util/desplazar';
 
 export const INTERVALO_TRAZABILIDAD_MS = 10_000;
 
@@ -769,10 +770,7 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     this.cargando.set(false);
     if (this.chat() && !this.chatEnfocado && e.conductor) {
       this.chatEnfocado = true;
-      setTimeout(
-        () => document.getElementById('chat')?.scrollIntoView({ behavior: 'smooth' }),
-        300,
-      );
+      setTimeout(() => desplazarA('chat'), 300);
     }
     if (puedeCalificar(e, this.calificado()) && !this.autoAbierto) {
       this.autoAbierto = true;
