@@ -69,7 +69,12 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
     effect(() => this.pintar(this.seguimiento(), this.posicionPropia()));
   }
 
-  async ngAfterViewInit(): Promise<void> {
+  ngAfterViewInit(): void {
+    void this.inicializar();
+  }
+
+  /** Carga inicial (asíncrona); el hook de Angular no espera promesas. */
+  async inicializar(): Promise<void> {
     this.L = await cargarLeaflet();
     const s = this.seguimiento();
     const centro = s?.ultima ?? s?.origen.coords ?? CENTRO_FUSAGASUGA;

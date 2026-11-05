@@ -33,6 +33,9 @@ module.exports = defineConfig([
       // Los guards de Angular devuelven true o una redirección (UrlTree) por diseño del framework
       'sonarjs/function-return-type': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // Igual que SonarQube S6544 (hooks async) y S7773 (Number.parseInt…)
+      '@typescript-eslint/no-misused-promises': 'error',
+      'no-restricted-globals': ['error', 'parseInt', 'parseFloat', 'isNaN', 'isFinite'],
     },
   },
   {
@@ -45,6 +48,8 @@ module.exports = defineConfig([
       'sonarjs/no-nested-functions': 'off',
       'sonarjs/pseudo-random': 'off',
       'sonarjs/no-duplicate-string': 'off',
+      // Los callbacks async de las pruebas (p. ej. setTimeout) no necesitan esperar su promesa
+      '@typescript-eslint/no-misused-promises': 'off',
     },
   },
   {

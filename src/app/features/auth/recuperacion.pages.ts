@@ -278,7 +278,12 @@ export class VerificarCorreoPage implements OnInit {
     return this.session.estaAutenticado() ? this.session.inicioDelRol() : '/login';
   }
 
-  async ngOnInit(): Promise<void> {
+  ngOnInit(): void {
+    void this.inicializar();
+  }
+
+  /** Carga inicial (asíncrona); el hook de Angular no espera promesas. */
+  async inicializar(): Promise<void> {
     if (!this.token()) {
       this.error.set('El enlace está incompleto.');
       this.estado.set('error');

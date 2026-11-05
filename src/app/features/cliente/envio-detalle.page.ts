@@ -634,7 +634,12 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     else if (this.envio()) this.alResultado(await this.shipments.obtener(this.envio()!.id));
   }
 
-  async ngOnInit(): Promise<void> {
+  ngOnInit(): void {
+    void this.inicializar();
+  }
+
+  /** Carga inicial (asíncrona); el hook de Angular no espera promesas. */
+  async inicializar(): Promise<void> {
     const id = this.id();
     if (!esIdValido(id)) {
       this.cargando.set(false);

@@ -199,7 +199,12 @@ export class CamaraComponent implements AfterViewInit, OnDestroy {
   private stream: MediaStream | null = null;
   private archivo: File | null = null;
 
-  async ngAfterViewInit(): Promise<void> {
+  ngAfterViewInit(): void {
+    void this.inicializar();
+  }
+
+  /** Carga inicial (asíncrona); el hook de Angular no espera promesas. */
+  async inicializar(): Promise<void> {
     await this.abrir();
     if (this.camaras && this.estado() === 'lista') {
       try {

@@ -58,7 +58,12 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
     effect(() => this.pintarPunto(this.punto(), this.radioKm()));
   }
 
-  async ngAfterViewInit(): Promise<void> {
+  ngAfterViewInit(): void {
+    void this.inicializar();
+  }
+
+  /** Carga inicial (asíncrona); el hook de Angular no espera promesas. */
+  async inicializar(): Promise<void> {
     this.L = await cargarLeaflet();
     const inicio = this.punto() ?? CENTRO_FUSAGASUGA;
     this.mapa = this.L.map(this.contenedor().nativeElement, { scrollWheelZoom: true }).setView(

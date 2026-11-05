@@ -917,7 +917,12 @@ export class InicioPage implements OnInit {
   protected readonly enviado = signal(false);
   protected readonly errorContacto = signal('');
 
-  async ngOnInit(): Promise<void> {
+  ngOnInit(): void {
+    void this.inicializar();
+  }
+
+  /** Carga inicial (asíncrona); el hook de Angular no espera promesas. */
+  async inicializar(): Promise<void> {
     const [estadisticas, zonas, tarifas] = await Promise.allSettled([
       this.sitio.estadisticas(),
       this.sitio.zonas(),

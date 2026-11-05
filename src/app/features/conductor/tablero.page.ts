@@ -287,7 +287,12 @@ export class TableroPage implements OnInit, OnDestroy {
     return hoy ? h : `${f.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric' })} ${h}`;
   }
 
-  async ngOnInit(): Promise<void> {
+  ngOnInit(): void {
+    void this.inicializar();
+  }
+
+  /** Carga inicial (asíncrona); el hook de Angular no espera promesas. */
+  async inicializar(): Promise<void> {
     if (!this.habilitado()) return;
     const activo = await this.servicios.activo().catch(() => null);
     this.servicioActivo.set(activo?.id ?? null);

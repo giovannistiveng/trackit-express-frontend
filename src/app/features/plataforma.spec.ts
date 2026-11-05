@@ -1101,7 +1101,7 @@ describe('TableroPage: insignias y aviso al instante', () => {
       ],
     });
     await TestBed.inject(DriverProfileStore).cargar(true);
-    await r.c.ngOnInit();
+    await r.c.inicializar();
     await r.estable();
     const texto = r.el.textContent?.replace(/\s+/g, ' ') ?? '';
     expect(texto).toContain('Pagado');

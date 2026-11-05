@@ -284,7 +284,7 @@ describe('CU-007 TableroPage', () => {
       ],
     });
     await cargarPerfil();
-    await r.c.ngOnInit();
+    await r.c.inicializar();
     await r.estable();
     return { ...r, p };
   }
