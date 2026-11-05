@@ -6,6 +6,7 @@ const ESTILOS: Record<EstadoEnvio, string> = {
   Asignado: 'bg-marca-suave text-marca border-marca/30',
   'En Ruta': 'bg-marca text-white border-marca',
   Entregado: 'bg-exito-suave text-exito border-exito/30',
+  Cancelado: 'bg-niebla text-piedra border-linea line-through decoration-1',
 };
 
 @Component({
@@ -15,7 +16,12 @@ const ESTILOS: Record<EstadoEnvio, string> = {
     class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-sm font-semibold"
     [class]="clase()"
   >
-    <span class="size-2 rounded-full bg-current" aria-hidden="true"></span>{{ estado() }}</span
+    <span
+      class="size-2 rounded-full bg-current"
+      [class.animate-pulse]="estado() === 'En Ruta'"
+      aria-hidden="true"
+    ></span
+    >{{ estado() }}</span
   >`,
 })
 export class EstadoBadgeComponent {

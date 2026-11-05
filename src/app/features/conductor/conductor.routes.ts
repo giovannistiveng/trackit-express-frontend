@@ -15,6 +15,11 @@ export const CONDUCTOR_ROUTES: Routes = [
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'tablero' },
       {
+        path: 'ganancias',
+        title: 'Mis ganancias · TrackIt Express',
+        loadComponent: () => import('./ganancias.page').then((m) => m.GananciasPage),
+      },
+      {
         path: 'perfil',
         title: 'Mi perfil · TrackIt Express',
         loadComponent: () => import('./perfil.page').then((m) => m.PerfilPage),

@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+reports
+.angular
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose*.yml
+.vscode
+docs
+*.md
+.scannerwork
+src/**/*.spec.ts
+src/testing

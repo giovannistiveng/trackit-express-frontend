@@ -11,7 +11,7 @@ import { ConductorPostulante, DocumentoConductor } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { ApprovalPort, DriverApplicantsPort, LoggerPort } from '../../core/ports';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { ModalComponent } from '../../shared/ui/modal.component';
 import { ToastService } from '../../shared/ui/toast.service';
 
@@ -221,13 +221,11 @@ export class ConductoresPage implements OnInit {
   protected motivo = '';
 
   protected readonly fase = computed<FaseCarga>(() =>
-    this.cargando()
-      ? 'cargando'
-      : this.error()
-        ? 'error'
-        : this.postulantes().length === 0
-          ? 'vacio'
-          : 'listo',
+    faseDe({
+      cargando: this.cargando(),
+      error: this.error(),
+      vacio: this.postulantes().length === 0,
+    }),
   );
 
   ngOnInit(): void {

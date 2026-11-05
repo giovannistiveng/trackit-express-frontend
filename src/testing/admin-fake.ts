@@ -5,6 +5,7 @@ export const METRICAS_PRUEBA: MetricasAdmin = {
   enviosTotales: 248,
   enviosActivos: 12,
   entregados: 230,
+  cancelados: 6,
   ingresosCop: 4_862_000,
   conductoresAprobados: 18,
   conductoresPendientes: 3,
@@ -20,7 +21,8 @@ export const METRICAS_PRUEBA: MetricasAdmin = {
     { estado: 'Pendiente', envios: 4 },
     { estado: 'Asignado', envios: 5 },
     { estado: 'En Ruta', envios: 3 },
-    { estado: 'Entregado', envios: 236 },
+    { estado: 'Entregado', envios: 230 },
+    { estado: 'Cancelado', envios: 6 },
   ],
 };
 

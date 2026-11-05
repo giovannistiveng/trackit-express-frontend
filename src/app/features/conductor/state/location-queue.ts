@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { Ubicacion, esCoordenadaValida } from '../../domain';
-import { KeyValueStorePort, LocationTransportPort } from '../../ports';
+import { Ubicacion, esCoordenadaValida } from '../../../core/domain';
+import { KeyValueStorePort, LocationTransportPort } from '../../../core/ports';
 
 export const CLAVE_COLA_UBICACION = 'trackit.locationQueue';
 export const MAX_COLA_UBICACION = 500;

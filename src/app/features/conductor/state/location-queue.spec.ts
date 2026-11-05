@@ -1,9 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { provideFakesBase, vaciarPromesas } from '../../../../testing/fakes';
-import { ApiError } from '../../http/api-error';
-import { KeyValueStorePort, LocationTransportPort } from '../../ports';
-import { Ubicacion } from '../../domain';
-import { LocalForageAdapter, LocalStorageSessionAdapter } from './browser-storage';
+import { ApiError } from '../../../core/http/api-error';
+import { KeyValueStorePort, LocationTransportPort } from '../../../core/ports';
+import { Ubicacion } from '../../../core/domain';
+import {
+  LocalForageAdapter,
+  LocalStorageSessionAdapter,
+} from '../../../core/adapters/local/browser-storage';
 import { CLAVE_COLA_UBICACION, LocationQueue, MAX_COLA_UBICACION } from './location-queue';
 
 describe('LocationQueue', () => {
@@ -134,7 +137,9 @@ describe('almacenamiento del navegador', () => {
     (a as unknown as { db: object }).db = {
       getItem: vi.fn(async (k: string) => datos.get(k) ?? null),
       setItem: vi.fn(async (k: string, v: unknown) => datos.set(k, v)),
-      removeItem: vi.fn(async (k: string) => void datos.delete(k)),
+      removeItem: vi.fn(async (k: string) => {
+        datos.delete(k);
+      }),
     };
     await a.set('k', [1]);
     expect(await a.get('k')).toEqual([1]);

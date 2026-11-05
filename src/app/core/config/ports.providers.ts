@@ -1,6 +1,8 @@
 import { EnvironmentProviders, makeEnvironmentProviders } from '@angular/core';
 import {
+  AccountPort,
   AdminMetricsPort,
+  AdminOperationsPort,
   ApprovalPort,
   AuthPort,
   ClientShipmentsPort,
@@ -10,21 +12,33 @@ import {
   DriverBoardPort,
   DriverProfilePort,
   DriverServicePort,
+  DriverStatsPort,
   EvidenceStoragePort,
   KeyValueStorePort,
   LocationTransportPort,
   LogTransportPort,
   LoggerPort,
+  NotificationsPort,
+  PublicSitePort,
   QuotePort,
+  GeoPort,
+  PaymentsPort,
+  ChatPort,
+  RealtimePort,
+  EventosPort,
+  PushPort,
   RatingPort,
   SessionStoragePort,
   ShipmentsPort,
+  TrackingPort,
   VehiclesPort,
   ZonesPort,
 } from '../ports';
 import * as http from '../adapters/http/http-adapters';
 import { LocalForageAdapter, LocalStorageSessionAdapter } from '../adapters/local/browser-storage';
 import { LoggerService } from '../logging/logger.service';
+import { EventosSseAdapter } from '../adapters/sse/eventos-sse.adapter';
+import { PushHibridoAdapter } from '../adapters/push/push-hibrido.adapter';
 
 /** Registra el adaptador de cada puerto. */
 export function providePorts(): EnvironmentProviders {
@@ -34,11 +48,17 @@ export function providePorts(): EnvironmentProviders {
     { provide: KeyValueStorePort, useExisting: LocalForageAdapter },
     { provide: LoggerPort, useExisting: LoggerService },
     { provide: LogTransportPort, useExisting: http.HttpLogTransportAdapter },
+    { provide: EventosPort, useExisting: EventosSseAdapter },
+    { provide: PushPort, useExisting: PushHibridoAdapter },
 
     // API del backend
     { provide: AuthPort, useExisting: http.HttpAuthAdapter },
     { provide: ZonesPort, useExisting: http.HttpZonesAdapter },
     { provide: QuotePort, useExisting: http.HttpQuoteAdapter },
+    { provide: GeoPort, useExisting: http.HttpGeoAdapter },
+    { provide: PaymentsPort, useExisting: http.HttpPaymentsAdapter },
+    { provide: ChatPort, useExisting: http.HttpChatAdapter },
+    { provide: RealtimePort, useExisting: http.HttpRealtimeAdapter },
     { provide: ShipmentsPort, useExisting: http.HttpShipmentsAdapter },
     { provide: ClientShipmentsPort, useExisting: http.HttpClientShipmentsAdapter },
     { provide: RatingPort, useExisting: http.HttpRatingAdapter },
@@ -53,5 +73,11 @@ export function providePorts(): EnvironmentProviders {
     { provide: DriverApplicantsPort, useExisting: http.HttpDriverApplicantsAdapter },
     { provide: ApprovalPort, useExisting: http.HttpApprovalAdapter },
     { provide: AdminMetricsPort, useExisting: http.HttpAdminMetricsAdapter },
+    { provide: AdminOperationsPort, useExisting: http.HttpAdminOperationsAdapter },
+    { provide: TrackingPort, useExisting: http.HttpTrackingAdapter },
+    { provide: DriverStatsPort, useExisting: http.HttpDriverStatsAdapter },
+    { provide: NotificationsPort, useExisting: http.HttpNotificationsAdapter },
+    { provide: AccountPort, useExisting: http.HttpAccountAdapter },
+    { provide: PublicSitePort, useExisting: http.HttpPublicSiteAdapter },
   ]);
 }

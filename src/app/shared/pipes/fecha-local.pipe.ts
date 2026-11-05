@@ -4,16 +4,25 @@ const FECHA = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short',
 const HORA = new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit', hour12: true });
 
 /** Fecha UTC del backend en hora local: "29 oct 2026, 2:03 a. m." */
-export function formatearFechaLocal(valor: Date | string | null | undefined): string {
+export function formatearFechaLocal(
+  valor: Date | string | null | undefined,
+  formato: 'completa' | 'fecha' | 'hora' = 'completa',
+): string {
   if (!valor) return '';
   const d = valor instanceof Date ? valor : new Date(valor);
   if (Number.isNaN(d.getTime())) return '';
-  return `${FECHA.format(d).replace(/ de /g, ' ').replace('.', '')}, ${HORA.format(d)}`;
+  const fecha = FECHA.format(d).replace(/ de /g, ' ').replace('.', '');
+  if (formato === 'fecha') return fecha;
+  if (formato === 'hora') return HORA.format(d);
+  return `${fecha}, ${HORA.format(d)}`;
 }
 
 @Pipe({ name: 'fechaLocal' })
 export class FechaLocalPipe implements PipeTransform {
-  transform(valor: Date | string | null | undefined): string {
-    return formatearFechaLocal(valor);
+  transform(
+    valor: Date | string | null | undefined,
+    formato: 'completa' | 'fecha' | 'hora' = 'completa',
+  ): string {
+    return formatearFechaLocal(valor, formato);
   }
 }

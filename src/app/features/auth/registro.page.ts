@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  OnInit,
+  signal,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -179,7 +187,9 @@ export const MENSAJE_CORREO_DUPLICADO =
     </ti-auth-layout>
   `,
 })
-export class RegistroPage {
+export class RegistroPage implements OnInit {
+  /** ?rol=conductor (desde la página de inicio) preselecciona el perfil de conductor. */
+  readonly rol = input<string>();
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly auth = inject(AuthPort);
   private readonly router = inject(Router);
@@ -233,6 +243,10 @@ export class RegistroPage {
 
   constructor() {
     this.form.controls.correo.valueChanges.subscribe(() => this.errorCorreo.set(''));
+  }
+
+  ngOnInit(): void {
+    if (this.rol() === 'conductor') this.form.controls.rol.setValue('3');
   }
 
   protected err(campo: 'nombres' | 'apellidos' | 'correo' | 'password'): boolean {

@@ -541,7 +541,8 @@ describe('Adaptadores HTTP', () => {
 
 describe('mappers', () => {
   it('debería mapear estados, roles y aprobación desconocidos a valores seguros', () => {
-    expect(aEstado('Cancelado')).toBe('Pendiente');
+    expect(aEstado('Perdido')).toBe('Pendiente');
+    expect(aEstado('Cancelado')).toBe('Cancelado');
     expect(aEstado('En Ruta')).toBe('En Ruta');
     expect(aRol(1)).toBe('1');
     expect(aRol('3')).toBe('3');

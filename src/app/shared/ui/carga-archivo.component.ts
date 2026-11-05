@@ -8,11 +8,14 @@ import {
   signal,
 } from '@angular/core';
 import { ErrorArchivo, MAX_ARCHIVO_BYTES, validarArchivo } from '../../core/domain';
+import { comprimirImagen } from '../util/imagen';
+import { CamaraComponent } from './camara.component';
+import { IconoComponent } from './icono.component';
 
 let contador = 0;
 
 export const MENSAJES_ARCHIVO: Record<ErrorArchivo, string> = {
-  tipo: 'Ese formato no está permitido. Usa JPG, PNG o PDF.',
+  tipo: 'Ese formato no está permitido. Usa JPG, PNG, WebP o PDF.',
   tamano: 'El archivo pesa más de 5 MB. Elige uno más liviano.',
   vacio: 'Elige un archivo.',
 };
@@ -24,6 +27,7 @@ export const MENSAJES_ARCHIVO: Record<ErrorArchivo, string> = {
 @Component({
   selector: 'ti-carga-archivo',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CamaraComponent, IconoComponent],
   template: `
     <label
       [for]="idInput"
@@ -42,9 +46,11 @@ export const MENSAJES_ARCHIVO: Record<ErrorArchivo, string> = {
           class="max-h-40 rounded-lg object-contain"
         />
       } @else if (nombre()) {
-        <span class="text-3xl" aria-hidden="true">📄</span>
+        <ti-icono nombre="file-text" class="size-8 text-marca" />
       } @else {
-        <span class="text-3xl" aria-hidden="true">⇪</span>
+        <span class="grid size-12 place-items-center rounded-full bg-marca-suave text-marca">
+          <ti-icono nombre="upload" class="size-6" />
+        </span>
       }
       <span class="font-semibold">{{ nombre() || textoAccion() }}</span>
       <span class="text-sm text-piedra">{{ ayuda() }}</span>
@@ -59,8 +65,28 @@ export const MENSAJES_ARCHIVO: Record<ErrorArchivo, string> = {
       [attr.aria-describedby]="error() ? idError : null"
       (change)="alElegir($event)"
     />
+    @if (conCamara()) {
+      <button
+        type="button"
+        class="btn-secundario mt-2 w-full"
+        [disabled]="deshabilitado()"
+        (click)="camaraAbierta.set(true)"
+      >
+        <ti-icono nombre="camera" class="text-marca" />
+        Tomar foto con la cámara
+      </button>
+    }
     @if (error()) {
       <p [id]="idError" class="error-campo" role="alert">{{ error() }}</p>
+    }
+    @if (camaraAbierta()) {
+      <ti-camara
+        [titulo]="tituloCamara()"
+        [guia]="guiaCamara()"
+        [prefijo]="prefijoFoto()"
+        (foto)="alFotografiar($event)"
+        (cerrar)="camaraAbierta.set(false)"
+      />
     }
   `,
 })
@@ -70,6 +96,11 @@ export class CargaArchivoComponent implements OnDestroy {
   readonly textoAccion = input('Elige o arrastra un archivo');
   readonly ayuda = input('JPG, PNG o PDF, hasta 5 MB');
   readonly capturar = input(false);
+  /** Muestra el botón "Tomar foto con la cámara" (cámara en vivo dentro de la app). */
+  readonly conCamara = input(false);
+  readonly tituloCamara = input('Tomar foto');
+  readonly guiaCamara = input<'documento' | 'entrega'>('documento');
+  readonly prefijoFoto = input('foto');
   readonly deshabilitado = input(false);
   readonly archivo = output<File>();
   readonly rechazado = output<ErrorArchivo>();
@@ -79,6 +110,7 @@ export class CargaArchivoComponent implements OnDestroy {
   protected readonly arrastrando = signal(false);
   protected readonly error = signal('');
   protected readonly nombre = signal('');
+  protected readonly camaraAbierta = signal(false);
   private readonly urlPrevia = signal<string | null>(null);
   protected readonly vistaPrevia = computed(() => this.urlPrevia());
 
@@ -86,8 +118,12 @@ export class CargaArchivoComponent implements OnDestroy {
     this.liberar();
   }
 
-  /** Procesa un archivo (público para pruebas). */
-  procesar(archivo: File | null | undefined): void {
+  /**
+   * Procesa un archivo (público para pruebas). Las fotos pesadas se comprimen antes de validar
+   * el tamaño, así una foto de 8 MB tomada con el celular no se rechaza.
+   */
+  async procesar(original: File | null | undefined): Promise<void> {
+    const archivo = original ? await comprimirImagen(original) : original;
     const problema = validarArchivo(archivo, this.tipos(), this.maxBytes());
     if (problema || !archivo) {
       this.error.set(MENSAJES_ARCHIVO[problema ?? 'vacio']);
@@ -111,14 +147,20 @@ export class CargaArchivoComponent implements OnDestroy {
 
   protected alElegir(ev: Event): void {
     const entrada = ev.target as HTMLInputElement;
-    this.procesar(entrada.files?.[0]);
+    const archivo = entrada.files?.[0];
     entrada.value = '';
+    void this.procesar(archivo);
   }
 
   protected alSoltar(ev: DragEvent): void {
     ev.preventDefault();
     this.arrastrando.set(false);
-    if (!this.deshabilitado()) this.procesar(ev.dataTransfer?.files?.[0]);
+    if (!this.deshabilitado()) void this.procesar(ev.dataTransfer?.files?.[0]);
+  }
+
+  protected alFotografiar(foto: File): void {
+    this.camaraAbierta.set(false);
+    void this.procesar(foto);
   }
 
   private liberar(): void {

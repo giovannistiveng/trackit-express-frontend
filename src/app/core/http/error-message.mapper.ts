@@ -70,7 +70,20 @@ const REGLAS: { patron: RegExp; mensaje: string }[] = [
     patron: /solo se pueden registrar cuentas/i,
     mensaje: 'Solo puedes crear cuentas de cliente o conductor.',
   },
-  { patron: /la foto debe ser jpg o png/i, mensaje: 'La foto debe ser JPG o PNG.' },
+  { patron: /la foto debe ser jpg/i, mensaje: 'La foto debe ser JPG, PNG o WebP.' },
+  {
+    patron: /solo puedes cancelar un envío mientras/i,
+    mensaje: 'Ya no puedes cancelarlo: un conductor tomó tu envío. Escríbenos si necesitas ayuda.',
+  },
+  { patron: /no se puede cancelar/i, mensaje: 'Este envío ya terminó y no se puede cancelar.' },
+  { patron: /contraseña actual no es correcta/i, mensaje: 'La contraseña actual no es correcta.' },
+  {
+    patron: /nueva contraseña debe ser distinta/i,
+    mensaje: 'La nueva contraseña debe ser distinta de la actual.',
+  },
+  { patron: /teléfono debe tener/i, mensaje: 'El teléfono debe tener entre 7 y 15 dígitos.' },
+  { patron: /tarifa base debe ser/i, mensaje: 'La tarifa debe estar entre $ 0 y $ 1.000.000.' },
+  { patron: /campo motivo/i, mensaje: 'Escribe el motivo (mínimo 3 caracteres).' },
   {
     patron: /supera el tamaño máximo/i,
     mensaje: 'El archivo pesa más de 5 MB. Elige uno más liviano.',
@@ -79,7 +92,27 @@ const REGLAS: { patron: RegExp; mensaje: string }[] = [
     patron: /origen y el destino deben ser distintos/i,
     mensaje: 'El destino debe ser distinto del origen.',
   },
+  {
+    patron: /dirección de (origen|destino) está fuera de nuestra zona/i,
+    mensaje:
+      'Esa dirección está fuera de nuestra zona de cobertura. Revísala o márcala en el mapa.',
+  },
+  {
+    patron: /no encontramos la dirección de destino/i,
+    mensaje: 'No encontramos la dirección de destino. Márcala en el mapa o elige su zona.',
+  },
+  { patron: /son el mismo lugar/i, mensaje: 'El origen y el destino son el mismo lugar.' },
+  {
+    patron: /recargo de la zona debe ser/i,
+    mensaje: 'El recargo debe estar entre $ 0 y $ 200.000.',
+  },
+  { patron: /centro de la zona/i, mensaje: 'Toca el mapa para ubicar el centro de la zona.' },
+  { patron: /ya existe una zona con ese nombre/i, mensaje: 'Ya existe una zona con ese nombre.' },
+  { patron: /búsqueda es demasiado larga/i, mensaje: 'Escribe una dirección más corta.' },
 ];
+
+/** Mensajes de validación del backend que ya son aptos para el usuario (frases en español). */
+const FRASE_DE_USUARIO = /^[A-ZÁÉÍÓÚÑ¿¡][^{}<>[\]]{8,180}$/;
 
 export const MENSAJE_GENERICO = 'Algo salió mal. Inténtalo de nuevo en un momento.';
 
@@ -97,6 +130,13 @@ export class ErrorMessageMapper {
     if (error.status === 401) return 'Tu sesión terminó. Inicia sesión otra vez.';
     if (error.status === 403) return 'No tienes permiso para hacer esto.';
     if (error.status === 404) return 'No encontramos lo que buscas.';
+    // Un 400/409 de regla de negocio sin traducción propia: el texto del backend ya es legible
+    if (
+      (error.status === 400 || error.status === 409) &&
+      FRASE_DE_USUARIO.test(error.message) &&
+      !/"/.test(error.message)
+    )
+      return error.message.endsWith('.') ? error.message : `${error.message}.`;
     return MENSAJE_GENERICO;
   }
 }

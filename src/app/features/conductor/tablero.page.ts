@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   OnDestroy,
   OnInit,
   computed,
@@ -8,16 +9,17 @@ import {
   signal,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { Envio } from '../../core/domain';
+import { Envio, categoriasAtendibles } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
-import { DriverBoardPort, DriverServicePort, LoggerPort } from '../../core/ports';
+import { DriverBoardPort, DriverServicePort, EventosPort, LoggerPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
-import { EstadoCargaComponent, FaseCarga } from '../../shared/ui/estado-carga.component';
+import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
 import { ModalComponent } from '../../shared/ui/modal.component';
 import { ToastService } from '../../shared/ui/toast.service';
 import { Sondeo } from '../../shared/util/sondeo';
 import { AvisoPerfilComponent } from './components/aviso-perfil.component';
+import { IconoComponent } from '../../shared/ui/icono.component';
 import { DriverProfileStore } from './state/driver-profile.store';
 
 export const INTERVALO_TABLERO_MS = 15_000;
@@ -27,14 +29,37 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
 @Component({
   selector: 'ti-tablero',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, CopPipe, EstadoCargaComponent, ModalComponent, AvisoPerfilComponent],
+  imports: [
+    RouterLink,
+    CopPipe,
+    EstadoCargaComponent,
+    ModalComponent,
+    AvisoPerfilComponent,
+    IconoComponent,
+  ],
   template: `
-    <div class="contenedor">
+    <div class="contenedor-ancho max-w-4xl">
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1>Servicios disponibles</h1>
           @if (habilitado()) {
-            <p class="mt-1 text-sm text-piedra">Se actualiza cada 15 segundos.</p>
+            <p class="mt-1 flex items-center gap-2 text-sm text-piedra">
+              <span class="relative flex size-2.5"
+                ><span
+                  class="absolute inline-flex size-full animate-ping rounded-full bg-exito opacity-60"
+                ></span
+                ><span class="relative inline-flex size-2.5 rounded-full bg-exito"></span
+              ></span>
+              Los pedidos nuevos aparecen al instante.
+            </p>
+            <p class="mt-1 text-sm text-piedra">
+              @if (vehiculo(); as v) {
+                Con tu {{ v }} ves pedidos de {{ atendibles() }} y los que no exigen vehículo.
+              } @else {
+                Solo ves pedidos sin vehículo definido.
+                <a routerLink="/conductor/perfil" class="btn-texto">Registra tu vehículo</a>
+              }
+            </p>
           }
         </div>
         @if (habilitado()) {
@@ -44,6 +69,7 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
             [disabled]="cargando()"
             (click)="refrescar()"
           >
+            <ti-icono nombre="refresh" class="size-4" [class]="cargando() ? 'animate-spin' : ''" />
             {{ cargando() ? 'Actualizando…' : 'Refrescar' }}
           </button>
         }
@@ -54,10 +80,13 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
       } @else {
         @if (servicioActivo(); as id) {
           <div
-            class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-marca p-4 text-white"
+            class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-marca p-5 text-white shadow-[var(--shadow-marca)]"
             role="status"
           >
-            <p class="font-semibold">
+            <p class="flex items-center gap-3 font-semibold">
+              <span class="grid size-10 place-items-center rounded-full bg-white/15"
+                ><ti-icono nombre="navigation"
+              /></span>
               Tienes el servicio #{{ id }} en curso. Termínalo antes de aceptar otro.
             </p>
             <a [routerLink]="['/conductor/servicio', id]" class="btn-acento">Ir al servicio</a>
@@ -71,37 +100,104 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
             (reintentar)="refrescar()"
           >
             <ul class="space-y-3">
-              @for (e of envios(); track e.id) {
-                <li class="rounded-xl border border-linea bg-papel p-4 sm:p-5">
-                  <div class="flex flex-wrap items-start justify-between gap-4">
+              @for (e of envios(); track e.id; let i = $index) {
+                <li
+                  class="tarjeta-interactiva overflow-hidden animate-[var(--animate-aparecer)]"
+                  [style.animation-delay.ms]="i * 60"
+                >
+                  <div class="flex flex-wrap items-start justify-between gap-4 p-4 sm:p-5">
                     <div class="min-w-0 flex-1">
-                      <p class="text-sm text-piedra">
+                      <p class="flex flex-wrap items-center gap-2 text-sm text-piedra">
                         #{{ e.id }} · {{ e.tipoCarga }}
                         @if (e.categoria) {
-                          · {{ e.categoria }}
+                          <span class="insignia bg-bosque-suave text-bosque"
+                            ><ti-icono nombre="bike" class="size-3.5" /> {{ e.categoria }}</span
+                          >
+                        }
+                        @if (e.metodoPago === 'nequi') {
+                          <span class="insignia bg-exito-suave text-exito"
+                            ><ti-icono nombre="smartphone" class="size-3.5" /> Pagado</span
+                          >
+                        } @else {
+                          <span class="insignia bg-aviso-suave"
+                            ><ti-icono nombre="banknote" class="size-3.5" /> Efectivo</span
+                          >
+                        }
+                        @if (e.fechaProgramada) {
+                          <span class="insignia bg-marca-suave text-marca"
+                            ><ti-icono nombre="calendar-clock" class="size-3.5" />
+                            {{ hora(e.fechaProgramada) }}</span
+                          >
+                        }
+                        @if (e.paradas?.length) {
+                          <span class="insignia bg-niebla"
+                            ><ti-icono nombre="map-pinned" class="size-3.5" />
+                            {{ e.paradas!.length }}
+                            {{ e.paradas!.length === 1 ? 'parada' : 'paradas' }}</span
+                          >
+                        }
+                        @if (e.idaYVuelta) {
+                          <span class="insignia bg-niebla"
+                            ><ti-icono nombre="repeat" class="size-3.5" /> Ida y vuelta</span
+                          >
                         }
                       </p>
-                      <p class="mt-2 font-semibold">
-                        <span class="text-sm font-normal text-piedra">Recoger: </span>{{ e.origen }}
-                      </p>
-                      <p class="font-semibold">
-                        <span class="text-sm font-normal text-piedra">Entregar: </span
-                        >{{ e.destino }}
-                      </p>
-                    </div>
-                    <div class="flex flex-col items-end gap-2">
-                      <p class="numeros text-2xl font-extrabold" style="font-stretch: 112%">
-                        {{ e.tarifa | cop }}
-                      </p>
-                      <button
-                        type="button"
-                        class="btn-primario"
-                        [disabled]="!!servicioActivo() || aceptando() !== null"
-                        (click)="porAceptar.set(e)"
+                      <ol
+                        class="relative mt-3 space-y-2 border-l-2 border-dashed border-linea pl-4"
                       >
-                        Aceptar servicio
-                      </button>
+                        <li class="font-semibold">
+                          <span
+                            class="absolute -left-[6px] mt-1.5 size-2.5 rounded-full bg-tinta"
+                          ></span>
+                          <span class="text-sm font-normal text-piedra">Recoger: </span
+                          >{{ e.origen }}
+                        </li>
+                        <li class="font-semibold">
+                          <span
+                            class="absolute -left-[6px] mt-1.5 size-2.5 rounded-full bg-marca"
+                          ></span>
+                          <span class="text-sm font-normal text-piedra">Entregar: </span
+                          >{{ e.destino }}
+                        </li>
+                      </ol>
+                      @if (e.notas) {
+                        <p class="mt-3 flex gap-2 text-sm text-piedra">
+                          <ti-icono nombre="message" class="mt-0.5 size-4 text-marca" />
+                          {{ e.notas }}
+                        </p>
+                      }
                     </div>
+                    <div class="flex flex-col items-end gap-1">
+                      @if (e.gananciaConductor !== undefined) {
+                        <p class="text-xs font-semibold text-piedra">Ganas</p>
+                        <p
+                          class="numeros text-2xl font-extrabold text-bosque"
+                          style="font-stretch: 112%"
+                        >
+                          {{ e.gananciaConductor | cop }}
+                        </p>
+                        <p class="numeros text-xs text-piedra">Tarifa {{ e.tarifa | cop }}</p>
+                      } @else {
+                        <p class="numeros text-2xl font-extrabold" style="font-stretch: 112%">
+                          {{ e.tarifa | cop }}
+                        </p>
+                      }
+                      @if (e.distanciaKm) {
+                        <p class="mt-1 flex items-center gap-1 text-sm text-piedra">
+                          <ti-icono nombre="route" class="size-4" /> {{ e.distanciaKm }} km
+                        </p>
+                      }
+                    </div>
+                  </div>
+                  <div class="flex justify-end border-t border-linea bg-crema px-4 py-3 sm:px-5">
+                    <button
+                      type="button"
+                      class="btn-primario"
+                      [disabled]="!!servicioActivo() || aceptando() !== null"
+                      (click)="porAceptar.set(e)"
+                    >
+                      Aceptar servicio
+                    </button>
                   </div>
                 </li>
               }
@@ -115,9 +211,15 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
       <ti-modal titulo="¿Aceptar este servicio?" (cerrar)="porAceptar.set(null)">
         <p>
           Te comprometes a recoger en <strong>{{ e.origen }}</strong> y entregar en
-          <strong>{{ e.destino }}</strong> por <strong>{{ e.tarifa | cop }}</strong
+          <strong>{{ e.destino }}</strong
+          >. Ganas <strong>{{ e.gananciaConductor ?? e.tarifa | cop }}</strong
           >.
         </p>
+        @if (e.notas) {
+          <p class="mt-3 rounded-xl bg-crema p-3 text-sm">
+            <strong>Indicaciones:</strong> {{ e.notas }}
+          </p>
+        }
         <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button type="button" class="btn-secundario" (click)="porAceptar.set(null)">
             Cancelar
@@ -154,17 +256,43 @@ export class TableroPage implements OnInit, OnDestroy {
   private sondeo: Sondeo<Envio[]> | null = null;
 
   protected readonly habilitado = computed(() => this.perfil.aprobado());
+  protected readonly vehiculo = computed(() => this.perfil.perfil()?.vehiculo?.categoria ?? null);
+  protected readonly atendibles = computed(() => {
+    const lista = categoriasAtendibles(this.vehiculo());
+    return lista.length > 1
+      ? `${lista.slice(0, -1).join(', ')} y ${lista.at(-1)}`
+      : (lista[0] ?? '');
+  });
   protected readonly fase = computed<FaseCarga>(() =>
-    !this.cargado()
-      ? 'cargando'
-      : this.error() && this.envios().length === 0
-        ? 'error'
-        : this.envios().length === 0
-          ? 'vacio'
-          : 'listo',
+    faseDe({
+      cargando: !this.cargado(),
+      error: this.error() && this.envios().length === 0,
+      vacio: this.envios().length === 0,
+    }),
   );
 
-  async ngOnInit(): Promise<void> {
+  constructor() {
+    // Un servicio nuevo llega por el canal de eventos: se refresca el tablero al instante
+    const sub = inject(EventosPort)
+      .notificaciones()
+      .subscribe((n) => {
+        if (n.tipo === 'nuevo_servicio' || n.tipo === 'envio_cancelado') void this.refrescar();
+      });
+    inject(DestroyRef).onDestroy(() => sub.unsubscribe());
+  }
+
+  protected hora(f: Date): string {
+    const hoy = new Date().toDateString() === f.toDateString();
+    const h = f.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' });
+    return hoy ? h : `${f.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric' })} ${h}`;
+  }
+
+  ngOnInit(): void {
+    void this.inicializar();
+  }
+
+  /** Carga inicial (asíncrona); el hook de Angular no espera promesas. */
+  async inicializar(): Promise<void> {
     if (!this.habilitado()) return;
     const activo = await this.servicios.activo().catch(() => null);
     this.servicioActivo.set(activo?.id ?? null);

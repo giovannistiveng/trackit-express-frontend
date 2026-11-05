@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  computed,
   inject,
   input,
   output,
@@ -29,10 +30,7 @@ const ETIQUETA: Record<EstadoDocumento, string> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CargaArchivoComponent],
   template: `
-    <article
-      class="rounded-xl border border-linea bg-papel p-4"
-      [attr.aria-labelledby]="'doc-' + tipo()"
-    >
+    <article class="tarjeta p-4" [attr.aria-labelledby]="'doc-' + tipo()">
       <div class="mb-3 flex items-center justify-between gap-2">
         <h3 [id]="'doc-' + tipo()">{{ tipo() }}</h3>
         <span
@@ -49,6 +47,11 @@ const ETIQUETA: Record<EstadoDocumento, string> = {
         </span>
       </div>
       <ti-carga-archivo
+        [tipos]="['image/jpeg', 'image/png', 'image/webp', 'application/pdf']"
+        [conCamara]="true"
+        [tituloCamara]="'Foto de tu ' + tipo()"
+        guiaCamara="documento"
+        [prefijoFoto]="prefijo()"
         [deshabilitado]="estado() === 'subiendo' || deshabilitado()"
         [textoAccion]="
           estado() === 'en-revision' ? 'Reemplazar archivo' : 'Elige o arrastra el archivo'
@@ -83,6 +86,13 @@ const ETIQUETA: Record<EstadoDocumento, string> = {
 })
 export class DocumentoCardComponent {
   readonly tipo = input.required<TipoDocumento>();
+  /** "Cédula" → "cedula" para el nombre del archivo de la foto. */
+  protected readonly prefijo = computed(() =>
+    this.tipo()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, ''),
+  );
   readonly deshabilitado = input(false);
   readonly subido = output<DocumentoConductor>();
 

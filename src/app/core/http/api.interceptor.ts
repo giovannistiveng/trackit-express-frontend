@@ -23,13 +23,7 @@ function aApiError(err: unknown): ApiError {
   if (err instanceof HttpErrorResponse) {
     if (err.status === 0) return new ApiError(0, 'Sin conexión', SIN_CONEXION);
     const cuerpo = err.error as { error?: unknown } | string | null;
-    const mensaje =
-      cuerpo && typeof cuerpo === 'object' && typeof cuerpo.error === 'string'
-        ? cuerpo.error
-        : typeof cuerpo === 'string' && cuerpo.length < 300
-          ? cuerpo
-          : err.statusText || 'Error';
-    return new ApiError(err.status, mensaje);
+    return new ApiError(err.status, mensajeDelCuerpo(cuerpo) ?? `Error ${err.status}`);
   }
   return new ApiError(-1, err instanceof Error ? err.message : 'Error desconocido');
 }
@@ -75,3 +69,10 @@ export const apiInterceptor: HttpInterceptorFn = (req, next) => {
     }),
   );
 };
+
+/** El backend responde { error: "…" }; un texto corto también se muestra tal cual. */
+function mensajeDelCuerpo(cuerpo: { error?: unknown } | string | null): string | null {
+  if (cuerpo && typeof cuerpo === 'object' && typeof cuerpo.error === 'string') return cuerpo.error;
+  if (typeof cuerpo === 'string' && cuerpo.length > 0 && cuerpo.length < 300) return cuerpo;
+  return null;
+}

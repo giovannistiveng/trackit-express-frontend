@@ -1,6 +1,7 @@
 import {
   esContrasenaValida,
   esCoordenadaValida,
+  iniciales,
   esCorreoValido,
   esIdValido,
   esNombreValido,
@@ -97,5 +98,32 @@ describe('validadores de dominio', () => {
       expect(esCoordenadaValida(0, -181)).toBe(false);
       expect(esCoordenadaValida(Number.NaN, 0)).toBe(false);
     });
+  });
+});
+
+describe('esCorreoValido: casos límite (sin expresión regular)', () => {
+  it.each([
+    ['ana@correo.co', true],
+    ['ana.ruiz+envios@sub.dominio.com', true],
+    ['sin-arroba.co', false],
+    ['@correo.co', false],
+    ['a@@correo.co', false],
+    ['ana@correo', false],
+    ['ana@.co', false],
+    ['ana@correo.c', false],
+    ['ana @correo.co', false],
+  ])('%s → %s', (correo, esperado) => {
+    expect(esCorreoValido(correo)).toBe(esperado);
+  });
+});
+
+describe('iniciales', () => {
+  it.each([
+    ['Laura Méndez Ruiz', 'LM'],
+    ['  ana  ', 'A'],
+    ['', '?'],
+    [undefined, '?'],
+  ])('%s → %s', (nombre, esperado) => {
+    expect(iniciales(nombre)).toBe(esperado);
   });
 });

@@ -30,7 +30,8 @@ let contador = 0;
       role="dialog"
       aria-modal="true"
       [attr.aria-labelledby]="idTitulo"
-      class="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-papel p-5 shadow-2xl sm:max-w-lg sm:rounded-2xl sm:p-6"
+      class="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-papel p-5 shadow-2xl sm:rounded-2xl sm:p-6"
+      [class]="ancho() === 'amplio' ? 'sm:max-w-3xl' : 'sm:max-w-lg'"
     >
       <div class="mb-4 flex items-start justify-between gap-4">
         <h2 [id]="idTitulo">{{ titulo() }}</h2>
@@ -52,6 +53,7 @@ let contador = 0;
 export class ModalComponent implements AfterViewInit, OnDestroy {
   readonly titulo = input.required<string>();
   readonly cerrable = input(true);
+  readonly ancho = input<'normal' | 'amplio'>('normal');
   readonly cerrar = output<void>();
   protected readonly idTitulo = `modal-titulo-${++contador}`;
   private readonly panel = viewChild.required<ElementRef<HTMLElement>>('panel');

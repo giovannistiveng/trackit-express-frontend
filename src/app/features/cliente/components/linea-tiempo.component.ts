@@ -1,19 +1,21 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import { CambioEstado, ESTADOS_ENVIO, EstadoEnvio } from '../../../core/domain';
+import { CambioEstado, EstadoEnvio, RECORRIDO_ENVIO } from '../../../core/domain';
 import { FechaLocalPipe } from '../../../shared/pipes/fecha-local.pipe';
+import { IconoComponent } from '../../../shared/ui/icono.component';
 
 const DESCRIPCION: Record<EstadoEnvio, string> = {
   Pendiente: 'Solicitud recibida, buscando conductor',
   Asignado: 'Un conductor aceptó el servicio',
   'En Ruta': 'El conductor va en camino',
   Entregado: 'Paquete entregado con PIN',
+  Cancelado: 'El envío se canceló',
 };
 
 /** Recorrido del envío como una ruta vertical: paradas cumplidas, la actual y las que faltan. */
 @Component({
   selector: 'ti-linea-tiempo',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FechaLocalPipe],
+  imports: [FechaLocalPipe, IconoComponent],
   template: `
     <ol class="relative" aria-label="Recorrido del envío">
       @for (p of paradas(); track p.estado; let ultimo = $last) {
@@ -35,16 +37,22 @@ const DESCRIPCION: Record<EstadoEnvio, string> = {
           <span
             class="relative z-10 mt-0.5 grid size-[25px] shrink-0 place-items-center rounded-full border-[3px]"
             [class]="
-              p.actual
-                ? 'border-tinta bg-placa'
-                : p.cumplida
-                  ? 'border-marca bg-marca'
-                  : 'border-linea bg-papel'
+              p.estado === 'Cancelado'
+                ? 'border-alerta bg-alerta text-white'
+                : p.actual
+                  ? 'border-tinta bg-placa'
+                  : p.cumplida
+                    ? 'border-marca bg-marca text-white'
+                    : 'border-linea bg-papel'
             "
             aria-hidden="true"
           >
-            @if (p.cumplida && !p.actual) {
-              <span class="text-xs font-bold text-white">✓</span>
+            @if (p.estado === 'Cancelado') {
+              <ti-icono nombre="x" class="size-3.5" />
+            } @else if (p.cumplida && !p.actual) {
+              <ti-icono nombre="check" class="size-3.5" />
+            } @else if (p.actual && p.estado !== 'Entregado') {
+              <span class="size-2 animate-ping rounded-full bg-tinta"></span>
             }
           </span>
           <div class="min-w-0">
@@ -75,11 +83,31 @@ export class LineaTiempoComponent {
   protected readonly paradas = computed(() => {
     const historial = this.historial();
     const actual = this.estadoActual();
-    const indiceActual = ESTADOS_ENVIO.indexOf(actual);
-    return ESTADOS_ENVIO.map((estado) => {
-      const cambio = [...historial].reverse().find((h) => h.estado === estado);
-      const cumplida = !!cambio || ESTADOS_ENVIO.indexOf(estado) <= indiceActual;
-      return { estado, fecha: cambio?.fecha ?? null, cumplida, actual: estado === actual };
+    const fechaDe = (estado: EstadoEnvio) =>
+      [...historial].reverse().find((h) => h.estado === estado)?.fecha ?? null;
+    if (actual === 'Cancelado') {
+      // Solo las paradas que alcanzó, y al final la cancelación
+      const alcanzadas = RECORRIDO_ENVIO.filter((e) => e === 'Pendiente' || fechaDe(e));
+      return [
+        ...alcanzadas.map((estado) => ({
+          estado: estado as EstadoEnvio,
+          fecha: fechaDe(estado),
+          cumplida: true,
+          actual: false,
+        })),
+        {
+          estado: 'Cancelado' as EstadoEnvio,
+          fecha: fechaDe('Cancelado'),
+          cumplida: true,
+          actual: true,
+        },
+      ];
+    }
+    const indiceActual = RECORRIDO_ENVIO.indexOf(actual);
+    return RECORRIDO_ENVIO.map((estado) => {
+      const fecha = fechaDe(estado);
+      const cumplida = !!fecha || RECORRIDO_ENVIO.indexOf(estado) <= indiceActual;
+      return { estado: estado as EstadoEnvio, fecha, cumplida, actual: estado === actual };
     });
   });
 }

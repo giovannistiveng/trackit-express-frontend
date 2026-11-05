@@ -8,7 +8,8 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test --watch=false",
     "test:coverage": "ng test --watch=false --coverage && node scripts/verificar-cobertura.mjs",
-    "lint": "ng lint",
+    "lint": "ng lint && node scripts/verificar-arquitectura.mjs",
+    "lint:sonar": "eslint \"src/**/*.ts\" -f json -o reports/eslint.json",
     "sonar": "sonar-scanner-npm"
   },
   "private": true,
@@ -22,6 +23,7 @@
     "@angular/service-worker": "^21.2.0",
     "leaflet": "^1.9.4",
     "localforage": "^1.10.0",
+    "lucide-static": "1.49.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
@@ -34,6 +36,7 @@
     "@vitest/coverage-v8": "^4.1.12",
     "angular-eslint": "^21.4.0",
     "eslint": "^9.39.5",
+    "eslint-plugin-sonarjs": "^3.0.7",
     "jsdom": "^28.0.0",
     "postcss": "^8.5.32",
     "prettier": "^3.8.1",

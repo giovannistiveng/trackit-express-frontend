@@ -2,10 +2,19 @@
 
 const PLACA_RE = /^[A-Z]{3}\d{2}[A-Z0-9]$/;
 const PIN_RE = /^\d{4}$/;
-const CORREO_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const NOMBRE_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?: [A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*$/;
 
 export const MAX_NOMBRE = 120;
+
+/** usuario@dominio.tld sin espacios (sin expresión regular, para no tener retroceso costoso). */
+function formatoCorreo(v: string): boolean {
+  if (/\s/.test(v)) return false;
+  const arroba = v.indexOf('@');
+  if (arroba < 1 || arroba !== v.lastIndexOf('@')) return false;
+  const dominio = v.slice(arroba + 1);
+  const punto = dominio.lastIndexOf('.');
+  return punto > 0 && dominio.length - punto - 1 >= 2;
+}
 export const MAX_CORREO = 180;
 export const MAX_ARCHIVO_BYTES = 5 * 1024 * 1024;
 
@@ -44,7 +53,7 @@ export function esContrasenaValida(valor: string): boolean {
 
 export function esCorreoValido(valor: string): boolean {
   const v = valor.trim();
-  return v.length > 0 && v.length <= MAX_CORREO && CORREO_RE.test(v);
+  return v.length > 0 && v.length <= MAX_CORREO && formatoCorreo(v);
 }
 
 /** Colapsa espacios repetidos y recorta extremos. */
@@ -95,4 +104,15 @@ export function esCoordenadaValida(lat: number, lon: number): boolean {
     lon >= -180 &&
     lon <= 180
   );
+}
+
+/** Iniciales para el avatar: "Laura Méndez Ríos" → "LM". */
+export function iniciales(nombre: string | undefined): string {
+  const partes = (nombre ?? '').trim().split(/\s+/).filter(Boolean);
+  return (
+    partes
+      .slice(0, 2)
+      .map((p) => p[0])
+      .join('') || '?'
+  ).toUpperCase();
 }

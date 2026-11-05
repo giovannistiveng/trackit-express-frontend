@@ -1,24 +1,50 @@
+import { Signal } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   CategoriaVehiculo,
   ConductorPostulante,
+  Billetera,
+  Coordenadas,
   Cotizacion,
+  DatosZona,
+  EstadoPago,
+  Liquidacion,
+  MensajeChat,
+  MetodoPago,
+  PagoAdmin,
+  PagoResumen,
+  Parada,
+  SeguimientoPublico,
   Envio,
+  EnvioAdmin,
+  EstadisticasPublicas,
   EventoCarga,
   FiltroAuditoria,
+  FiltroEnviosAdmin,
+  MensajeContacto,
+  MensajeContactoRecibido,
+  Notificacion,
+  PerfilUsuario,
+  ResumenConductor,
+  Seguimiento,
   MetricasAdmin,
   Pagina,
   PerfilConductor,
   RegistroAuditoria,
   RegistroUsuario,
   SolicitudCotizacion,
+  SugerenciaDireccion,
+  TarifaVehiculo,
+  TarifasPublicas,
   TipoDocumento,
   Ubicacion,
   Usuario,
   Vehiculo,
   Zona,
+  NivelLog,
+  EstadoPush,
+  MensajeEntrante,
 } from '../domain';
-import { NivelLog } from '../../../environments/environment.model';
 
 /*
  * Puertos: una clase abstracta por capacidad, usada como token de inyección.
@@ -34,6 +60,10 @@ export abstract class AuthPort {
     correo: string,
     password: string,
   ): Promise<{ usuario: Usuario; token: string }>;
+  /** Siempre responde igual, exista o no el correo. */
+  abstract olvidePassword(correo: string): Promise<void>;
+  abstract restablecerPassword(token: string, nueva: string): Promise<void>;
+  abstract verificarCorreo(token: string): Promise<void>;
 }
 
 export abstract class ZonesPort {
@@ -44,16 +74,58 @@ export abstract class QuotePort {
   abstract cotizar(solicitud: SolicitudCotizacion): Promise<Cotizacion>;
 }
 
+/** Buscador de direcciones dentro de la región (OpenStreetMap, a través del backend). */
+export abstract class GeoPort {
+  abstract buscar(texto: string): Promise<SugerenciaDireccion[]>;
+  abstract inversa(punto: Coordenadas): Promise<SugerenciaDireccion | null>;
+}
+
 export interface NuevoEnvio extends SolicitudCotizacion {
   tipoCarga: string;
   /** Vehículo requerido; si se omite, cualquier conductor puede tomarlo. */
   categoria?: CategoriaVehiculo;
+  /** Indicaciones para el conductor (máximo 300 caracteres). */
+  notas?: string;
+  metodoPago?: MetodoPago;
+  /** Celular Nequi (10 dígitos) cuando se paga con Nequi. */
+  telefonoNequi?: string;
+  destinatarioNombre?: string;
+  destinatarioTelefono?: string;
+}
+
+/** Datos que el cliente puede corregir mientras el envío está Pendiente. */
+export interface EdicionEnvio {
+  tipoCarga?: string;
+  notas?: string;
+  destinatarioNombre?: string;
+  destinatarioTelefono?: string;
 }
 
 /** Envíos vistos por el cliente dueño (incluye el PIN). */
 export abstract class ShipmentsPort {
   abstract crear(envio: NuevoEnvio): Promise<Envio>;
   abstract obtener(id: number): Promise<Envio>;
+  /** Solo mientras está Pendiente. */
+  abstract cancelar(id: number, motivo?: string): Promise<Envio>;
+  abstract editar(id: number, cambios: EdicionEnvio): Promise<Envio>;
+}
+
+/** Pago de un envío: estado, reintento con Nequi y cambio a efectivo. */
+export abstract class PaymentsPort {
+  abstract estado(idEnvio: number): Promise<PagoResumen>;
+  abstract reintentar(idEnvio: number, telefono?: string): Promise<PagoResumen>;
+  abstract pagarEnEfectivo(idEnvio: number): Promise<PagoResumen>;
+}
+
+/** Chat entre el cliente y el conductor asignado. */
+export abstract class ChatPort {
+  abstract mensajes(idEnvio: number): Promise<{ abierto: boolean; mensajes: MensajeChat[] }>;
+  abstract enviar(idEnvio: number, texto: string): Promise<MensajeChat>;
+}
+
+/** Mapa en tiempo real: recorrido, señal en vivo y tiempo estimado de llegada. */
+export abstract class TrackingPort {
+  abstract seguimiento(idEnvio: number): Promise<Seguimiento>;
 }
 
 /** Historial de envíos del cliente autenticado. */
@@ -87,6 +159,11 @@ export abstract class DriverServicePort {
   abstract activo(): Promise<Envio | null>;
   /** Asignado → En Ruta. */
   abstract iniciarRuta(idEnvio: number): Promise<Envio>;
+  /** Foto del paquete al recogerlo: el envío pasa a En Ruta. */
+  abstract recoger(idEnvio: number, foto: File): Promise<Envio>;
+  abstract completarParada(idEnvio: number, idParada: number): Promise<Parada[]>;
+  /** Ida y vuelta: llegó al destino y regresa al origen. */
+  abstract llegadaDestino(idEnvio: number): Promise<Envio>;
 }
 
 export abstract class DeliveryPort {
@@ -94,6 +171,7 @@ export abstract class DeliveryPort {
     idEnvio: number,
     urlFoto: string,
     pin: string,
+    efectivoRecibido?: boolean,
   ): Promise<{ id: number; estado: 'Entregado'; urlFoto: string }>;
 }
 
@@ -106,7 +184,115 @@ export abstract class RatingPort {
   abstract calificar(
     idEnvio: number,
     puntuacion: number,
+    comentario?: string,
   ): Promise<{ id: number; calificacion: number }>;
+}
+
+/** Resumen y servicios terminados del conductor. */
+export abstract class DriverStatsPort {
+  abstract resumen(): Promise<ResumenConductor>;
+  abstract historial(): Promise<Envio[]>;
+  /** Lo pendiente por liquidar y las liquidaciones semanales. */
+  abstract billetera(): Promise<Billetera>;
+}
+
+/** Avisos dentro de la aplicación. */
+export abstract class NotificationsPort {
+  abstract listar(soloNoLeidas?: boolean): Promise<{ noLeidas: number; items: Notificacion[] }>;
+  abstract noLeidas(): Promise<number>;
+  abstract leer(id: number): Promise<void>;
+  abstract leerTodas(): Promise<void>;
+  abstract borrar(id: number): Promise<void>;
+  /** Borra las ya leídas; devuelve cuántas. */
+  abstract borrarLeidas(): Promise<number>;
+}
+
+/** Canal de eventos en tiempo real (SSE) y notificaciones push. */
+export abstract class RealtimePort {
+  /** Ticket de un solo uso para abrir el canal de eventos. */
+  abstract ticket(): Promise<string>;
+  /** URL del canal de eventos con el ticket. */
+  abstract urlEventos(ticket: string): string;
+  abstract clavePush(): Promise<string | null>;
+  abstract suscribirPush(
+    datos:
+      | { plataforma: 'web'; endpoint: string; keys: { p256dh: string; auth: string } }
+      | { plataforma: 'android' | 'ios'; token: string },
+  ): Promise<void>;
+  abstract desuscribirPush(endpoint: string): Promise<void>;
+}
+
+/**
+ * Eventos del servidor que llegan al instante (avisos, mensajes de chat, cambios de envíos),
+ * ya traducidos a modelos del dominio.
+ */
+export abstract class EventosPort {
+  /** true mientras el canal en vivo está abierto (si no, las pantallas consultan cada tanto). */
+  abstract readonly conectado: Signal<boolean>;
+  abstract iniciar(): void;
+  abstract detener(): void;
+  abstract notificaciones(): Observable<Notificacion>;
+  abstract mensajes(): Observable<MensajeEntrante>;
+  /** Id del envío que cambió. */
+  abstract cambiosEnvio(): Observable<number>;
+}
+
+/** Notificaciones push en este dispositivo (navegador o app móvil). */
+export abstract class PushPort {
+  abstract readonly estado: Signal<EstadoPush>;
+  abstract comprobar(): Promise<EstadoPush>;
+  abstract activar(): Promise<EstadoPush>;
+  abstract desactivar(): Promise<void>;
+}
+
+/** Perfil y contraseña del usuario autenticado. */
+export abstract class AccountPort {
+  abstract perfil(): Promise<PerfilUsuario>;
+  abstract actualizar(datos: { nombre: string; telefono: string }): Promise<PerfilUsuario>;
+  abstract cambiarPassword(actual: string, nueva: string): Promise<void>;
+  /** Reenvía el enlace de verificación; false si el correo ya estaba verificado. */
+  abstract reenviarVerificacion(): Promise<boolean>;
+}
+
+/** Datos del sitio público (sin sesión). */
+export abstract class PublicSitePort {
+  abstract estadisticas(): Promise<EstadisticasPublicas>;
+  abstract zonas(): Promise<Zona[]>;
+  abstract tarifas(): Promise<TarifasPublicas>;
+  abstract contactar(mensaje: MensajeContacto): Promise<void>;
+  /** Enlace público de seguimiento (quien recibe, sin cuenta). */
+  abstract seguimiento(token: string): Promise<SeguimientoPublico>;
+}
+
+/** Operación del administrador: envíos, zonas, tarifas y mensajes de contacto. */
+export abstract class AdminOperationsPort {
+  abstract envios(filtro: FiltroEnviosAdmin): Promise<Pagina<EnvioAdmin>>;
+  abstract cancelar(idEnvio: number, motivo: string): Promise<Envio>;
+  abstract actualizarTarifa(idZona: number, tarifaBase: number): Promise<Zona>;
+  /** Todas las zonas, incluidas las desactivadas. */
+  abstract zonas(): Promise<Zona[]>;
+  abstract crearZona(datos: DatosZona): Promise<Zona>;
+  abstract actualizarZona(idZona: number, cambios: Partial<DatosZona>): Promise<Zona>;
+  abstract tarifasVehiculo(): Promise<TarifaVehiculo[]>;
+  abstract actualizarTarifaVehiculo(t: TarifaVehiculo): Promise<TarifaVehiculo>;
+  abstract mensajes(pendientes: boolean, pagina: number): Promise<Pagina<MensajeContactoRecibido>>;
+  abstract atenderMensaje(id: number): Promise<void>;
+  abstract borrarMensaje(id: number): Promise<void>;
+  /** Devuelve 'archivada' si la zona tenía envíos (se conserva en el historial). */
+  abstract borrarZona(idZona: number): Promise<'borrada' | 'archivada'>;
+  abstract pagos(f: {
+    metodo?: MetodoPago;
+    estado?: EstadoPago;
+    pagina: number;
+  }): Promise<Pagina<PagoAdmin>>;
+  abstract reembolsar(idEnvio: number): Promise<PagoResumen>;
+  abstract liquidaciones(f: {
+    estado?: 'pendiente' | 'pagada';
+    pagina: number;
+  }): Promise<Pagina<Liquidacion>>;
+  /** Genera las liquidaciones hasta la fecha (AAAA-MM-DD) o de la última semana completa. */
+  abstract generarLiquidaciones(hasta?: string): Promise<Liquidacion[]>;
+  abstract pagarLiquidacion(id: number, referencia: string): Promise<Liquidacion>;
 }
 
 /** Conductores pendientes o rechazados. */
