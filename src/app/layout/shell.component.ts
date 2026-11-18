@@ -38,8 +38,10 @@ export const MENU: Record<Rol, Enlace[]> = {
     { ruta: '/admin/auditoria', texto: 'Auditoría', icono: 'clipboard-list', movil: false },
   ],
   '2': [
-    { ruta: '/cliente/nuevo-envio', texto: 'Nuevo envío', icono: 'package' },
-    { ruta: '/cliente/envios', texto: 'Mis envíos', icono: 'list' },
+    { ruta: '/cliente/inicio', texto: 'Inicio', icono: 'home' },
+    { ruta: '/cliente/nuevo-envio', texto: 'Pedir', icono: 'plus' },
+    { ruta: '/cliente/envios', texto: 'Pedidos', icono: 'list' },
+    { ruta: '/cuenta', texto: 'Cuenta', icono: 'user' },
   ],
   '3': [
     { ruta: '/conductor/tablero', texto: 'Servicios', icono: 'map' },

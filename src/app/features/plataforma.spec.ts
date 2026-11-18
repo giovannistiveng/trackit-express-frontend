@@ -225,6 +225,8 @@ const SEGUIMIENTO: Seguimiento = {
 const PUBLICO: SeguimientoPublico = {
   codigo: 7,
   estado: 'En Ruta',
+  etapa: 'en_camino',
+  tipoServicio: 'paquete',
   origen: 'Casco Urbano',
   destino: 'Silvania',
   destinatario: 'Ana',
@@ -250,7 +252,8 @@ describe('SeguimientoPublicoPage', () => {
     fixture.detectChanges();
     const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
     expect(texto).toContain('Para Ana');
-    expect(texto).toContain('El paquete va en camino');
+    expect(texto).toContain('En camino');
+    expect(texto).toContain('Paquete #7');
     expect(texto).toContain('12 min');
     expect(texto).toContain('Chinauta');
     expect(texto).toContain('ABC12D');
@@ -258,11 +261,13 @@ describe('SeguimientoPublicoPage', () => {
     sitio.seguimiento.mockImplementation(async () => ({
       ...PUBLICO,
       estado: 'Entregado',
+      etapa: 'entregado',
       mapa: null,
     }));
     await vi.advanceTimersByTimeAsync(15_000);
     fixture.detectChanges();
-    expect(el.textContent).toContain('El paquete fue entregado');
+    expect(el.querySelector('h1')?.textContent).toContain('Entregado');
+    expect(el.textContent).toContain('Ver horas de cada cambio');
     fixture.destroy();
   });
 

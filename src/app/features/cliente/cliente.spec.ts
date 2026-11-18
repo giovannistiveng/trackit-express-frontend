@@ -23,9 +23,11 @@ import {
   ESPERA_AUTOCOTIZAR_MS,
   NuevoEnvioPage,
   VIGENCIA_COTIZACION_MS,
+  errorDetalle,
   errorFechaProgramada,
   fechaLocalInput,
 } from './nuevo-envio.page';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import {
   CampoDireccionComponent,
   ESPERA_BUSQUEDA_MS,
@@ -43,6 +45,8 @@ const DESGLOSE = {
   recargoParadas: 0,
   idaYVuelta: false,
   recargoNocturno: 0,
+  extras: [],
+  recargoAcceso: 0,
   minimoAplicado: false,
   total: 31600,
 };
@@ -113,7 +117,7 @@ const PAGO_PENDIENTE: PagoResumen = {
   actualizado: new Date(),
 };
 
-async function montarNuevo(p = puertosNuevoEnvio()) {
+async function montarNuevo(p = puertosNuevoEnvio(), consulta: Record<string, string> = {}) {
   const r = await montar(NuevoEnvioPage, {
     usuario: CLIENTE,
     providers: [
@@ -121,6 +125,10 @@ async function montarNuevo(p = puertosNuevoEnvio()) {
       { provide: QuotePort, useValue: p.cotizar },
       { provide: ShipmentsPort, useValue: p.envios },
       { provide: PaymentsPort, useValue: pagosFalsos() },
+      {
+        provide: ActivatedRoute,
+        useValue: { snapshot: { queryParamMap: convertToParamMap(consulta) } },
+      },
     ],
   });
   await r.estable();
@@ -143,11 +151,12 @@ function ubicar(
   fixture.detectChanges();
 }
 
-async function llenarCotizacion(fixture: ComponentFixture<unknown>, el: HTMLElement, tipo = 1) {
+async function llenarCotizacion(fixture: ComponentFixture<unknown>) {
   ubicar(fixture, 'origen', 'Casco Urbano', FUSA);
   ubicar(fixture, 'destino', 'Silvania', SILVANIA);
-  elegir(q(el, '#tipoCarga'), tipo);
 }
+
+const calcular = (el: HTMLElement) => botonPorTexto(el, /Calcular precio|Volver a cotizar/);
 
 /** Avanza los temporizadores falsos y redibuja (dos veces: para las promesas que encadenan). */
 const pasoCon =
@@ -167,8 +176,8 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
   it('Dado las direcciones ubicadas, cuando cotizo, entonces muestra el precio, el desglose y el precio de cada vehículo', async () => {
     const { el, p, estable, fixture } = await montarNuevo();
     expect(el.querySelector('#zona')).toBeNull();
-    await llenarCotizacion(fixture, el);
-    botonPorTexto(el, 'Cotizar').click();
+    await llenarCotizacion(fixture);
+    calcular(el).click();
     await estable();
     expect(p.cotizar.cotizar).toHaveBeenCalledWith({
       origen: 'Casco Urbano',
@@ -179,13 +188,15 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
       paradas: [],
       idaYVuelta: false,
       fechaProgramada: null,
+      tipoServicio: 'paquete',
+      detalle: {},
     });
     const texto = el.textContent?.replace(/\s/g, ' ') ?? '';
     expect(texto).toContain('34.5 km');
     expect(texto).toContain('1 h 9 min');
     expect(texto).toContain('$ 31.600');
     expect(texto).toContain('Banderazo (Moto Express)');
-    expect(texto).toContain('Recargo de zona · Silvania');
+    expect(texto).toContain('Recargo de zona (Silvania)');
     expect(texto).toContain('Pagas en efectivo al recibir');
     const precios = Array.from(el.querySelectorAll('fieldset label .numeros')).map((x) =>
       x.textContent?.replace(/\s+/g, ' ').trim(),
@@ -198,7 +209,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     const { el, p, estable } = await montarNuevo();
     escribir(q(el, '#origen'), 'Casco Urbano');
     escribir(q(el, '#destino'), 'Silvania');
-    botonPorTexto(el, 'Cotizar').click();
+    calcular(el).click();
     await estable();
     expect(p.cotizar.cotizar).not.toHaveBeenCalled();
     expect(q(el, '[role="alert"]').textContent).toContain('Ubica en el mapa todas las direcciones');
@@ -212,8 +223,8 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
       rechaza(new ApiError(400, 'La dirección de destino está fuera de nuestra zona de cobertura')),
     );
     const { el, estable, fixture } = await montarNuevo(p);
-    await llenarCotizacion(fixture, el);
-    botonPorTexto(el, 'Cotizar').click();
+    await llenarCotizacion(fixture);
+    calcular(el).click();
     await estable();
     expect(q(el, '[role="alert"]').textContent).toContain('fuera de nuestra zona de cobertura');
   });
@@ -222,44 +233,127 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     const { el, p, estable } = await montarNuevo();
     escribir(q(el, '#origen'), 'Casco Urbano');
     escribir(q(el, '#destino'), 'casco urbano');
-    botonPorTexto(el, 'Cotizar').click();
+    calcular(el).click();
     await estable();
     expect(q(el, '#destino-error').textContent).toContain('distinto del origen');
     expect(p.cotizar.cotizar).not.toHaveBeenCalled();
   });
 
-  it('Dado que falta el tipo de carga, cuando confirmo, entonces no se crea la solicitud y se señala el campo', async () => {
+  it('un mercado exige la lista antes de cotizar y la envía con el presupuesto', async () => {
     const { el, p, estable, fixture } = await montarNuevo();
-    ubicar(fixture, 'origen', 'Casco Urbano', FUSA);
-    ubicar(fixture, 'destino', 'Silvania', SILVANIA);
-    botonPorTexto(el, 'Cotizar').click();
+    q<HTMLInputElement>(el, '#servicio-mercado').click();
     await estable();
-    confirmar(el).click();
+    await llenarCotizacion(fixture);
+    calcular(el).click();
     await estable();
-    expect(q(el, '#tipo-error').textContent).toContain('tipo de carga');
-    expect(p.envios.crear).not.toHaveBeenCalled();
+    expect(p.cotizar.cotizar).not.toHaveBeenCalled();
+    expect(q(el, '[role="alert"]').textContent).toContain('Escribe la lista del mercado.');
+    escribir(q(el, '#det-lista'), 'Arroz, panela y huevos');
+    escribir(q(el, '#det-presupuesto'), '60000');
+    await estable();
+    calcular(el).click();
+    await estable();
+    expect(p.cotizar.cotizar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tipoServicio: 'mercado',
+        detalle: { lista: 'Arroz, panela y huevos', presupuesto: 60000 },
+      }),
+    );
   });
 
-  it('debería aceptar "Otro" con texto libre', async () => {
-    const { el, p, estable, fixture } = await montarNuevo();
-    await llenarCotizacion(fixture, el, 5);
+  it('un trasteo pide qué se lleva, pisos y ayudantes, y solo ofrece vehículos que alcanzan', async () => {
+    const { el, p, estable, fixture } = await montarNuevo(puertosNuevoEnvio(), {
+      servicio: 'trasteo',
+    });
+    expect(q<HTMLInputElement>(el, '#servicio-trasteo').checked).toBe(true);
+    const vehiculos = () =>
+      Array.from(el.querySelectorAll('[aria-labelledby="titulo-vehiculo"] fieldset label')).map(
+        (l) => l.textContent?.replace(/\s+/g, ' ').trim().split(' ')[0],
+      );
+    expect(vehiculos()).not.toContain('Moto');
+    escribir(q(el, '#det-objetos'), 'Nevera y cama doble');
+    elegir(q(el, '#det-piso-d'), 2);
+    q<HTMLButtonElement>(el, '[aria-label="Agregar un ayudante"]').click();
+    q<HTMLButtonElement>(el, '[aria-label="Agregar un ayudante"]').click();
     await estable();
-    escribir(q(el, '#otroTipo'), 'Bicicleta');
-    botonPorTexto(el, 'Cotizar').click();
+    q<HTMLButtonElement>(el, '[aria-label="Quitar un ayudante"]').click();
+    await estable();
+    await llenarCotizacion(fixture);
+    calcular(el).click();
+    await estable();
+    expect(p.cotizar.cotizar).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tipoServicio: 'trasteo',
+        detalle: expect.objectContaining({ objetos: 'Nevera y cama doble', ayudantes: 1 }),
+      }),
+    );
+  });
+
+  it('insumos pesados: el vehículo mínimo sube según los kilos', async () => {
+    const { el, estable } = await montarNuevo(puertosNuevoEnvio(), { servicio: 'insumos' });
+    escribir(q(el, '#det-insumo'), 'Abono');
+    escribir(q(el, '#det-peso'), '1500');
+    await estable();
+    expect(el.textContent).toContain(
+      '"El adecuado" es el más económico que puede llevar tu pedido (Camión)',
+    );
+  });
+
+  it('errorDetalle valida cada servicio como el backend', () => {
+    expect(errorDetalle('mandado', {})).toContain('qué hay que hacer');
+    expect(errorDetalle('trasteo', {})).toContain('trastear');
+    expect(errorDetalle('insumos', {})).toContain('insumo');
+    expect(errorDetalle('insumos', { insumo: 'Abono' })).toContain('peso');
+    expect(errorDetalle('paquete', { pesoKg: 999_999 })).toContain('entre 1 y');
+    expect(errorDetalle('paquete', {})).toBe('');
+  });
+
+  it('pedir de nuevo copia el pedido anterior', async () => {
+    const p = puertosNuevoEnvio();
+    p.envios.obtener.mockImplementation(async () =>
+      buildEnvio({
+        id: 7,
+        tipoServicio: 'insumos',
+        detalle: { insumo: 'Concentrado', pesoKg: 200, accesoDestapado: true },
+        origen: 'Agropecuaria El Campo',
+        destino: 'Vereda La Aguadita',
+        origenCoords: FUSA,
+        destinoCoords: SILVANIA,
+      }),
+    );
+    const { el, estable } = await montarNuevo(p, { repetir: '7' });
+    await estable();
+    expect(p.envios.obtener).toHaveBeenCalledWith(7);
+    expect(q<HTMLInputElement>(el, '#servicio-insumos').checked).toBe(true);
+    expect(q<HTMLInputElement>(el, '#det-insumo').value).toBe('Concentrado');
+    expect(q<HTMLInputElement>(el, '#origen').value).toBe('Agropecuaria El Campo');
+  });
+
+  it('las sugerencias rellenan qué se envía y se manda como tipo de carga', async () => {
+    const { el, p, estable, fixture } = await montarNuevo();
+    await llenarCotizacion(fixture);
+    botonPorTexto(el, 'Repuestos').click();
+    await estable();
+    expect(q<HTMLInputElement>(el, '#det-que').value).toBe('Repuestos');
+    calcular(el).click();
     await estable();
     confirmar(el).click();
     await estable();
     expect(p.envios.crear).toHaveBeenCalledWith(
-      expect.objectContaining({ tipoCarga: 'Bicicleta' }),
+      expect.objectContaining({ tipoCarga: 'Repuestos', tipoServicio: 'paquete' }),
     );
   });
 
   it('Dado una cotización vigente, cuando confirmo en efectivo, entonces crea el envío y muestra el PIN grande', async () => {
     const { el, p, estable, fixture } = await montarNuevo();
-    await llenarCotizacion(fixture, el);
+    p.envios.crear.mockImplementation(async () =>
+      buildEnvio({ id: 2, pin: '6175', tarifa: 31600, codigoRecogida: '4821' }),
+    );
+    await llenarCotizacion(fixture);
+    escribir(q(el, '#det-que'), 'Documentos');
     escribir(q(el, '#destNombre'), '  Ana  Pérez ');
     escribir(q(el, '#destTelefono'), '300 123 4567');
-    botonPorTexto(el, 'Cotizar').click();
+    calcular(el).click();
     await estable();
     confirmar(el).click();
     await estable();
@@ -275,7 +369,9 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
       }),
     );
     expect(q(el, '[aria-label="PIN de entrega: 6 1 7 5"]')).toBeTruthy();
-    expect(el.textContent).toContain('Avisamos a los conductores disponibles');
+    expect(el.textContent).toContain('Código de recogida');
+    expect(el.textContent).toContain('4821');
+    expect(el.textContent).toContain('Avisamos a los conductores cercanos');
     expect(el.textContent).not.toContain('distinta de la cotizada');
   });
 
@@ -292,13 +388,13 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
       buildEnvio({ id: 2, pin: '6175', tarifa: 31600, metodoPago: 'nequi', pago: PAGO_PENDIENTE }),
     );
     const { el, estable, fixture } = await montarNuevo(p);
-    await llenarCotizacion(fixture, el);
+    await llenarCotizacion(fixture);
     const nequi = Array.from(el.querySelectorAll('fieldset label')).find((l) =>
       l.textContent?.includes('Pagas ahora desde tu app'),
     ) as HTMLElement;
     q<HTMLInputElement>(nequi, 'input').click();
     await estable();
-    botonPorTexto(el, 'Cotizar').click();
+    calcular(el).click();
     await estable();
     expect(confirmar(el).textContent).toContain('Pagar con Nequi');
     escribir(q(el, '#telNequi'), '123');
@@ -318,16 +414,16 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
 
   it('agrega paradas (con recargo), exige ubicarlas y las envía en la cotización; también se pueden quitar', async () => {
     const { el, p, estable, fixture } = await montarNuevo();
-    await llenarCotizacion(fixture, el);
+    await llenarCotizacion(fixture);
     botonPorTexto(el, /Agregar una parada/).click();
     await estable();
     expect(el.textContent).toContain('Parada 1');
-    botonPorTexto(el, 'Cotizar').click();
+    calcular(el).click();
     await estable();
     expect(el.textContent).toContain('Ubícala');
     p.cotizar.cotizar.mockClear();
     ubicar(fixture, 'parada-1', 'Chinauta', { lat: 4.27, lon: -74.4 });
-    botonPorTexto(el, 'Cotizar').click();
+    calcular(el).click();
     await estable();
     expect(p.cotizar.cotizar).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -346,7 +442,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
 
   it('ida y vuelta y envío programado: valida la hora y la envía en la cotización', async () => {
     const { el, p, estable, fixture } = await montarNuevo();
-    await llenarCotizacion(fixture, el);
+    await llenarCotizacion(fixture);
     const opcion = (t: string) =>
       q<HTMLInputElement>(
         Array.from(el.querySelectorAll('fieldset label')).find((l) =>
@@ -369,7 +465,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     escribir(fecha, fechaLocalInput(valida));
     await estable();
     expect(el.querySelector('#fecha-error')).toBeNull();
-    botonPorTexto(el, 'Cotizar').click();
+    calcular(el).click();
     await estable();
     const pedido = p.cotizar.cotizar.mock.lastCall?.[0] as SolicitudCotizacion;
     expect(pedido.idaYVuelta).toBe(true);
@@ -383,12 +479,12 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
       desglose: { ...DESGLOSE, paradas: 2, recargoParadas: 3000, idaYVuelta: true },
     }));
     const { el, estable, fixture } = await montarNuevo(p);
-    await llenarCotizacion(fixture, el);
-    botonPorTexto(el, 'Cotizar').click();
+    await llenarCotizacion(fixture);
+    calcular(el).click();
     await estable();
     const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
     expect(texto).toContain('2 paradas');
-    expect(texto).toContain('(ida y vuelta)');
+    expect(texto).toContain('ida y vuelta $ 24.150');
   });
 
   it('errorFechaProgramada y fechaLocalInput', () => {
@@ -403,21 +499,21 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     const p = puertosNuevoEnvio();
     p.envios.crear.mockImplementation(async () => buildEnvio({ id: 2, tarifa: 41000 }));
     const { el, estable, fixture } = await montarNuevo(p);
-    await llenarCotizacion(fixture, el);
-    botonPorTexto(el, 'Cotizar').click();
+    await llenarCotizacion(fixture);
+    calcular(el).click();
     await estable();
     confirmar(el).click();
     await estable();
     expect(el.textContent).toContain('distinta de la cotizada');
-    botonPorTexto(el, 'Pedir otro envío').click();
+    botonPorTexto(el, 'Hacer otro pedido').click();
     await estable();
-    expect(el.textContent).toContain('Nuevo envío');
+    expect(el.textContent).toContain('Nuevo pedido');
   });
 
   it('debería invalidar la cotización si cambia una dirección', async () => {
     const { el, estable, fixture } = await montarNuevo();
-    await llenarCotizacion(fixture, el);
-    botonPorTexto(el, 'Cotizar').click();
+    await llenarCotizacion(fixture);
+    calcular(el).click();
     await estable();
     expect(confirmar(el).disabled).toBe(false);
     escribir(q(el, '#destino'), 'Pasca');
@@ -429,8 +525,8 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
   it('debería invalidar la cotización a los 15 minutos', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { el, fixture } = await montarNuevo();
-    await llenarCotizacion(fixture, el);
-    botonPorTexto(el, 'Cotizar').click();
+    await llenarCotizacion(fixture);
+    calcular(el).click();
     await vi.advanceTimersByTimeAsync(0);
     fixture.detectChanges();
     expect(confirmar(el).disabled).toBe(false);
@@ -444,8 +540,8 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     p.zonas.listar.mockImplementationOnce(rechaza(new ApiError(0, 'x')));
     p.envios.crear.mockImplementation(rechaza(new ApiError(500, 'Error interno del servidor')));
     const { el, estable, fixture } = await montarNuevo(p);
-    await llenarCotizacion(fixture, el);
-    botonPorTexto(el, 'Cotizar').click();
+    await llenarCotizacion(fixture);
+    calcular(el).click();
     await estable();
     confirmar(el).click();
     await estable();
@@ -457,7 +553,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     const { el, p, fixture } = await montarNuevo();
     const paso = pasoCon(fixture);
     expect(q<HTMLInputElement>(el, '#categoria').checked).toBe(true);
-    await llenarCotizacion(fixture, el);
+    await llenarCotizacion(fixture);
     await paso(ESPERA_AUTOCOTIZAR_MS);
     expect(p.cotizar.cotizar).toHaveBeenCalledTimes(1);
     const camioneta = Array.from(el.querySelectorAll('fieldset label')).find((l) =>
@@ -539,8 +635,8 @@ describe('E6-HU2 EnviosPage', () => {
     });
     await estable();
     expect(p.listar).toHaveBeenCalled();
-    expect(el.textContent).toContain('Envío #1');
-    expect(el.textContent).not.toContain('Envío #2');
+    expect(el.textContent).toContain('Paquete #1');
+    expect(el.textContent).not.toContain('Paquete #2');
     expect(q(el, '[aria-label="PIN oculto: • • • •"]')).toBeTruthy();
     expect(el.textContent).toContain('Con');
     botonPorTexto(el, 'Mostrar PIN').click();
@@ -548,7 +644,7 @@ describe('E6-HU2 EnviosPage', () => {
     expect(q(el, '[aria-label="PIN de entrega: 6 6 4 7"]')).toBeTruthy();
     q<HTMLButtonElement>(el, '#tab-historial').click();
     await estable();
-    expect(el.textContent).toContain('Envío #2');
+    expect(el.textContent).toContain('Paquete #2');
     expect(el.querySelector('[aria-label^="PIN"]')).toBeNull();
     q(el, '#tab-historial').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
     await estable();
@@ -566,7 +662,7 @@ describe('E6-HU2 EnviosPage', () => {
     expect(q(el, '[role="alert"]').textContent).toContain('No hay conexión');
     botonPorTexto(el, 'Reintentar').click();
     await estable();
-    expect(el.textContent).toContain('No tienes envíos en curso.');
+    expect(el.textContent).toContain('No tienes pedidos en curso.');
   });
 });
 
@@ -625,8 +721,12 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
       (li) => li.querySelector('p')?.textContent?.replace(' (estado actual)', '').trim(),
     );
     expect(pasos).toEqual(['Pendiente', 'Asignado', 'En Ruta', 'Entregado']);
-    expect(q(el, '[aria-current="step"]').textContent).toContain('Asignado');
-    expect(el.textContent).toContain('Un conductor tomó tu envío');
+    expect(
+      q(el, 'ol[aria-label="Recorrido del envío"] [aria-current="step"]').textContent,
+    ).toContain('Asignado');
+    expect(q(el, 'h1').textContent).toContain('Va a recoger');
+    expect(el.textContent).toContain('Tu conductor va hacia el punto de recogida.');
+    expect(el.querySelector('ti-etapas-servicio')).toBeTruthy();
     expect(el.querySelector('ti-mapa-envio')).toBeTruthy();
     expect(q(el, '[aria-label="PIN oculto: • • • •"]')).toBeTruthy();
     fixture.destroy();
@@ -682,7 +782,7 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
     p.tracking.seguimiento.mockImplementation(rechaza(new ApiError(0, 'x', 'SIN_CONEXION')));
     const r = await montarDetalle(p);
     await r.estable();
-    expect(r.el.textContent).toContain('Un conductor tomó tu envío');
+    expect(r.el.textContent).toContain('Tu conductor va hacia el punto de recogida.');
     expect(r.el.textContent).toContain('Sin señal aún');
     r.fixture.destroy();
   });
@@ -711,7 +811,7 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
     botonPorTexto(r.el, 'Sí, cancelar envío').click();
     await r.estable();
     expect(cancelar).toHaveBeenCalledWith(1, 'Ya no lo necesito');
-    expect(r.el.textContent).toContain('Este envío fue cancelado');
+    expect(r.el.textContent).toContain('Este servicio fue cancelado.');
     expect(r.el.textContent).toContain('Ya no lo necesito');
     expect(r.el.textContent).not.toContain('Sí, cancelar envío');
     r.fixture.destroy();
@@ -774,7 +874,7 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
     expect(r.el.textContent).toContain('Algo salió mal');
     botonPorTexto(r.el, 'Reintentar').click();
     await r.estable();
-    expect(r.el.textContent).toContain('Buscando un conductor');
+    expect(r.el.textContent).toContain('Buscando conductor');
     r.fixture.destroy();
   });
 });

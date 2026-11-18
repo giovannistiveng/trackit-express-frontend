@@ -1,6 +1,6 @@
 import { EnvironmentProviders, Provider, makeEnvironmentProviders } from '@angular/core';
 import { AppEnvironment } from '../environments/environment.model';
-import { Coordenadas, Notificacion, SugerenciaDireccion } from '../app/core/domain';
+import { Coordenadas, Notificacion, SugerenciaDireccion, RutaMapa } from '../app/core/domain';
 import { APP_CONFIG } from '../app/core/config/app-config';
 import {
   EventoLog,
@@ -214,6 +214,11 @@ export class FakeGeo implements GeoPort {
   readonly inversa = vi.fn(async (p: Coordenadas): Promise<SugerenciaDireccion | null> => {
     if (this.fallo) throw this.fallo;
     return { nombre: 'Calle falsa 123', detalle: 'Calle falsa 123, Fusagasugá', coords: p };
+  });
+  /** Ruta "por calles" falsa: une los puntos pedidos. */
+  readonly ruta = vi.fn(async (puntos: Coordenadas[]): Promise<RutaMapa> => {
+    if (this.fallo) throw this.fallo;
+    return { km: 4.5, minutos: 12, puntos, exacta: true };
   });
 }
 

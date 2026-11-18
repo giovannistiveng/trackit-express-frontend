@@ -12,7 +12,7 @@ import {
 } from '../../../testing/fakes';
 import { configurar, montar } from '../../../testing/pantallas';
 import { ApiError } from '../../core/http/api-error';
-import { EventoCarga, MensajeChat, Parada, PerfilConductor } from '../../core/domain';
+import { EventoCarga, MensajeChat, Parada, PerfilConductor, Requisito } from '../../core/domain';
 import {
   ChatPort,
   DeliveryPort,
@@ -33,7 +33,8 @@ import {
   MENSAJE_PIN_INCORRECTO,
 } from './components/entrega-modal.component';
 import { MENSAJE_PLACA_DUPLICADA, PerfilPage } from './perfil.page';
-import { ServicioPage } from './servicio.page';
+import { ServicioPage, accionDe } from './servicio.page';
+import { faltaRecogida } from './components/recogida-modal.component';
 import {
   CompartirUbicacionService,
   LATIDO_UBICACION_MS,
@@ -190,42 +191,138 @@ describe('CU-003 y CU-004 PerfilPage', () => {
     expect(obtener).toHaveBeenCalledTimes(2);
   });
 
-  it('debería mostrar tres tarjetas de documentos y el aviso de revisión si no está aprobado', async () => {
+  it('sin requisitos del backend muestra los documentos básicos y el aviso de revisión', async () => {
     const { el } = await montarPerfil(vehiculos(), { ...APROBADO, estadoAprobacion: 'Pendiente' });
-    expect(el.querySelectorAll('ti-documento-card')).toHaveLength(3);
+    expect(el.querySelectorAll('ti-documento-card')).toHaveLength(4);
     expect(el.textContent).toContain('Tu cuenta está en revisión');
+  });
+
+  it('con requisitos muestra una tarjeta por requisito y el avance', async () => {
+    const { el } = await montarPerfil(vehiculos(), {
+      ...APROBADO,
+      estadoAprobacion: 'Pendiente',
+      requisitos: {
+        completo: false,
+        pendientes: ['Falta SOAT'],
+        items: [
+          { ...REQ_CEDULA, estado: 'aprobado' },
+          { ...REQ_SOAT },
+          { ...REQ_CEDULA, tipo: 'Tecnomecánica', nombre: 'Tecnomecánica', obligatorio: false },
+        ],
+      },
+    });
+    expect(el.querySelectorAll('ti-documento-card')).toHaveLength(3);
+    expect(el.textContent?.replace(/\s+/g, ' ')).toMatch(/1\s*(de|\/)\s*2/);
   });
 });
 
+const REQ_CEDULA: Requisito = {
+  tipo: 'Cédula',
+  nombre: 'Cédula de ciudadanía',
+  ayuda: 'Por ambos lados',
+  obligatorio: true,
+  vence: false,
+  estado: 'falta',
+  verificar: null,
+  documento: null,
+};
+const REQ_SOAT: Requisito = { ...REQ_CEDULA, tipo: 'SOAT', nombre: 'SOAT', vence: true };
+
 describe('CU-004 DocumentoCardComponent', () => {
-  it('Dado un JPG válido, cuando lo subo, entonces muestra progreso y luego "en revisión" conservando la URL', async () => {
+  it('Dado un JPG válido, cuando lo subo, entonces muestra progreso y avisa el documento subido', async () => {
     const eventos = new Subject<EventoCarga>();
     const subir = vi.fn(() => eventos.asObservable());
     const { el, c, estable } = await montar(DocumentoCardComponent, {
-      inputs: { tipo: 'Cédula' },
+      inputs: { requisito: REQ_CEDULA },
       providers: [{ provide: DocumentsPort, useValue: { subir } }],
     });
+    const subidos: unknown[] = [];
+    c.subido.subscribe((d) => subidos.push(d));
     const archivo = new File(['x'], 'cedula.jpg', { type: 'image/jpeg' });
     URL.createObjectURL = vi.fn(() => 'blob:x');
     URL.revokeObjectURL = vi.fn();
     c.subir(archivo);
     eventos.next({ tipo: 'progreso', porcentaje: 40 });
     await estable();
-    expect(subir).toHaveBeenCalledWith(archivo, 'Cédula');
+    expect(subir).toHaveBeenCalledWith(archivo, 'Cédula', undefined);
     expect(q(el, '[role="progressbar"]').getAttribute('aria-valuenow')).toBe('40');
+    expect(el.textContent).toContain('Subiendo');
     eventos.next({
       tipo: 'completo',
       documento: { id: 3, tipo: 'Cédula', urlArchivo: 'https://c/x.jpg' },
     });
     await estable();
-    expect(el.textContent).toContain('Documento recibido, queda en revisión');
-    expect(c.documento()?.urlArchivo).toBe('https://c/x.jpg');
+    expect(c.estado()).toBe('reposo');
+    expect(subidos).toEqual([{ id: 3, tipo: 'Cédula', urlArchivo: 'https://c/x.jpg' }]);
+  });
+
+  it('un documento que vence exige la fecha antes de subirlo y la envía', async () => {
+    const subir = vi.fn(() => new Subject<EventoCarga>().asObservable());
+    const { el, c, estable } = await montar(DocumentoCardComponent, {
+      inputs: { requisito: REQ_SOAT },
+      providers: [{ provide: DocumentsPort, useValue: { subir } }],
+    });
+    expect(el.textContent).toContain('Primero indica la fecha de vencimiento');
+    const archivo = new File(['x'], 'soat.pdf', { type: 'application/pdf' });
+    c.subir(archivo);
+    expect(subir).not.toHaveBeenCalled();
+    c.vencimiento.set('2027-05-01');
+    await estable();
+    c.subir(archivo);
+    expect(subir).toHaveBeenCalledWith(archivo, 'SOAT', '2027-05-01');
+  });
+
+  it('muestra el motivo del rechazo y el aviso de vencimiento próximo', async () => {
+    const { el } = await montar(DocumentoCardComponent, {
+      inputs: {
+        requisito: {
+          ...REQ_SOAT,
+          estado: 'rechazado',
+          documento: {
+            id: 9,
+            tipo: 'SOAT',
+            urlArchivo: 'https://c/s.pdf',
+            estado: 'Rechazado',
+            motivoRechazo: 'Foto borrosa',
+            fechaVencimiento: '2027-01-10',
+            diasParaVencer: 3,
+          },
+        },
+      },
+      providers: [{ provide: DocumentsPort, useValue: { subir: vi.fn() } }],
+    });
+    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(texto).toContain('Corregir');
+    expect(texto).toContain('Motivo: Foto borrosa');
+    expect(texto).toContain('Vence en 3 días');
+  });
+
+  it('un documento aprobado oculta la carga hasta pedir reemplazarlo', async () => {
+    const { el, estable } = await montar(DocumentoCardComponent, {
+      inputs: {
+        requisito: {
+          ...REQ_CEDULA,
+          estado: 'aprobado',
+          documento: { id: 1, tipo: 'Cédula', urlArchivo: 'https://c/c.jpg', estado: 'Aprobado' },
+        },
+      },
+      providers: [{ provide: DocumentsPort, useValue: { subir: vi.fn() } }],
+    });
+    expect(el.querySelector('ti-carga-archivo')).toBeNull();
+    expect(el.textContent).toContain('Aprobado');
+    (
+      Array.from(el.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('Reemplazar'),
+      ) as HTMLButtonElement
+    ).click();
+    await estable();
+    expect(el.querySelector('ti-carga-archivo')).toBeTruthy();
   });
 
   it('debería mostrar el error traducido de multer', async () => {
     const eventos = new Subject<EventoCarga>();
     const { el, c, estable } = await montar(DocumentoCardComponent, {
-      inputs: { tipo: 'SOAT' },
+      inputs: { requisito: { ...REQ_SOAT, vence: false } },
       providers: [{ provide: DocumentsPort, useValue: { subir: () => eventos } }],
     });
     c.subir(new File(['x'], 's.pdf', { type: 'application/pdf' }));
@@ -238,7 +335,7 @@ describe('CU-004 DocumentoCardComponent', () => {
   it('Dado un formato no permitido, cuando lo elijo, entonces se rechaza en el cliente sin llamar a la API', async () => {
     const subir = vi.fn();
     const { el, estable } = await montar(DocumentoCardComponent, {
-      inputs: { tipo: 'Licencia' },
+      inputs: { requisito: { ...REQ_CEDULA, tipo: 'Licencia', nombre: 'Licencia' } },
       providers: [{ provide: DocumentsPort, useValue: { subir } }],
     });
     const input = q<HTMLInputElement>(el, 'input[type=file]');
@@ -526,6 +623,50 @@ function chatFalso() {
   };
 }
 
+describe('accionDe y faltaRecogida', () => {
+  it('una sola acción por etapa, con su bloqueo', () => {
+    const e = (o: Parameters<typeof buildEnvio>[0]) => buildEnvio({ pin: undefined, ...o });
+    expect(accionDe(e({ estado: 'Pendiente' }), '', 0)).toBeNull();
+    expect(accionDe(e({ estado: 'Asignado' }), '', 0)?.texto).toBe('Llegué a recoger');
+    expect(accionDe(e({ estado: 'Asignado', tipoServicio: 'mandado' }), '', 0)?.texto).toBe(
+      'Llegué al lugar',
+    );
+    const recoger = accionDe(
+      e({ estado: 'Asignado', etapa: 'en_recogida', pideCodigoRecogida: true }),
+      '',
+      0,
+    );
+    expect(recoger?.tipo).toBe('recoger');
+    expect(recoger?.ayuda).toContain('código de recogida');
+    expect(
+      accionDe(e({ estado: 'Asignado', etapa: 'en_recogida', tipoServicio: 'mercado' }), '', 0)
+        ?.ayuda,
+    ).toContain('factura');
+    expect(accionDe(e({ estado: 'Asignado', etapa: 'en_recogida' }), '', 0)?.ayuda).toContain(
+      'bultos',
+    );
+    expect(accionDe(e({ estado: 'En Ruta' }), '', 2)?.bloqueo).toContain('las 2 paradas');
+    expect(accionDe(e({ estado: 'En Ruta', etapa: 'regresando' }), '', 0)?.texto).toBe(
+      'Llegué al punto de entrega',
+    );
+    const fin = accionDe(e({ estado: 'En Ruta', etapa: 'en_destino' }), 'Falta algo', 0);
+    expect(fin?.tipo).toBe('finalizar');
+    expect(fin?.bloqueo).toBe('Falta algo');
+  });
+
+  it('la recogida exige código, bultos y foto según el servicio', () => {
+    const foto = new File(['x'], 'f.jpg');
+    const base = { pideCodigoRecogida: true, detalle: { bultos: 3 } };
+    expect(faltaRecogida(base, { codigo: '12', bultos: '3', foto })).toContain('código');
+    expect(faltaRecogida(base, { codigo: '1234', bultos: '', foto })).toContain('bultos');
+    expect(faltaRecogida(base, { codigo: '1234', bultos: '3', foto: null })).toContain('foto');
+    expect(faltaRecogida(base, { codigo: '1234', bultos: '3', foto })).toBe('');
+    expect(
+      faltaRecogida({ pideCodigoRecogida: false, detalle: null }, { codigo: '', bultos: '', foto }),
+    ).toBe('');
+  });
+});
+
 describe('ServicioPage', () => {
   function puertos(envio = buildEnvio({ id: 5, estado: 'Asignado', pin: undefined })) {
     return {
@@ -534,6 +675,15 @@ describe('ServicioPage', () => {
         activo: vi.fn(),
         obtener: vi.fn(async () => envio),
         iniciarRuta: vi.fn(async () => buildEnvio({ id: 5, estado: 'En Ruta', pin: undefined })),
+        llegadaRecogida: vi.fn(async () =>
+          buildEnvio({
+            id: 5,
+            estado: 'Asignado',
+            etapa: 'en_recogida',
+            pideCodigoRecogida: true,
+            pin: undefined,
+          }),
+        ),
         recoger: vi.fn(async () =>
           buildEnvio({
             id: 5,
@@ -546,7 +696,13 @@ describe('ServicioPage', () => {
           { ...PARADA, completadaEn: new Date() },
         ]),
         llegadaDestino: vi.fn(async () =>
-          buildEnvio({ id: 5, estado: 'En Ruta', idaYVuelta: true, destinoVisitadoEn: new Date() }),
+          buildEnvio({
+            id: 5,
+            estado: 'En Ruta',
+            etapa: 'regresando',
+            idaYVuelta: true,
+            destinoVisitadoEn: new Date(),
+          }),
         ),
       },
     };
@@ -579,7 +735,19 @@ describe('ServicioPage', () => {
     return { ...r, p };
   }
 
-  it('nunca muestra el PIN; desde Asignado pide la foto de recogida, que inicia la ruta', async () => {
+  /** Elige la foto en el modal de recogida. */
+  function elegirFoto(el: HTMLElement) {
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+    const input = q<HTMLInputElement>(el, '[role="dialog"] input[type=file]');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })],
+      configurable: true,
+    });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  it('nunca muestra el PIN y guía paso a paso: llegué, recojo con código, llegué y entrego', async () => {
     const { el, p, estable } = await montarServicio(
       puertos(
         buildEnvio({
@@ -593,52 +761,95 @@ describe('ServicioPage', () => {
     );
     expect(el.textContent).not.toContain('6647');
     expect(el.textContent).toMatch(/Cobra \$\s20\.000 en efectivo/);
-    expect(el.textContent).toContain('Recoge el paquete para poder finalizar');
-    botonPorTexto(el, 'Recogí el paquete').click();
+    // 1. Llegué a recoger
+    botonPorTexto(el, 'Llegué a recoger').click();
     await estable();
-    URL.createObjectURL = vi.fn(() => 'blob:x');
-    URL.revokeObjectURL = vi.fn();
-    const input = q<HTMLInputElement>(el, '[role="dialog"] input[type=file]');
-    Object.defineProperty(input, 'files', {
-      value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })],
-      configurable: true,
+    expect(p.servicio.llegadaRecogida).toHaveBeenCalledWith(5);
+    // 2. Recoger: exige el código de recogida y la foto
+    botonPorTexto(el, 'Recoger la carga').click();
+    await estable();
+    const confirmar = () => botonPorTexto(el, 'Confirmar y salir a entregar');
+    expect(confirmar().disabled).toBe(true);
+    expect(q(el, '[role="dialog"]').textContent).toContain('código de 4 dígitos');
+    escribir(q(el, '#rec-codigo'), '4821');
+    await estable();
+    elegirFoto(el);
+    await vi.waitFor(() => expect(confirmar().disabled).toBe(false));
+    confirmar().click();
+    await estable();
+    expect(p.servicio.recoger).toHaveBeenCalledWith(5, expect.any(File), {
+      codigo: '4821',
+      bultos: undefined,
+      valorCompra: undefined,
     });
-    input.dispatchEvent(new Event('change'));
-    await estable();
-    botonPorTexto(el, 'Confirmar recogida e iniciar ruta').click();
-    await estable();
-    expect(p.servicio.recoger).toHaveBeenCalledWith(5, expect.any(File));
     // Al recoger se comparte la ubicación sin que el conductor lo active a mano
     expect(q(el, '[role="switch"]').getAttribute('aria-checked')).toBe('true');
     expect(el.textContent).toContain('El cliente puede ver por dónde vas.');
     expect(q<HTMLAnchorElement>(el, '[aria-label="Cómo llegar al destino"]').href).toContain(
       'destination=',
     );
+    // 3. Llegué a entregar
+    p.servicio.llegadaDestino.mockImplementationOnce(async () =>
+      buildEnvio({ id: 5, estado: 'En Ruta', etapa: 'en_destino', pin: undefined }),
+    );
+    botonPorTexto(el, 'Llegué a entregar').click();
+    await estable();
+    // 4. Finalizar con el PIN de quien recibe
     botonPorTexto(el, 'Finalizar entrega').click();
     await estable();
-    expect(q(el, '[role="dialog"]')).toBeTruthy();
+    expect(q(el, '[role="dialog"]').textContent).toContain('PIN');
   });
 
   it('si la recogida falla, muestra el error en el modal', async () => {
-    const p = puertos();
+    const p = puertos(
+      buildEnvio({ id: 5, estado: 'Asignado', etapa: 'en_recogida', pin: undefined }),
+    );
     p.servicio.recoger.mockImplementation(
       rechaza(new ApiError(400, 'La foto debe ser JPG, PNG o WebP')),
     );
     const { el, estable } = await montarServicio(p);
-    botonPorTexto(el, 'Recogí el paquete').click();
+    botonPorTexto(el, 'Recoger la carga').click();
     await estable();
-    URL.createObjectURL = vi.fn(() => 'blob:x');
-    URL.revokeObjectURL = vi.fn();
-    const input = q<HTMLInputElement>(el, '[role="dialog"] input[type=file]');
-    Object.defineProperty(input, 'files', {
-      value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })],
-      configurable: true,
-    });
-    input.dispatchEvent(new Event('change'));
-    await estable();
-    botonPorTexto(el, 'Confirmar recogida e iniciar ruta').click();
+    elegirFoto(el);
+    await vi.waitFor(() =>
+      expect(botonPorTexto(el, 'Confirmar y salir a entregar').disabled).toBe(false),
+    );
+    botonPorTexto(el, 'Confirmar y salir a entregar').click();
     await estable();
     expect(q(el, '[role="dialog"] [role="alert"]').textContent).toContain('JPG, PNG o WebP');
+  });
+
+  it('en un mercado registra los bultos y el valor de la compra', async () => {
+    const p = puertos(
+      buildEnvio({
+        id: 5,
+        estado: 'Asignado',
+        etapa: 'en_recogida',
+        tipoServicio: 'mercado',
+        detalle: { lista: 'Arroz, panela', presupuesto: 60000, bultos: 2 },
+        pin: undefined,
+      }),
+    );
+    const { el, estable } = await montarServicio(p);
+    botonPorTexto(el, 'Ya compré, salir a entregar').click();
+    await estable();
+    expect(q(el, '[role="dialog"]').textContent).toContain('Registrar la compra');
+    elegirFoto(el);
+    await estable();
+    expect(q(el, '[role="dialog"]').textContent).toContain('Cuenta los bultos');
+    escribir(q(el, '#rec-bultos'), '2');
+    escribir(q(el, '#rec-compra'), '58300');
+    await estable();
+    await vi.waitFor(() =>
+      expect(botonPorTexto(el, 'Confirmar y salir a entregar').disabled).toBe(false),
+    );
+    botonPorTexto(el, 'Confirmar y salir a entregar').click();
+    await estable();
+    expect(p.servicio.recoger).toHaveBeenCalledWith(5, expect.any(File), {
+      codigo: undefined,
+      bultos: 2,
+      valorCompra: 58300,
+    });
   });
 
   it('con paradas y de ida y vuelta: marca la parada, la llegada y solo entonces deja entregar', async () => {
@@ -653,20 +864,19 @@ describe('ServicioPage', () => {
       metodoPago: 'nequi',
     });
     const { el, p, estable } = await montarServicio(puertos(envio));
-    expect(el.textContent).toContain('Pagado con Nequi');
+    expect(el.textContent).toContain('Servicio pagado con Nequi');
     expect(q<HTMLAnchorElement>(el, 'a[href^="tel:"]').href).toContain('3001234567');
     expect(q<HTMLAnchorElement>(el, 'a[href^="https://wa.me/573001234567"]')).toBeTruthy();
-    expect(botonPorTexto(el, 'Finalizar entrega').disabled).toBe(true);
-    expect(el.textContent).toContain('Te falta 1 parada');
+    expect(botonPorTexto(el, 'Llegué al destino, regreso').disabled).toBe(true);
+    expect(el.textContent).toContain('Primero marca la parada como hecha.');
     botonPorTexto(el, 'Marcar parada hecha').click();
     await estable();
     expect(p.servicio.completarParada).toHaveBeenCalledWith(5, 11);
-    expect(el.textContent).toContain('Marca la llegada al destino');
     botonPorTexto(el, 'Llegué al destino, regreso').click();
     await estable();
     expect(p.servicio.llegadaDestino).toHaveBeenCalledWith(5);
-    expect(botonPorTexto(el, 'Finalizar entrega').disabled).toBe(false);
     expect(q(el, '[aria-label="Cómo llegar al origen"]')).toBeTruthy();
+    expect(botonPorTexto(el, 'Llegué al punto de entrega').disabled).toBe(false);
   });
 
   it('errores al marcar parada o llegada se avisan', async () => {

@@ -41,6 +41,7 @@ const CAPACIDAD: Record<CategoriaVehiculo, number> = {
   'Moto Express': 1,
   Motocarro: 2,
   Camioneta: 3,
+  Camión: 4,
 };
 
 /** Categorías de pedido que ve un conductor con este vehículo (igual que el backend). */

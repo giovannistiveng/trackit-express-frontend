@@ -25,12 +25,29 @@ import { PerfilConductor } from '../../../core/domain';
         @if (conEnlace()) {
           <a routerLink="/conductor/perfil" class="btn-texto mt-2">Ir a mis documentos</a>
         }
+      } @else if (perfil()?.estadoAprobacion === 'Suspendido') {
+        <p class="font-bold">Tu cuenta está en pausa</p>
+        @if (perfil()?.motivoRechazo) {
+          <p class="mt-1 text-sm">{{ perfil()?.motivoRechazo }}.</p>
+        }
+        <p class="mt-1 text-sm">Sube el documento renovado y volverás a revisión.</p>
+        @if (conEnlace()) {
+          <a routerLink="/conductor/perfil" class="btn-texto mt-2">Ir a mis documentos</a>
+        }
       } @else {
         <p class="font-bold">Tu cuenta está en revisión</p>
-        <p class="mt-1 text-sm">
-          Podrás tomar servicios cuando un administrador apruebe tus documentos (cédula, SOAT y
-          licencia).
-        </p>
+        @if (perfil()?.requisitos?.pendientes?.length) {
+          <p class="mt-1 text-sm">Para que te aprueben falta:</p>
+          <ul class="mt-1 list-disc pl-5 text-sm">
+            @for (p of perfil()?.requisitos?.pendientes ?? []; track p) {
+              <li>{{ p }}</li>
+            }
+          </ul>
+        } @else {
+          <p class="mt-1 text-sm">
+            Un administrador está revisando tus documentos. Te avisamos apenas te aprueben.
+          </p>
+        }
         @if (conEnlace()) {
           <a routerLink="/conductor/perfil" class="btn-texto mt-2">Revisar mis documentos</a>
         }

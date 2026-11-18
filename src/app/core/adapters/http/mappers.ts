@@ -30,6 +30,14 @@ import {
   Ubicacion,
   Usuario,
   Zona,
+  DetalleServicio,
+  DocumentoConductor,
+  EstadoRequisito,
+  Requisitos,
+  TipoServicio,
+  esEtapa,
+  esTipoServicio,
+  etapaPorEstado,
 } from '../../domain';
 import {
   ApiConductor,
@@ -50,6 +58,9 @@ import {
   ApiTarifaVehiculo,
   ApiUsuarioLogin,
   ApiZona,
+  ApiDetalleServicio,
+  ApiDocumento,
+  ApiRequisitos,
 } from './backend.types';
 
 export function aEstado(valor: string): EstadoEnvio {
@@ -64,7 +75,104 @@ export function aRol(valor: string | number): Rol {
 }
 
 export function aEstadoAprobacion(valor: string): EstadoAprobacion {
-  return valor === 'Aprobado' || valor === 'Rechazado' ? valor : 'Pendiente';
+  return valor === 'Aprobado' || valor === 'Rechazado' || valor === 'Suspendido'
+    ? valor
+    : 'Pendiente';
+}
+
+export function aTipoServicio(v: string | null | undefined): TipoServicio {
+  return esTipoServicio(v) ? v : 'paquete';
+}
+
+/** Detalle del servicio: de snake_case a camelCase, solo los campos presentes. */
+export function aDetalle(d: ApiDetalleServicio | null | undefined): DetalleServicio | null {
+  if (!d) return null;
+  const pares: [keyof DetalleServicio, unknown][] = [
+    ['bultos', d.bultos],
+    ['pesoKg', d.peso_kg],
+    ['fragil', d.fragil],
+    ['contactoOrigenNombre', d.contacto_origen_nombre],
+    ['contactoOrigenTelefono', d.contacto_origen_telefono],
+    ['objetos', d.objetos],
+    ['pisosOrigen', d.pisos_origen],
+    ['pisosDestino', d.pisos_destino],
+    ['ascensorOrigen', d.ascensor_origen],
+    ['ascensorDestino', d.ascensor_destino],
+    ['ayudantes', d.ayudantes],
+    ['lista', d.lista],
+    ['presupuesto', d.presupuesto],
+    ['insumo', d.insumo],
+    ['accesoDestapado', d.acceso_destapado],
+  ];
+  return Object.fromEntries(
+    pares.filter(([, v]) => v !== undefined && v !== null),
+  ) as DetalleServicio;
+}
+
+/** Detalle para el backend (camelCase → snake_case), sin campos vacíos. */
+export function aDetalleApi(d: DetalleServicio): ApiDetalleServicio {
+  const pares: [keyof ApiDetalleServicio, unknown][] = [
+    ['bultos', d.bultos],
+    ['peso_kg', d.pesoKg],
+    ['fragil', d.fragil],
+    ['contacto_origen_nombre', d.contactoOrigenNombre?.trim()],
+    ['contacto_origen_telefono', d.contactoOrigenTelefono?.trim()],
+    ['objetos', d.objetos?.trim()],
+    ['pisos_origen', d.pisosOrigen],
+    ['pisos_destino', d.pisosDestino],
+    ['ascensor_origen', d.ascensorOrigen],
+    ['ascensor_destino', d.ascensorDestino],
+    ['ayudantes', d.ayudantes],
+    ['lista', d.lista?.trim()],
+    ['presupuesto', d.presupuesto],
+    ['insumo', d.insumo?.trim()],
+    ['acceso_destapado', d.accesoDestapado],
+  ];
+  return Object.fromEntries(
+    pares.filter(([, v]) => v !== undefined && v !== null && v !== ''),
+  ) as ApiDetalleServicio;
+}
+
+export function aDocumento(d: ApiDocumento): DocumentoConductor {
+  const doc: DocumentoConductor = {
+    tipo: aTipoDocumento(d.tipo_documento),
+    urlArchivo: d.url_archivo,
+  };
+  if (d.id !== undefined) doc.id = d.id;
+  if (d.estado)
+    doc.estado = d.estado === 'Aprobado' || d.estado === 'Rechazado' ? d.estado : 'Pendiente';
+  if (d.motivo_rechazo !== undefined) doc.motivoRechazo = d.motivo_rechazo;
+  if (d.fecha_vencimiento !== undefined) doc.fechaVencimiento = d.fecha_vencimiento;
+  if (d.dias_para_vencer !== undefined) doc.diasParaVencer = d.dias_para_vencer;
+  if (d.fecha_subida) doc.fechaSubida = new Date(d.fecha_subida);
+  return doc;
+}
+
+const ESTADOS_REQUISITO: EstadoRequisito[] = [
+  'falta',
+  'pendiente',
+  'aprobado',
+  'rechazado',
+  'vencido',
+];
+
+export function aRequisitos(r: ApiRequisitos): Requisitos {
+  return {
+    completo: r.completo,
+    pendientes: r.pendientes,
+    items: r.items.map((i) => ({
+      tipo: aTipoDocumento(i.tipo),
+      nombre: i.nombre,
+      ayuda: i.ayuda,
+      obligatorio: i.obligatorio,
+      vence: i.vence,
+      estado: (ESTADOS_REQUISITO as string[]).includes(i.estado)
+        ? (i.estado as EstadoRequisito)
+        : 'falta',
+      verificar: i.verificar,
+      documento: i.documento ? aDocumento(i.documento) : null,
+    })),
+  };
 }
 
 export function aUsuario(u: ApiUsuarioLogin): Usuario {
@@ -87,6 +195,8 @@ function aTipoDocumento(v: string): TipoDocumento {
 
 function copiarFechas(e: ApiEnvio, envio: Envio): void {
   if (e.fecha_creacion) envio.fechaCreacion = new Date(e.fecha_creacion);
+  if (e.llegada_recogida_en) envio.llegadaRecogidaEn = new Date(e.llegada_recogida_en);
+  if (e.llegada_destino_en) envio.llegadaDestinoEn = new Date(e.llegada_destino_en);
   if (e.fecha_ultimo_cambio) envio.fechaUltimoCambio = new Date(e.fecha_ultimo_cambio);
   if (e.fecha_programada) envio.fechaProgramada = new Date(e.fecha_programada);
   if (e.destino_visitado_en) envio.destinoVisitadoEn = new Date(e.destino_visitado_en);
@@ -109,13 +219,22 @@ function copiarServicio(e: ApiEnvio, envio: Envio): void {
   if (e.destino_coords) envio.destinoCoords = e.destino_coords;
   if (e.desglose) envio.desglose = aDesglose(e.desglose);
   if (e.ida_y_vuelta) envio.idaYVuelta = true;
-  if (e.url_foto_recogida) envio.urlFotoRecogida = e.url_foto_recogida;
   if (e.paradas) envio.paradas = e.paradas.map(aParada);
   if (e.chat_no_leidos !== undefined) envio.chatNoLeidos = e.chat_no_leidos;
 }
 
+/** Lo que el conductor registró al recoger: foto, bultos contados y valor de la compra. */
+function copiarRecogida(e: ApiEnvio, envio: Envio): void {
+  if (e.url_foto_recogida) envio.urlFotoRecogida = e.url_foto_recogida;
+  if (e.bultos_recogidos !== undefined && e.bultos_recogidos !== null)
+    envio.bultosRecogidos = e.bultos_recogidos;
+  if (e.valor_compra !== undefined && e.valor_compra !== null)
+    envio.valorCompra = Number(e.valor_compra);
+}
+
 function copiarPagoYDestinatario(e: ApiEnvio, envio: Envio, incluirPin: boolean): void {
   if (incluirPin && e.pin_seguridad) envio.pin = e.pin_seguridad;
+  if (incluirPin && e.codigo_recogida) envio.codigoRecogida = e.codigo_recogida;
   if (e.ganancia_conductor !== undefined) envio.gananciaConductor = Number(e.ganancia_conductor);
   if (e.metodo_pago) envio.metodoPago = e.metodo_pago === 'nequi' ? 'nequi' : 'efectivo';
   if (e.pago !== undefined) envio.pago = e.pago ? aPago(e.pago) : null;
@@ -146,10 +265,15 @@ export function aEnvio(e: ApiEnvio, incluirPin: boolean): Envio {
     idZona: e.id_zona,
     categoria: aCategoria(e.categoria) ?? null,
     historial,
+    tipoServicio: aTipoServicio(e.tipo_servicio),
+    detalle: aDetalle(e.detalle_servicio),
+    etapa: esEtapa(e.etapa) ? e.etapa : etapaPorEstado(aEstado(e.estado)),
+    pideCodigoRecogida: !!e.pide_codigo_recogida,
   };
   copiarFechas(e, envio);
   copiarCalificacion(e, envio);
   copiarServicio(e, envio);
+  copiarRecogida(e, envio);
   copiarPagoYDestinatario(e, envio, incluirPin);
   if (e.conductor) {
     envio.conductor = {
@@ -163,17 +287,20 @@ export function aEnvio(e: ApiEnvio, incluirPin: boolean): Envio {
 }
 
 export function aPostulante(c: ApiConductor): ConductorPostulante {
-  return {
+  const p: ConductorPostulante = {
     idConductor: c.id_conductor,
     nombre: c.nombre,
     correo: c.correo,
     estadoAprobacion: aEstadoAprobacion(c.estado_aprobacion),
     motivoRechazo: c.motivo_rechazo ?? null,
-    documentos: (c.documentos ?? []).map((d) => ({
-      tipo: aTipoDocumento(d.tipo_documento),
-      urlArchivo: d.url_archivo,
-    })),
+    documentos: (c.documentos ?? []).map(aDocumento),
   };
+  const categoria = aCategoria(c.vehiculo?.categoria);
+  if (c.vehiculo !== undefined)
+    p.vehiculo = c.vehiculo && categoria ? { placa: c.vehiculo.placa, categoria } : null;
+  if (c.requisitos) p.requisitos = aRequisitos(c.requisitos);
+  if (c.consultas) p.consultas = c.consultas;
+  return p;
 }
 
 export function aUbicacion(p: ApiPunto): Ubicacion {
@@ -270,6 +397,8 @@ export function aDesglose(d: ApiDesglose): DesgloseTarifa {
     paradas: Number(d.paradas ?? 0),
     recargoParadas: Number(d.recargo_paradas ?? 0),
     idaYVuelta: !!d.ida_y_vuelta,
+    extras: (d.extras ?? []).map((x) => ({ concepto: x.concepto, valor: Number(x.valor) })),
+    recargoAcceso: Number(d.recargo_acceso ?? 0),
     recargoNocturno: Number(d.recargo_nocturno),
     minimoAplicado: !!d.minimo_aplicado,
     total: Number(d.total),
@@ -315,6 +444,9 @@ export function aCotizacion(r: ApiCotizacion): Cotizacion {
   if (r.recargo_nocturno_activo !== undefined) c.nocturno = r.recargo_nocturno_activo;
   if (r.origen_coords !== undefined) c.origenCoords = r.origen_coords;
   if (r.destino_coords !== undefined) c.destinoCoords = r.destino_coords;
+  if (r.tipo_servicio) c.tipoServicio = aTipoServicio(r.tipo_servicio);
+  const minimo = aCategoria(r.vehiculo_minimo);
+  if (minimo) c.vehiculoMinimo = minimo;
   return c;
 }
 
@@ -385,6 +517,8 @@ export function aSeguimientoPublico(s: ApiSeguimientoPublico): SeguimientoPublic
   return {
     codigo: s.codigo,
     estado: aEstado(s.estado),
+    etapa: esEtapa(s.etapa) ? s.etapa : etapaPorEstado(aEstado(s.estado)),
+    tipoServicio: aTipoServicio(s.tipo_servicio),
     origen: s.origen,
     destino: s.destino,
     destinatario: s.destinatario,

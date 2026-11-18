@@ -103,8 +103,8 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
       </title>
       <defs>
         <linearGradient id="cielo" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#ffedd5" />
-          <stop offset="1" stop-color="#fff7ed" />
+          <stop offset="0" stop-color="#e1efe8" />
+          <stop offset="1" stop-color="#f2f8f4" />
         </linearGradient>
         <linearGradient id="montana-lejana" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="#a7c9b8" />
@@ -123,8 +123,8 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 
       <g clip-path="url(#marco)">
         <rect width="640" height="520" fill="url(#cielo)" />
-        <circle cx="488" cy="128" r="62" fill="#fdba74" opacity="0.55" />
-        <circle cx="488" cy="128" r="38" fill="#fb923c" opacity="0.5" />
+        <circle cx="488" cy="128" r="62" fill="#8cc4a7" opacity="0.55" />
+        <circle cx="488" cy="128" r="38" fill="#3f8f6c" opacity="0.5" />
 
         <g class="nube" fill="#fff" opacity="0.9">
           <ellipse cx="80" cy="92" rx="46" ry="14" />
@@ -151,13 +151,13 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 
         <!-- Pueblo -->
         <g transform="translate(470 196)">
-          <rect x="0" y="22" width="34" height="26" fill="#fff7ed" />
-          <path d="M-4 24 L17 6 L38 24Z" fill="#c2410c" />
-          <rect x="12" y="34" width="10" height="14" fill="#9a3412" />
-          <rect x="42" y="30" width="28" height="20" fill="#ffedd5" />
-          <path d="M38 32 L56 17 L74 32Z" fill="#9a3412" />
+          <rect x="0" y="22" width="34" height="26" fill="#f2f8f4" />
+          <path d="M-4 24 L17 6 L38 24Z" fill="#0b5d45" />
+          <rect x="12" y="34" width="10" height="14" fill="#074332" />
+          <rect x="42" y="30" width="28" height="20" fill="#e1efe8" />
+          <path d="M38 32 L56 17 L74 32Z" fill="#074332" />
           <rect x="76" y="14" width="18" height="36" fill="#fff" />
-          <path d="M73 16 L85 2 L97 16Z" fill="#c2410c" />
+          <path d="M73 16 L85 2 L97 16Z" fill="#0b5d45" />
           <rect x="82" y="22" width="6" height="8" fill="#f5c518" />
         </g>
         <g fill="#24543f">
@@ -171,7 +171,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
         <path
           d="M60 452 C 150 430, 170 380, 250 372 S 380 360, 420 318 S 470 250, 520 236"
           fill="none"
-          stroke="#3b332e"
+          stroke="#24302a"
           stroke-width="26"
           stroke-linecap="round"
         />
@@ -179,7 +179,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
           class="linea-carretera"
           d="M60 452 C 150 430, 170 380, 250 372 S 380 360, 420 318 S 470 250, 520 236"
           fill="none"
-          stroke="#fde68a"
+          stroke="#fbe38a"
           stroke-width="3"
           stroke-linecap="round"
         />
@@ -188,7 +188,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
         <g class="pin" transform="translate(44 382)">
           <path
             d="M16 0C7 0 0 7 0 15.5 0 27 16 40 16 40s16-13 16-24.5C32 7 25 0 16 0Z"
-            fill="#1f1a17"
+            fill="#142019"
           />
           <circle cx="16" cy="15" r="6" fill="#fff" />
         </g>
@@ -196,41 +196,41 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
         <g class="pin" style="animation-delay: 0.6s" transform="translate(512 168)">
           <path
             d="M20 0C9 0 0 9 0 19.5 0 34 20 50 20 50s20-16 20-30.5C40 9 31 0 20 0Z"
-            fill="#c2410c"
+            fill="#0b5d45"
           />
-          <circle cx="20" cy="19" r="8" fill="#f5c518" stroke="#1f1a17" stroke-width="2" />
+          <circle cx="20" cy="19" r="8" fill="#f5c518" stroke="#142019" stroke-width="2" />
         </g>
 
         <!-- Moto con el mensajero -->
         <g class="moto">
           <g transform="translate(-34 -46)">
-            <circle class="rueda" cx="14" cy="40" r="10" fill="#1f1a17" />
-            <circle cx="14" cy="40" r="4" fill="#d6d3d1" />
-            <circle class="rueda" cx="56" cy="40" r="10" fill="#1f1a17" />
-            <circle cx="56" cy="40" r="4" fill="#d6d3d1" />
+            <circle class="rueda" cx="14" cy="40" r="10" fill="#142019" />
+            <circle cx="14" cy="40" r="4" fill="#cfd8d3" />
+            <circle class="rueda" cx="56" cy="40" r="10" fill="#142019" />
+            <circle cx="56" cy="40" r="4" fill="#cfd8d3" />
             <path
               d="M14 40 L28 26 L46 26 L56 40"
               fill="none"
-              stroke="#57534e"
+              stroke="#4f5b55"
               stroke-width="4"
               stroke-linecap="round"
             />
-            <path d="M24 26 h26 l6 -8 h-8 Z" fill="#c2410c" />
+            <path d="M24 26 h26 l6 -8 h-8 Z" fill="#0b5d45" />
             <rect
               x="2"
               y="8"
               width="24"
               height="18"
               rx="3"
-              fill="#c2410c"
-              stroke="#9a3412"
+              fill="#0b5d45"
+              stroke="#074332"
               stroke-width="2"
             />
             <rect x="8" y="13" width="12" height="7" rx="1.5" fill="#f5c518" />
-            <path d="M36 26 L40 8" stroke="#1f1a17" stroke-width="7" stroke-linecap="round" />
-            <path d="M40 10 L52 18" stroke="#1f1a17" stroke-width="5" stroke-linecap="round" />
-            <circle cx="40" cy="2" r="7" fill="#c2410c" />
-            <path d="M42 -1 h6 v5 h-6Z" fill="#1f1a17" opacity="0.8" />
+            <path d="M36 26 L40 8" stroke="#142019" stroke-width="7" stroke-linecap="round" />
+            <path d="M40 10 L52 18" stroke="#142019" stroke-width="5" stroke-linecap="round" />
+            <circle cx="40" cy="2" r="7" fill="#0b5d45" />
+            <path d="M42 -1 h6 v5 h-6Z" fill="#142019" opacity="0.8" />
           </g>
         </g>
       </g>

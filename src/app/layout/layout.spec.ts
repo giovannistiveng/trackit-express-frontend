@@ -20,7 +20,7 @@ const cuentaFalsa = () => ({ reenviarVerificacion: vi.fn(async () => undefined) 
 
 describe('ShellComponent', () => {
   it.each([
-    [CLIENTE, ['Nuevo envío', 'Mis envíos'], 'Cliente'],
+    [CLIENTE, ['Inicio', 'Pedir', 'Pedidos', 'Cuenta'], 'Cliente'],
     [CONDUCTOR, ['Servicios', 'Ganancias', 'Mi perfil'], 'Conductor'],
     [
       ADMIN,

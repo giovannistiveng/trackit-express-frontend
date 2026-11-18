@@ -3,29 +3,31 @@
 @theme {
   --font-sans: 'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
-  --color-marca: #c2410c;
-  --color-marca-oscuro: #9a3412;
-  --color-marca-suave: #ffedd5;
+  /* Verde monte (Sumapaz) y amarillo placa: la identidad de TrackIt */
+  --color-marca: #0b5d45;
+  --color-marca-oscuro: #074332;
+  --color-marca-suave: #e1efe8;
   --color-placa: #f5c518;
-  --color-placa-oscuro: #8a6a00;
-  --color-tinta: #1f1a17;
-  --color-niebla: #f6f3ef;
+  --color-placa-oscuro: #7a5d00;
+  --color-tinta: #142019;
+  --color-niebla: #eef2ef;
   --color-papel: #ffffff;
-  --color-piedra: #5c534d;
-  --color-linea: #e3dcd4;
+  --color-piedra: #56635c;
+  --color-linea: #d7dfda;
   --color-alerta: #b42318;
   --color-alerta-suave: #fdecea;
-  --color-exito: #1e7a46;
-  --color-exito-suave: #e3f4ea;
-  --color-aviso-suave: #fff6d6;
-  --color-crema: #fffaf5;
-  --color-noche: #1c1512;
-  --color-bosque: #2f6b55;
-  --color-bosque-suave: #e6f1ec;
+  --color-exito: #177245;
+  --color-exito-suave: #e2f3e9;
+  --color-aviso-suave: #fff5cf;
+  --color-crema: #f7faf8;
+  --color-noche: #0e1a15;
+  --color-bosque: #0b5d45;
+  --color-bosque-suave: #e1efe8;
 
-  --shadow-suave: 0 1px 2px rgb(31 26 23 / 0.04), 0 4px 16px -4px rgb(31 26 23 / 0.08);
-  --shadow-elevada: 0 2px 4px rgb(31 26 23 / 0.05), 0 18px 40px -12px rgb(31 26 23 / 0.22);
-  --shadow-marca: 0 10px 30px -10px rgb(194 65 12 / 0.55);
+  --shadow-suave: 0 1px 2px rgb(20 32 25 / 0.05), 0 4px 16px -6px rgb(20 32 25 / 0.1);
+  --shadow-elevada: 0 2px 4px rgb(20 32 25 / 0.06), 0 18px 40px -14px rgb(20 32 25 / 0.28);
+  --shadow-marca: 0 10px 24px -12px rgb(11 93 69 / 0.6);
+  --shadow-hoja: 0 -8px 30px -12px rgb(20 32 25 / 0.25);
 
   --animate-aparecer: aparecer 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-flotar: flotar 5s ease-in-out infinite;
@@ -57,10 +59,10 @@
 
 @keyframes pulso {
   0% {
-    box-shadow: 0 0 0 0 rgb(194 65 12 / 0.55);
+    box-shadow: 0 0 0 0 rgb(11 93 69 / 0.5);
   }
   100% {
-    box-shadow: 0 0 0 16px rgb(194 65 12 / 0);
+    box-shadow: 0 0 0 16px rgb(11 93 69 / 0);
   }
 }
 
@@ -217,9 +219,9 @@
   @apply tarjeta hover:-translate-y-1 hover:border-marca/30 hover:shadow-[var(--shadow-elevada)];
 }
 
-/* Antetítulo de sección: "CÓMO FUNCIONA" */
+/* Etiqueta corta sobre un bloque: verde, en minúscula normal */
 @utility antetitulo {
-  @apply inline-flex items-center gap-2 text-xs font-bold tracking-[0.14em] text-marca uppercase;
+  @apply inline-flex items-center gap-2 text-sm font-bold text-marca;
 }
 
 @utility insignia {
@@ -229,18 +231,38 @@
 /* Bloque gris animado mientras carga */
 @utility esqueleto {
   @apply rounded-lg;
-  background: linear-gradient(90deg, #eee7df 25%, #f8f3ee 50%, #eee7df 75%);
+  background: linear-gradient(90deg, #e3e9e5 25%, #f2f5f3 50%, #e3e9e5 75%);
   background-size: 200% 100%;
   animation: var(--animate-brillo);
 }
 
 @utility fondo-puntos {
-  background-image: radial-gradient(rgb(194 65 12 / 0.13) 1px, transparent 1px);
+  background-image: radial-gradient(rgb(11 93 69 / 0.12) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 
 @utility numeros {
   font-variant-numeric: tabular-nums;
+}
+
+/* Placa colombiana: fondo amarillo, borde negro y letras anchas. También muestra los códigos */
+@utility placa-co {
+  @apply inline-flex items-center justify-center rounded-md border-2 border-tinta bg-placa px-2.5 py-0.5 font-extrabold text-tinta numeros;
+  font-stretch: 125%;
+  letter-spacing: 0.06em;
+  box-shadow:
+    inset 0 0 0 2px var(--color-placa),
+    inset 0 0 0 3px rgb(20 32 25 / 0.35);
+}
+
+/* Hoja inferior (bottom sheet) sobre el mapa en móvil */
+@utility hoja {
+  @apply rounded-t-3xl bg-papel shadow-[var(--shadow-hoja)];
+}
+
+/* Chip seleccionable */
+@utility chip {
+  @apply inline-flex min-h-9 items-center gap-1.5 rounded-full border border-linea bg-papel px-3 text-sm font-semibold text-tinta transition-colors hover:border-marca;
 }
 
 .sr-only-focusable:not(:focus) {
@@ -303,13 +325,37 @@
 }
 .leaflet-container {
   font-family: inherit;
+  background: #e6ece8;
+}
+/* Teselas un poco menos saturadas: la ruta y los marcadores resaltan */
+.mapa-base {
+  filter: saturate(0.55) brightness(1.03) contrast(0.96);
+}
+/* Pin con letra (A recoger, B entregar, números para paradas) */
+.pin-mapa {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 9999px 9999px 9999px 0;
+  transform: rotate(-45deg);
+  background: var(--pin);
+  border: 3px solid #fff;
+  box-shadow: 0 6px 14px -6px rgb(20 32 25 / 0.55);
+}
+.pin-mapa > b {
+  transform: rotate(45deg);
+  font-size: 0.8rem;
+  font-weight: 800;
+  font-stretch: 120%;
 }
 /* Nombre de la zona dentro de su círculo (editor y mapa de cobertura) */
 .leaflet-tooltip.etiqueta-zona {
   background: transparent;
   border: 0;
   box-shadow: none;
-  color: #1f6f4a;
+  color: #0b5d45;
   font-weight: 700;
   font-size: 0.75rem;
   text-shadow:

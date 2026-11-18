@@ -2,7 +2,16 @@ import { TestBed } from '@angular/core/testing';
 import { buildEnvio } from '../../../../testing/fixtures';
 import { Seguimiento } from '../../../core/domain';
 import { LineaTiempoComponent } from './linea-tiempo.component';
-import { MapaEnvioComponent } from '../../../shared/ui/mapa-envio.component';
+import { DesgloseTarifaComponent } from './desglose-tarifa.component';
+import { EtapasServicioComponent } from '../../../shared/ui/etapas-servicio.component';
+import {
+  MapaEnvioComponent,
+  claveRuta,
+  describirMapa,
+  interpolar,
+} from '../../../shared/ui/mapa-envio.component';
+import { FakeGeo } from '../../../../testing/fakes';
+import { GeoPort } from '../../../core/ports';
 
 describe('LineaTiempoComponent', () => {
   async function montar(
@@ -45,6 +54,57 @@ describe('LineaTiempoComponent', () => {
   });
 });
 
+describe('DesgloseTarifaComponent y EtapasServicioComponent', () => {
+  it('el desglose lista extras, acceso destapado, nocturno y tarifa mínima', async () => {
+    const f = TestBed.createComponent(DesgloseTarifaComponent);
+    f.componentRef.setInput('desglose', {
+      categoria: 'Camioneta',
+      banderazo: 10000,
+      distancia: 8000,
+      tiempo: 2000,
+      recargoZona: 0,
+      paradas: 1,
+      recargoParadas: 1500,
+      idaYVuelta: false,
+      extras: [
+        { concepto: '2 ayudantes', valor: 50000 },
+        { concepto: 'Escaleras (3 pisos)', valor: 12000 },
+      ],
+      recargoAcceso: 3000,
+      recargoNocturno: 4000,
+      minimoAplicado: true,
+      total: 90500,
+    });
+    f.componentRef.setInput('abierto', true);
+    await f.whenStable();
+    const t = (f.nativeElement as HTMLElement).textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(t).toContain('1 parada');
+    expect(t).toMatch(/2 ayudantes\s*\$ 50\.000/);
+    expect(t).toMatch(/Escaleras \(3 pisos\)\s*\$ 12\.000/);
+    expect(t).toMatch(/Vía destapada o finca \(15 %\)\s*\$ 3\.000/);
+    expect(t).toContain('Recargo nocturno (20 %)');
+    expect(t).toContain('tarifa mínima');
+    expect(t).not.toContain('Recargo de zona');
+  });
+
+  it('las etapas marcan lo hecho, el paso actual y el regreso en ida y vuelta', async () => {
+    const f = TestBed.createComponent(EtapasServicioComponent);
+    f.componentRef.setInput('etapa', 'en_camino');
+    f.componentRef.setInput('rol', 'conductor');
+    await f.whenStable();
+    const el = f.nativeElement as HTMLElement;
+    expect(el.querySelector('[aria-current="step"]')?.textContent).toContain('En camino');
+    expect(el.textContent).toContain('(hecho)');
+    f.componentRef.setInput('etapa', 'regresando');
+    f.componentRef.setInput('idaYVuelta', true);
+    await f.whenStable();
+    expect(el.textContent).toContain('De regreso');
+    f.componentRef.setInput('etapa', 'cancelado');
+    await f.whenStable();
+    expect(el.textContent).toContain('Este servicio fue cancelado.');
+  });
+});
+
 describe('MapaEnvioComponent', () => {
   const seguimiento = (lat: number): Seguimiento => ({
     idEnvio: 1,
@@ -62,6 +122,8 @@ describe('MapaEnvioComponent', () => {
   });
 
   it('debería dibujar origen, destino, recorrido y el conductor en vivo, y moverlo', async () => {
+    const geo = new FakeGeo();
+    TestBed.configureTestingModule({ providers: [{ provide: GeoPort, useValue: geo }] });
     const f = TestBed.createComponent(MapaEnvioComponent);
     f.componentRef.setInput('seguimiento', seguimiento(4.34));
     await f.whenStable();
@@ -83,6 +145,36 @@ describe('MapaEnvioComponent', () => {
     expect(el.querySelector('[role="img"]')?.getAttribute('aria-label')).toContain(
       'rumbo a Silvania',
     );
+    // La ruta por calles se pide una sola vez y su distancia se muestra en el mapa
+    await vi.waitFor(() => expect(el.textContent).toContain('4.5 km'));
+    expect(geo.ruta).toHaveBeenCalledTimes(1);
     f.destroy();
+  });
+
+  it('si la ruta por calles falla, el mapa sigue sin ella', async () => {
+    const geo = new FakeGeo();
+    geo.fallo = new Error('sin red');
+    TestBed.configureTestingModule({ providers: [{ provide: GeoPort, useValue: geo }] });
+    const f = TestBed.createComponent(MapaEnvioComponent);
+    f.componentRef.setInput('seguimiento', seguimiento(4.34));
+    await f.whenStable();
+    const el = f.nativeElement as HTMLElement;
+    await vi.waitFor(() => expect(el.querySelectorAll('.leaflet-marker-icon')).toHaveLength(3), {
+      timeout: 5000,
+    });
+    await vi.waitFor(() => expect(geo.ruta).toHaveBeenCalled());
+    expect(el.textContent).not.toContain('por carretera');
+    f.destroy();
+  });
+
+  it('utilidades: clave de ruta, interpolación y descripción accesible', () => {
+    const a = { lat: 4, lon: -74 };
+    const b = { lat: 5, lon: -73 };
+    expect(claveRuta([a, b])).toBe('4.00000,-74.00000;5.00000,-73.00000');
+    expect(interpolar(a, b, 0.5)).toEqual({ lat: 4.5, lon: -73.5 });
+    expect(interpolar(a, b, 2)).toEqual(b);
+    expect(interpolar(a, b, -1)).toEqual(a);
+    expect(describirMapa(null, null)).toBe('Mapa del envío');
+    expect(describirMapa(seguimiento(4.34), null)).toContain('de Casco Urbano a Silvania');
   });
 });

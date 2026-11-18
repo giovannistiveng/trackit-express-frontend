@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { DesgloseTarifa } from '../../../core/domain';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
-/** Partidas del precio: banderazo, distancia, tiempo, recargos y total. */
+/** Partidas del precio: banderazo, distancia, tiempo, recargos, extras del servicio y total. */
 @Component({
   selector: 'ti-desglose-tarifa',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -24,11 +24,11 @@ import { CopPipe } from '../../../shared/pipes/cop.pipe';
         <dt>Banderazo ({{ d.categoria }})</dt>
         <dd class="text-right">{{ d.banderazo | cop }}</dd>
         <dt>
-          Distancia{{ distanciaKm() !== null ? ' · ' + distanciaKm() + ' km' : ''
-          }}{{ d.idaYVuelta ? ' (ida y vuelta)' : '' }}
+          Distancia{{ distanciaKm() !== null ? ' (' + distanciaKm() + ' km)' : ''
+          }}{{ d.idaYVuelta ? ', ida y vuelta' : '' }}
         </dt>
         <dd class="text-right">{{ d.distancia | cop }}</dd>
-        <dt>Tiempo{{ minutos() !== null ? ' · ' + minutos() + ' min' : '' }}</dt>
+        <dt>Tiempo{{ minutos() !== null ? ' (' + minutos() + ' min)' : '' }}</dt>
         <dd class="text-right">{{ d.tiempo | cop }}</dd>
         @if (d.minimoAplicado) {
           <dt class="col-span-2 text-xs italic">
@@ -36,12 +36,20 @@ import { CopPipe } from '../../../shared/pipes/cop.pipe';
           </dt>
         }
         @if (d.recargoZona > 0) {
-          <dt>Recargo de zona{{ zona() ? ' · ' + zona() : '' }}</dt>
+          <dt>Recargo de zona{{ zona() ? ' (' + zona() + ')' : '' }}</dt>
           <dd class="text-right">{{ d.recargoZona | cop }}</dd>
         }
         @if (d.recargoParadas > 0) {
           <dt>{{ d.paradas }} {{ d.paradas === 1 ? 'parada' : 'paradas' }}</dt>
           <dd class="text-right">{{ d.recargoParadas | cop }}</dd>
+        }
+        @for (x of d.extras; track x.concepto) {
+          <dt>{{ x.concepto }}</dt>
+          <dd class="text-right">{{ x.valor | cop }}</dd>
+        }
+        @if (d.recargoAcceso > 0) {
+          <dt>Vía destapada o finca (15 %)</dt>
+          <dd class="text-right">{{ d.recargoAcceso | cop }}</dd>
         }
         @if (d.recargoNocturno > 0) {
           <dt>Recargo nocturno (20 %)</dt>

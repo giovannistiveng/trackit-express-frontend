@@ -1,8 +1,8 @@
 import { Type } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ADMIN, buildEnvio } from '../../../testing/fixtures';
 import { FakeAdminMetrics } from '../../../testing/admin-fake';
-import { botonPorTexto, elegir, escribir, q, rechaza } from '../../../testing/fakes';
+import { FakeGeo, botonPorTexto, elegir, escribir, q, rechaza } from '../../../testing/fakes';
 import { montar } from '../../../testing/pantallas';
 import {
   DatosZona,
@@ -17,7 +17,7 @@ import {
 import { SelectorMapaComponent } from '../../shared/ui/selector-mapa.component';
 import { By } from '@angular/platform-browser';
 import { ApiError } from '../../core/http/api-error';
-import { AdminMetricsPort, AdminOperationsPort, ZonesPort } from '../../core/ports';
+import { AdminMetricsPort, AdminOperationsPort, GeoPort, ZonesPort } from '../../core/ports';
 import { ToastService } from '../../shared/ui/toast.service';
 import { DashboardPage } from './dashboard.page';
 import { EnviosAdminPage, TAMANO_PAGINA_ENVIOS } from './envios-admin.page';
@@ -301,9 +301,10 @@ describe('ZonasPage', () => {
 
   it('lista las zonas con su estado y crea una zona nueva con el mapa', async () => {
     const { el, ops, estable, fixture } = await montarAdmin(ZonasPage);
-    expect(texto(el)).toContain('Sin recargo · 3.5 km');
-    expect(texto(el)).toContain('sin ubicar en el mapa');
-    expect(texto(el)).toContain('desactivada');
+    expect(texto(el)).toMatch(/Sin recargo\s*3\.5 km de radio/);
+    expect(texto(el)).toContain('Sin ubicar en el mapa');
+    expect(texto(el)).toContain('2 activas');
+    expect(texto(el)).toContain('1 desactivada');
     botonPorTexto(el, /Nueva zona/).click();
     await estable();
     botonPorTexto(el, /Crear zona/).click();
@@ -321,7 +322,7 @@ describe('ZonasPage', () => {
     cambiar(q(el, '#zona-radio'), '4');
     escribir(q(el, '#zona-descripcion'), 'Condominios');
     await estable();
-    expect(el.textContent).toContain('Centro: 4.27000, -74.44000');
+    expect(el.textContent).toContain('Centro en 4.27000, -74.44000');
     botonPorTexto(el, /Crear zona/).click();
     await estable();
     expect(ops.crearZona).toHaveBeenCalledWith({
@@ -356,7 +357,7 @@ describe('ZonasPage', () => {
       2,
       expect.objectContaining({ activa: false, nombre: 'Silvania' }),
     );
-    expect(texto(el)).toMatch(/Silvania Recargo \$\s2\.000 · 3 km · desactivada/);
+    expect(texto(el)).toMatch(/Silvania\s*Recargo \$\s2\.000\s*3 km de radio\s*Desactivada/);
     q<HTMLButtonElement>(el, '[aria-label="Editar la zona Casco Urbano"]').click();
     await estable();
     cambiar(q(el, '#zona-recargo'), '300000');
@@ -367,6 +368,76 @@ describe('ZonasPage', () => {
     botonPorTexto(el, 'Cancelar').click();
     await estable();
     expect(el.querySelector('#zona-nombre')).toBeNull();
+  });
+});
+
+describe('ZonasPage: mapa de cobertura', () => {
+  const texto = (el: HTMLElement) => el.textContent?.replace(/\s+/g, ' ') ?? '';
+  const mapaDe = (fixture: ComponentFixture<unknown>) =>
+    fixture.debugElement.query(By.directive(SelectorMapaComponent))
+      .componentInstance as SelectorMapaComponent;
+
+  it('al tocar el mapa dice si el punto tiene cobertura y ofrece crear una zona si no', async () => {
+    const { el, estable, fixture } = await montarAdmin(ZonasPage);
+    // Dentro de Silvania (activa, 3 km)
+    mapaDe(fixture).elegir.emit({ lat: 4.404, lon: -74.388 });
+    await estable();
+    expect(texto(el)).toContain('Este punto tiene servicio en Silvania');
+    expect(texto(el)).toContain('recargo $ 2.000');
+    // Lejos de todo
+    mapaDe(fixture).elegir.emit({ lat: 4.9, lon: -74.0 });
+    await estable();
+    expect(texto(el)).toContain('Sin cobertura');
+    botonPorTexto(el, /Crear zona aquí/).click();
+    await estable();
+    expect(el.textContent).toContain('Centro en 4.90000, -74.00000');
+    // Radios rápidos y aviso de cruce con otra zona
+    botonPorTexto(el, '20 km').click();
+    await estable();
+    expect(q<HTMLInputElement>(el, '#zona-radio').value).toBe('20');
+    expect(texto(el)).toContain('unos 1257 km²');
+    mapaDe(fixture).elegir.emit({ lat: 4.34, lon: -74.36 });
+    await estable();
+    expect(texto(el)).toContain('Se cruza con Casco Urbano, Silvania');
+    botonPorTexto(el, 'Cancelar').click();
+    await estable();
+    q<HTMLButtonElement>(el, '[aria-label="Ver Casco Urbano en el mapa"]').click();
+    expect(q<HTMLButtonElement>(el, '[aria-label="Ver Vereda Pekín en el mapa"]').disabled).toBe(
+      true,
+    );
+  });
+
+  it('busca un lugar: sin zona en edición lo prueba; editando lo vuelve el centro', async () => {
+    const { el, estable } = await montarAdmin(ZonasPage);
+    const geo = TestBed.inject(GeoPort) as unknown as FakeGeo;
+    geo.resultados = [
+      { nombre: 'Pasca', detalle: 'Pasca, Cundinamarca', coords: { lat: 4.31, lon: -74.3 } },
+    ];
+    escribir(q(el, '#zona-buscar'), 'Pasca');
+    await estable();
+    q<HTMLFormElement>(el, 'form[role="search"]').dispatchEvent(new Event('submit'));
+    await estable();
+    expect(geo.buscar).toHaveBeenCalledWith('Pasca');
+    botonPorTexto(el, /Pasca, Cundinamarca/).click();
+    await estable();
+    expect(texto(el)).toContain('Sin cobertura');
+
+    botonPorTexto(el, /Nueva zona/).click();
+    await estable();
+    q<HTMLFormElement>(el, 'form[role="search"]').dispatchEvent(new Event('submit'));
+    await estable();
+    botonPorTexto(el, /Pasca, Cundinamarca/).click();
+    await estable();
+    expect(el.textContent).toContain('Centro en 4.31000, -74.30000');
+
+    geo.resultados = [];
+    q<HTMLFormElement>(el, 'form[role="search"]').dispatchEvent(new Event('submit'));
+    await estable();
+    expect(texto(el)).toContain('No encontramos ese lugar');
+    geo.fallo = new ApiError(429, 'Demasiadas búsquedas');
+    q<HTMLFormElement>(el, 'form[role="search"]').dispatchEvent(new Event('submit'));
+    await estable();
+    expect(texto(el)).toContain('Inténtalo de nuevo');
   });
 });
 

@@ -55,7 +55,8 @@ describe('InicioPage (sitio público)', () => {
     }
     expect(el.querySelector('h1')?.textContent).toContain('De la vereda al casco urbano');
     expect(el.querySelectorAll('#como-funciona ol > li')).toHaveLength(4);
-    expect(el.querySelectorAll('#servicios article')).toHaveLength(4);
+    expect(el.querySelectorAll('#servicios article')).toHaveLength(5);
+    expect(q(el, '#servicios').textContent).toContain('Insumos del campo');
     expect(el.querySelectorAll('details')).toHaveLength(6);
     expect(el.querySelector('ti-ilustracion-hero svg title')?.textContent).toContain('mensajero');
   });

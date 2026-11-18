@@ -1,4 +1,6 @@
 /** Rol tal como lo devuelve el backend: "1" Administrador, "2" Cliente, "3" Conductor. */
+import type { DetalleServicio, Etapa, TipoServicio } from './servicios';
+
 export type Rol = '1' | '2' | '3';
 export const ROL = { ADMIN: '1', CLIENTE: '2', CONDUCTOR: '3' } as const satisfies Record<
   string,
@@ -21,12 +23,20 @@ export const RECORRIDO_ENVIO = [
   'Entregado',
 ] as const satisfies readonly EstadoEnvio[];
 
-export type EstadoAprobacion = 'Pendiente' | 'Aprobado' | 'Rechazado';
+export type EstadoAprobacion = 'Pendiente' | 'Aprobado' | 'Rechazado' | 'Suspendido';
 
-export const CATEGORIAS_VEHICULO = ['Moto Express', 'Motocarro', 'Camioneta'] as const;
+export const CATEGORIAS_VEHICULO = ['Moto Express', 'Motocarro', 'Camioneta', 'Camión'] as const;
 export type CategoriaVehiculo = (typeof CATEGORIAS_VEHICULO)[number];
 
-export const TIPOS_DOCUMENTO = ['Cédula', 'SOAT', 'Licencia'] as const;
+export const TIPOS_DOCUMENTO = [
+  'Cédula',
+  'Selfie',
+  'Licencia',
+  'SOAT',
+  'Tarjeta de propiedad',
+  'Tecnomecánica',
+  'Antecedentes',
+] as const;
 export type TipoDocumento = (typeof TIPOS_DOCUMENTO)[number];
 
 export const TIPOS_CARGA = ['Documentos', 'Mercancía General', 'Carga Pesada', 'Acarreo'] as const;
@@ -109,6 +119,10 @@ export interface DesgloseTarifa {
   paradas: number;
   recargoParadas: number;
   idaYVuelta: boolean;
+  /** Recargos del tipo de servicio (ayudantes, escaleras). */
+  extras: { concepto: string; valor: number }[];
+  /** Vía destapada o finca. */
+  recargoAcceso: number;
   recargoNocturno: number;
   minimoAplicado: boolean;
   total: number;
@@ -140,6 +154,8 @@ export interface SolicitudCotizacion {
   idaYVuelta?: boolean;
   /** Fecha y hora del servicio si es programado. */
   fechaProgramada?: Date | null;
+  tipoServicio?: TipoServicio;
+  detalle?: DetalleServicio;
 }
 
 export interface NuevaParada {
@@ -212,6 +228,9 @@ export interface Cotizacion {
   nocturno?: boolean;
   origenCoords?: Coordenadas | null;
   destinoCoords?: Coordenadas | null;
+  tipoServicio?: TipoServicio;
+  /** Vehículo más pequeño que puede hacer el servicio. */
+  vehiculoMinimo?: CategoriaVehiculo;
 }
 
 export interface Coordenadas {
@@ -269,12 +288,27 @@ export interface Envio {
   fechaRecogida?: Date | null;
   paradas?: Parada[];
   chatNoLeidos?: number;
+  tipoServicio: TipoServicio;
+  detalle: DetalleServicio | null;
+  /** Paso del servicio, el mismo para cliente y conductor. */
+  etapa: Etapa;
+  /** Quien entrega la carga debe dar un código al conductor. */
+  pideCodigoRecogida: boolean;
+  /** Solo para el cliente dueño. */
+  codigoRecogida?: string | null;
+  llegadaRecogidaEn?: Date | null;
+  llegadaDestinoEn?: Date | null;
+  bultosRecogidos?: number | null;
+  /** Mandado o mercado: valor de la compra (se paga en efectivo al recibir). */
+  valorCompra?: number | null;
 }
 
 /** Lo que ve quien recibe con el enlace público (sin datos sensibles). */
 export interface SeguimientoPublico {
   codigo: number;
   estado: EstadoEnvio;
+  etapa: Etapa;
+  tipoServicio: TipoServicio;
   origen: string;
   destino: string;
   destinatario: string | null;
@@ -446,12 +480,43 @@ export interface PerfilConductor {
   estadoAprobacion: EstadoAprobacion;
   motivoRechazo?: string | null;
   vehiculo?: Vehiculo;
+  requisitos?: Requisitos;
 }
+
+export type EstadoDocumento = 'Pendiente' | 'Aprobado' | 'Rechazado';
 
 export interface DocumentoConductor {
   id?: number;
   tipo: TipoDocumento;
   urlArchivo: string;
+  estado?: EstadoDocumento;
+  motivoRechazo?: string | null;
+  /** AAAA-MM-DD. */
+  fechaVencimiento?: string | null;
+  diasParaVencer?: number | null;
+  fechaSubida?: Date | null;
+}
+
+export type EstadoRequisito = 'falta' | 'pendiente' | 'aprobado' | 'rechazado' | 'vencido';
+
+export interface Requisito {
+  tipo: TipoDocumento;
+  nombre: string;
+  ayuda: string;
+  obligatorio: boolean;
+  /** Pide fecha de vencimiento al subirlo. */
+  vence: boolean;
+  estado: EstadoRequisito;
+  /** Fuente oficial donde lo comprueba el administrador. */
+  verificar: { fuente: string; url: string } | null;
+  documento: DocumentoConductor | null;
+}
+
+export interface Requisitos {
+  completo: boolean;
+  /** Lo que falta, en frases cortas. */
+  pendientes: string[];
+  items: Requisito[];
 }
 
 export type EventoCarga =
@@ -464,6 +529,10 @@ export interface ConductorPostulante {
   estadoAprobacion: EstadoAprobacion;
   motivoRechazo?: string | null;
   documentos: DocumentoConductor[];
+  vehiculo?: { placa: string; categoria: CategoriaVehiculo } | null;
+  requisitos?: Requisitos;
+  /** Consultas extra con la cédula (Procuraduría, SIMIT). */
+  consultas?: { fuente: string; url: string }[];
 }
 
 export interface Ubicacion {
@@ -518,4 +587,13 @@ export type EstadoPush = 'no-soportado' | 'bloqueado' | 'inactivo' | 'activo' | 
 export interface MensajeEntrante {
   idEnvio: number;
   mensaje: MensajeChat;
+}
+
+/** Ruta por calles para dibujar en el mapa. */
+export interface RutaMapa {
+  km: number;
+  minutos: number;
+  puntos: Coordenadas[];
+  /** false si se dibujó en línea recta porque no hubo servicio de rutas. */
+  exacta: boolean;
 }

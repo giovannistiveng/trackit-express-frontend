@@ -7,7 +7,14 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ConductorPostulante, DocumentoConductor } from '../../core/domain';
+import {
+  ConductorPostulante,
+  EstadoAprobacion,
+  EstadoRequisito,
+  Requisito,
+} from '../../core/domain';
+import { IconoComponent } from '../../shared/ui/icono.component';
+import { PlacaComponent } from '../../shared/ui/placa.component';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { ApprovalPort, DriverApplicantsPort, LoggerPort } from '../../core/ports';
@@ -20,130 +27,260 @@ interface Decision {
   aprobar: boolean;
 }
 
+const ETIQUETA_REQUISITO: Record<EstadoRequisito, string> = {
+  falta: 'Falta',
+  pendiente: 'Por revisar',
+  aprobado: 'Aprobado',
+  rechazado: 'Rechazado',
+  vencido: 'Vencido',
+};
+
 export function esPdf(url: string): boolean {
   return /\.pdf($|[?#])/i.test(url);
 }
 
-/** CU-011 Gestión de aprobación de conductores. */
+/** CU-011 Verificación de conductores: revisión documento por documento y aprobación. */
 @Component({
   selector: 'ti-conductores',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, EstadoCargaComponent, ModalComponent],
+  imports: [FormsModule, EstadoCargaComponent, ModalComponent, IconoComponent, PlacaComponent],
   template: `
     <div class="contenedor-ancho">
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1>Conductores por aprobar</h1>
-          <p class="mt-1 text-piedra">Revisa cédula, SOAT y licencia antes de decidir.</p>
+          <h1>Verificación de conductores</h1>
+          <p class="mt-1 text-piedra">
+            Revisa cada documento contra la fuente oficial. Solo se puede aprobar a quien tenga todo
+            al día.
+          </p>
         </div>
         <button type="button" class="btn-secundario" [disabled]="cargando()" (click)="cargar()">
-          Refrescar
+          <ti-icono nombre="refresh" class="size-4" /> Refrescar
         </button>
       </div>
 
       <div class="mt-6">
         <ti-estado-carga
           [fase]="fase()"
-          textoVacio="No hay conductores esperando aprobación."
+          textoVacio="No hay conductores ni documentos esperando revisión."
           [textoError]="error()"
           (reintentar)="cargar()"
         >
-          <div class="overflow-x-auto rounded-xl border border-linea bg-papel">
-            <table class="w-full min-w-[40rem] text-left text-sm">
-              <caption class="sr-only">
-                Conductores postulantes
-              </caption>
-              <thead class="border-b border-linea bg-niebla/60 text-piedra">
-                <tr>
-                  <th scope="col" class="px-4 py-3 font-semibold">Conductor</th>
-                  <th scope="col" class="px-4 py-3 font-semibold">Estado</th>
-                  <th scope="col" class="px-4 py-3 font-semibold">Documentos</th>
-                  <th scope="col" class="px-4 py-3 text-right font-semibold">Decisión</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-linea">
-                @for (c of postulantes(); track c.idConductor) {
-                  <tr>
-                    <td class="px-4 py-3">
-                      <p class="font-semibold">{{ c.nombre }}</p>
-                      <p class="text-piedra">{{ c.correo }}</p>
-                    </td>
-                    <td class="px-4 py-3">
-                      <span
-                        class="rounded-full px-2.5 py-0.5 text-xs font-semibold"
-                        [class]="
-                          c.estadoAprobacion === 'Rechazado'
-                            ? 'bg-alerta-suave text-alerta'
-                            : 'bg-aviso-suave text-placa-oscuro'
-                        "
-                        >{{ c.estadoAprobacion }}</span
-                      >
-                      @if (c.motivoRechazo) {
-                        <p class="mt-1 max-w-48 text-xs text-piedra">
-                          Motivo: {{ c.motivoRechazo }}
-                        </p>
+          <ul class="space-y-5">
+            @for (c of postulantes(); track c.idConductor) {
+              <li class="tarjeta overflow-hidden">
+                <div
+                  class="flex flex-wrap items-start justify-between gap-4 border-b border-linea p-5"
+                >
+                  <div class="min-w-0">
+                    <p class="text-lg font-bold">{{ c.nombre }}</p>
+                    <p class="text-sm text-piedra">{{ c.correo }}</p>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                      <span class="insignia" [class]="claseEstado(c.estadoAprobacion)">{{
+                        c.estadoAprobacion
+                      }}</span>
+                      @if (c.vehiculo; as v) {
+                        <ti-placa [valor]="v.placa" etiqueta="Placa" tamano="pequeno" />
+                        <span class="text-sm">{{ v.categoria }}</span>
+                      } @else {
+                        <span class="text-sm text-alerta">Sin vehículo registrado</span>
                       }
-                    </td>
-                    <td class="px-4 py-3">
-                      <div class="flex flex-wrap gap-2">
-                        @for (d of c.documentos; track d.tipo) {
-                          <button
-                            type="button"
-                            class="flex min-h-11 items-center gap-2 rounded-lg border border-linea px-2 py-1 hover:border-marca"
-                            (click)="visor.set({ conductor: c, documento: d })"
-                            [attr.aria-label]="'Ver ' + d.tipo + ' de ' + c.nombre"
-                          >
-                            @if (pdf(d.urlArchivo)) {
-                              <span aria-hidden="true">📄</span>
-                            } @else {
-                              <img
-                                [src]="d.urlArchivo"
-                                alt=""
-                                class="size-8 rounded object-cover"
-                                loading="lazy"
-                              />
-                            }
-                            <span class="font-medium">{{ d.tipo }}</span>
-                          </button>
-                        } @empty {
-                          <span class="text-piedra">Sin documentos</span>
-                        }
-                      </div>
-                    </td>
-                    <td class="px-4 py-3">
-                      <div class="flex justify-end gap-2">
-                        <button type="button" class="btn-secundario" (click)="abrir(c, false)">
-                          Rechazar
+                    </div>
+                    @if (c.motivoRechazo) {
+                      <p class="mt-2 text-sm text-piedra">Motivo: {{ c.motivoRechazo }}</p>
+                    }
+                  </div>
+                  @if (avance(c); as a) {
+                    <p class="numeros text-right text-sm">
+                      <strong class="text-2xl">{{ a.listos }}/{{ a.total }}</strong
+                      ><br />requisitos aprobados
+                    </p>
+                  }
+                </div>
+
+                <ul class="divide-y divide-linea">
+                  @for (r of requisitosDe(c); track r.tipo) {
+                    <li class="flex flex-wrap items-center gap-3 px-5 py-3">
+                      @if (r.documento; as d) {
+                        <button
+                          type="button"
+                          class="grid size-12 shrink-0 place-items-center overflow-hidden rounded-lg border border-linea hover:border-marca"
+                          (click)="abrirRevision(c, r)"
+                          [attr.aria-label]="'Revisar ' + r.nombre + ' de ' + c.nombre"
+                        >
+                          @if (pdf(d.urlArchivo)) {
+                            <ti-icono nombre="file-text" class="text-piedra" />
+                          } @else {
+                            <img
+                              [src]="d.urlArchivo"
+                              alt=""
+                              class="size-full object-cover"
+                              loading="lazy"
+                            />
+                          }
                         </button>
-                        <button type="button" class="btn-primario" (click)="abrir(c, true)">
-                          Aprobar
-                        </button>
+                      } @else {
+                        <span
+                          class="grid size-12 shrink-0 place-items-center rounded-lg border border-dashed border-linea text-piedra"
+                          ><ti-icono nombre="minus"
+                        /></span>
+                      }
+                      <div class="min-w-0 flex-1">
+                        <p class="font-semibold">
+                          {{ r.nombre }}
+                          @if (!r.obligatorio) {
+                            <span class="text-sm font-normal text-piedra">(si aplica)</span>
+                          }
+                        </p>
+                        <p class="text-sm text-piedra">
+                          {{ textoRequisito(r) }}
+                        </p>
                       </div>
-                    </td>
-                  </tr>
+                      @if (r.verificar; as v) {
+                        <a class="btn-texto text-sm" [href]="v.url" target="_blank" rel="noopener">
+                          {{ v.fuente }} <ti-icono nombre="external-link" class="size-3.5" />
+                        </a>
+                      }
+                      <span class="insignia" [class]="claseRequisito(r.estado)">{{
+                        etiquetaRequisito(r.estado)
+                      }}</span>
+                      @if (r.documento && r.estado === 'pendiente') {
+                        <button
+                          type="button"
+                          class="btn-secundario min-h-9 px-3 text-sm"
+                          (click)="abrirRevision(c, r)"
+                        >
+                          Revisar
+                        </button>
+                      }
+                    </li>
+                  }
+                </ul>
+
+                @if (c.consultas?.length) {
+                  <p
+                    class="flex flex-wrap gap-x-4 gap-y-1 border-t border-linea bg-crema px-5 py-3 text-sm"
+                  >
+                    <span class="text-piedra">Consulta también con la cédula:</span>
+                    @for (q of c.consultas; track q.url) {
+                      <a
+                        class="btn-texto min-h-0 text-sm"
+                        [href]="q.url"
+                        target="_blank"
+                        rel="noopener"
+                        >{{ q.fuente }} <ti-icono nombre="external-link" class="size-3.5"
+                      /></a>
+                    }
+                  </p>
                 }
-              </tbody>
-            </table>
-          </div>
+
+                <div
+                  class="flex flex-wrap items-center justify-end gap-3 border-t border-linea p-4"
+                >
+                  @if (
+                    c.requisitos && !c.requisitos.completo && c.estadoAprobacion !== 'Aprobado'
+                  ) {
+                    <p class="mr-auto text-sm text-piedra">
+                      Falta: {{ c.requisitos.pendientes.join('; ') }}
+                    </p>
+                  }
+                  @if (c.estadoAprobacion !== 'Aprobado') {
+                    <button type="button" class="btn-secundario" (click)="abrir(c, false)">
+                      Rechazar
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-primario"
+                      [disabled]="!!c.requisitos && !c.requisitos.completo"
+                      (click)="abrir(c, true)"
+                    >
+                      Aprobar conductor
+                    </button>
+                  }
+                </div>
+              </li>
+            }
+          </ul>
         </ti-estado-carga>
       </div>
     </div>
 
-    @if (visor(); as v) {
-      <ti-modal [titulo]="v.documento.tipo + ' · ' + v.conductor.nombre" (cerrar)="visor.set(null)">
-        @if (pdf(v.documento.urlArchivo)) {
-          <a [href]="v.documento.urlArchivo" target="_blank" rel="noopener" class="btn-primario"
-            >Abrir el PDF en otra pestaña</a
-          >
-        } @else {
-          <img
-            [src]="v.documento.urlArchivo"
-            [alt]="v.documento.tipo + ' de ' + v.conductor.nombre"
-            class="max-h-[60vh] w-full rounded-lg object-contain"
-          />
-          <a [href]="v.documento.urlArchivo" target="_blank" rel="noopener" class="btn-texto mt-3"
-            >Abrir en tamaño completo</a
-          >
+    @if (revision(); as v) {
+      <ti-modal
+        [titulo]="v.requisito.nombre + ': ' + v.conductor.nombre"
+        [cerrable]="!enviando()"
+        (cerrar)="revision.set(null)"
+      >
+        @if (v.requisito.documento; as d) {
+          @if (pdf(d.urlArchivo)) {
+            <a [href]="d.urlArchivo" target="_blank" rel="noopener" class="btn-primario"
+              >Abrir el PDF en otra pestaña</a
+            >
+          } @else {
+            <img
+              [src]="d.urlArchivo"
+              [alt]="v.requisito.nombre + ' de ' + v.conductor.nombre"
+              class="max-h-[55vh] w-full rounded-lg bg-niebla object-contain"
+            />
+            <a [href]="d.urlArchivo" target="_blank" rel="noopener" class="btn-texto mt-2 text-sm"
+              >Abrir en tamaño completo</a
+            >
+          }
+          @if (v.requisito.verificar; as f) {
+            <p class="mt-3 rounded-xl bg-crema p-3 text-sm">
+              Compara los datos con
+              <a
+                class="font-semibold text-marca underline"
+                [href]="f.url"
+                target="_blank"
+                rel="noopener"
+                >{{ f.fuente }}</a
+              >.
+            </p>
+          }
+          @if (v.requisito.vence) {
+            <div class="mt-4">
+              <label for="rev-vence" class="etiqueta">Fecha de vencimiento</label>
+              <input
+                id="rev-vence"
+                type="date"
+                class="campo max-w-52"
+                [(ngModel)]="fechaRevision"
+              />
+              <p class="ayuda">Corrígela si no coincide con el documento.</p>
+            </div>
+          }
+          <div class="mt-4">
+            <label for="rev-motivo" class="etiqueta">Motivo si lo rechazas</label>
+            <input
+              id="rev-motivo"
+              class="campo"
+              maxlength="255"
+              [(ngModel)]="motivoRevision"
+              placeholder="Ej.: la foto está borrosa"
+            />
+          </div>
+          @if (errorDecision()) {
+            <p class="error-campo mt-3" role="alert">{{ errorDecision() }}</p>
+          }
+          <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              class="btn-peligro"
+              [disabled]="enviando()"
+              (click)="revisar(false)"
+            >
+              Rechazar documento
+            </button>
+            <button
+              type="button"
+              class="btn-primario"
+              [disabled]="enviando()"
+              (click)="revisar(true)"
+            >
+              Aprobar documento
+            </button>
+          </div>
         }
       </ti-modal>
     }
@@ -157,7 +294,9 @@ export function esPdf(url: string): boolean {
         (cerrar)="decision.set(null)"
       >
         @if (d.aprobar) {
-          <p>Podrá tomar servicios desde su próximo inicio de sesión.</p>
+          <p>
+            Todos sus documentos están aprobados y vigentes. Podrá tomar servicios de inmediato.
+          </p>
         } @else {
           <label for="motivo" class="etiqueta">Motivo del rechazo</label>
           <textarea
@@ -210,10 +349,12 @@ export class ConductoresPage implements OnInit {
   protected readonly postulantes = signal<ConductorPostulante[]>([]);
   protected readonly cargando = signal(true);
   protected readonly error = signal('');
-  protected readonly visor = signal<{
+  protected readonly revision = signal<{
     conductor: ConductorPostulante;
-    documento: DocumentoConductor;
+    requisito: Requisito;
   } | null>(null);
+  protected fechaRevision = '';
+  protected motivoRevision = '';
   protected readonly decision = signal<Decision | null>(null);
   protected readonly enviando = signal(false);
   protected readonly errorDecision = signal('');
@@ -246,6 +387,94 @@ export class ConductoresPage implements OnInit {
 
   protected pdf(url: string): boolean {
     return esPdf(url);
+  }
+
+  /** Requisitos del conductor; con un backend anterior se arman con sus documentos. */
+  protected requisitosDe(c: ConductorPostulante): Requisito[] {
+    if (c.requisitos) return c.requisitos.items;
+    return c.documentos.map((d) => ({
+      tipo: d.tipo,
+      nombre: d.tipo,
+      ayuda: '',
+      obligatorio: true,
+      vence: false,
+      estado: 'pendiente' as const,
+      verificar: null,
+      documento: d,
+    }));
+  }
+
+  protected avance(c: ConductorPostulante): { listos: number; total: number } | null {
+    const obligatorios = c.requisitos?.items.filter((r) => r.obligatorio) ?? [];
+    if (!obligatorios.length) return null;
+    return {
+      listos: obligatorios.filter((r) => r.estado === 'aprobado').length,
+      total: obligatorios.length,
+    };
+  }
+
+  protected etiquetaRequisito(e: EstadoRequisito): string {
+    return ETIQUETA_REQUISITO[e];
+  }
+
+  protected claseRequisito(e: EstadoRequisito): string {
+    if (e === 'aprobado') return 'bg-exito-suave text-exito';
+    if (e === 'pendiente') return 'bg-aviso-suave text-placa-oscuro';
+    if (e === 'falta') return 'bg-niebla text-piedra';
+    return 'bg-alerta-suave text-alerta';
+  }
+
+  protected claseEstado(e: EstadoAprobacion): string {
+    if (e === 'Aprobado') return 'bg-exito-suave text-exito';
+    if (e === 'Rechazado' || e === 'Suspendido') return 'bg-alerta-suave text-alerta';
+    return 'bg-aviso-suave text-placa-oscuro';
+  }
+
+  protected textoRequisito(r: Requisito): string {
+    const d = r.documento;
+    if (!d) return r.obligatorio ? 'No lo ha subido.' : 'No aplica o no lo ha subido.';
+    if (r.estado === 'rechazado' && d.motivoRechazo) return `Rechazado: ${d.motivoRechazo}`;
+    if (d.fechaVencimiento) {
+      const dias = d.diasParaVencer ?? 0;
+      if (dias < 0) return `Venció el ${d.fechaVencimiento}`;
+      const pronto = dias <= 15 ? ` (en ${dias} días)` : '';
+      return `Vence el ${d.fechaVencimiento}${pronto}`;
+    }
+    return d.fechaSubida ? `Subido el ${d.fechaSubida.toLocaleDateString('es-CO')}` : 'Subido';
+  }
+
+  abrirRevision(conductor: ConductorPostulante, requisito: Requisito): void {
+    this.fechaRevision = requisito.documento?.fechaVencimiento ?? '';
+    this.motivoRevision = '';
+    this.errorDecision.set('');
+    this.revision.set({ conductor, requisito });
+  }
+
+  async revisar(aprobado: boolean): Promise<void> {
+    const v = this.revision();
+    const doc = v?.requisito.documento;
+    if (!v || !doc?.id || this.enviando()) return;
+    if (!aprobado && this.motivoRevision.trim().length < 3) {
+      this.errorDecision.set('Escribe el motivo para que el conductor sepa qué corregir.');
+      return;
+    }
+    this.enviando.set(true);
+    this.errorDecision.set('');
+    try {
+      await this.aprobacion.revisarDocumento(doc.id, aprobado, {
+        motivo: this.motivoRevision,
+        fechaVencimiento: v.requisito.vence ? this.fechaRevision || undefined : undefined,
+      });
+      this.toast.exito(
+        aprobado ? `${v.requisito.nombre} aprobado` : `${v.requisito.nombre} rechazado`,
+      );
+      this.revision.set(null);
+      await this.cargar();
+    } catch (e) {
+      this.errorDecision.set(this.mapper.traducir(e));
+    } finally {
+      this.enviando.set(false);
+    }
   }
 
   protected motivoInvalido(): boolean {

@@ -99,7 +99,7 @@ export class CargaArchivoComponent implements OnDestroy {
   /** Muestra el botón "Tomar foto con la cámara" (cámara en vivo dentro de la app). */
   readonly conCamara = input(false);
   readonly tituloCamara = input('Tomar foto');
-  readonly guiaCamara = input<'documento' | 'entrega'>('documento');
+  readonly guiaCamara = input<'documento' | 'entrega' | 'selfie'>('documento');
   readonly prefijoFoto = input('foto');
   readonly deshabilitado = input(false);
   readonly archivo = output<File>();

@@ -7,7 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { Envio, esActivo, fechaCreacion } from '../../core/domain';
+import { Envio, SERVICIOS, TEXTO_ETAPA, esActivo, fechaCreacion } from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { ClientShipmentsPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
@@ -38,11 +38,11 @@ type Pestana = 'activos' | 'historial';
     <div class="contenedor-ancho max-w-4xl">
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1>Mis envíos</h1>
-          <p class="mt-1 text-piedra">Sigue tus envíos en curso y revisa los anteriores.</p>
+          <h1>Mis pedidos</h1>
+          <p class="mt-1 text-piedra">Sigue tus pedidos en curso y revisa los anteriores.</p>
         </div>
         <a routerLink="/cliente/nuevo-envio" class="btn-primario"
-          ><ti-icono nombre="package" /> Nuevo envío</a
+          ><ti-icono nombre="plus" /> Nuevo pedido</a
         >
       </div>
 
@@ -69,7 +69,7 @@ type Pestana = 'activos' | 'historial';
         </dl>
       }
 
-      <div class="mt-6 flex border-b border-linea" role="tablist" aria-label="Filtrar envíos">
+      <div class="mt-6 flex border-b border-linea" role="tablist" aria-label="Filtrar pedidos">
         @for (p of pestanas; track p.id) {
           <button
             type="button"
@@ -104,13 +104,13 @@ type Pestana = 'activos' | 'historial';
           [fase]="fase()"
           [textoVacio]="
             pestana() === 'activos'
-              ? 'No tienes envíos en curso.'
-              : 'Aún no tienes envíos terminados.'
+              ? 'No tienes pedidos en curso.'
+              : 'Aún no tienes pedidos terminados.'
           "
           [textoError]="error()"
           (reintentar)="cargar()"
         >
-          <a vacio routerLink="/cliente/nuevo-envio" class="btn-texto mt-2">Pedir un envío</a>
+          <a vacio routerLink="/cliente/inicio" class="btn-texto mt-2">Hacer un pedido</a>
           <ul class="space-y-3">
             @for (e of visibles(); track e.id; let i = $index) {
               <li
@@ -119,10 +119,11 @@ type Pestana = 'activos' | 'historial';
               >
                 <div class="flex flex-wrap items-start justify-between gap-3">
                   <div class="min-w-0">
-                    <p class="text-sm text-piedra">
-                      Envío #{{ e.id }}
+                    <p class="flex items-center gap-1.5 text-sm text-piedra">
+                      <ti-icono [nombre]="servicio(e).icono" class="size-4 text-marca" />
+                      {{ servicio(e).nombre }} #{{ e.id }}
                       @if (creacion(e); as f) {
-                        <span>· {{ f | fechaLocal }}</span>
+                        <span>, {{ f | fechaLocal }}</span>
                       }
                     </p>
                     <p class="mt-1 flex flex-wrap items-center gap-x-2 font-semibold">
@@ -130,7 +131,9 @@ type Pestana = 'activos' | 'historial';
                       <ti-icono nombre="arrow-right" class="size-4 text-marca" etiqueta="hacia" />
                       {{ e.destino }}
                     </p>
-                    <p class="text-sm text-piedra">{{ e.tipoCarga }}</p>
+                    @if (esActivo(e.estado)) {
+                      <p class="text-sm font-semibold text-marca">{{ etapa(e) }}</p>
+                    }
                   </div>
                   <div class="text-right">
                     <ti-estado-badge [estado]="e.estado" />
@@ -179,6 +182,13 @@ export class EnviosPage implements OnInit {
     { id: 'historial', texto: 'Historial' },
   ];
   protected readonly pestana = signal<Pestana>('activos');
+  protected readonly esActivo = esActivo;
+  protected servicio(e: Envio) {
+    return SERVICIOS[e.tipoServicio];
+  }
+  protected etapa(e: Envio): string {
+    return TEXTO_ETAPA[e.etapa].titulo;
+  }
   protected readonly envios = signal<Envio[]>([]);
   protected readonly cargando = signal(true);
   protected readonly error = signal('');

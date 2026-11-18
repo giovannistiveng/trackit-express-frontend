@@ -44,6 +44,8 @@ import {
   NivelLog,
   EstadoPush,
   MensajeEntrante,
+  RutaMapa,
+  DocumentoConductor,
 } from '../domain';
 
 /*
@@ -78,10 +80,13 @@ export abstract class QuotePort {
 export abstract class GeoPort {
   abstract buscar(texto: string): Promise<SugerenciaDireccion[]>;
   abstract inversa(punto: Coordenadas): Promise<SugerenciaDireccion | null>;
+  /** Ruta por calles entre 2 y 6 puntos (para dibujarla en el mapa). */
+  abstract ruta(puntos: Coordenadas[]): Promise<RutaMapa>;
 }
 
 export interface NuevoEnvio extends SolicitudCotizacion {
-  tipoCarga: string;
+  /** Opcional: por defecto lo deduce el backend del tipo de servicio. */
+  tipoCarga?: string;
   /** Vehículo requerido; si se omite, cualquier conductor puede tomarlo. */
   categoria?: CategoriaVehiculo;
   /** Indicaciones para el conductor (máximo 300 caracteres). */
@@ -143,12 +148,24 @@ export abstract class VehiclesPort {
 }
 
 export abstract class DocumentsPort {
-  abstract subir(archivo: File, tipo: TipoDocumento): Observable<EventoCarga>;
+  /** fechaVencimiento (AAAA-MM-DD) para licencia, SOAT y tecnomecánica. */
+  abstract subir(
+    archivo: File,
+    tipo: TipoDocumento,
+    fechaVencimiento?: string,
+  ): Observable<EventoCarga>;
 }
 
 /** Tablero de envíos disponibles para el conductor. */
 export abstract class DriverBoardPort {
   abstract disponibles(): Promise<Envio[]>;
+}
+
+export interface DatosRecogida {
+  codigo?: string;
+  bultos?: number;
+  /** Mandado o mercado: valor de la compra según la factura. */
+  valorCompra?: number;
 }
 
 /** Operaciones del conductor sobre un servicio. La vista nunca incluye el PIN. */
@@ -159,10 +176,12 @@ export abstract class DriverServicePort {
   abstract activo(): Promise<Envio | null>;
   /** Asignado → En Ruta. */
   abstract iniciarRuta(idEnvio: number): Promise<Envio>;
-  /** Foto del paquete al recogerlo: el envío pasa a En Ruta. */
-  abstract recoger(idEnvio: number, foto: File): Promise<Envio>;
+  /** El conductor llegó al punto de recogida (avisa al cliente). */
+  abstract llegadaRecogida(idEnvio: number): Promise<Envio>;
+  /** Recoge la carga (código, bultos, compra y foto): el envío pasa a En Ruta. */
+  abstract recoger(idEnvio: number, foto: File, datos?: DatosRecogida): Promise<Envio>;
   abstract completarParada(idEnvio: number, idParada: number): Promise<Parada[]>;
-  /** Ida y vuelta: llegó al destino y regresa al origen. */
+  /** Llegó al punto de entrega (en ida y vuelta, la primera vez regresa al origen). */
   abstract llegadaDestino(idEnvio: number): Promise<Envio>;
 }
 
@@ -307,6 +326,12 @@ export abstract class ApprovalPort {
     aprobado: boolean,
     motivo?: string,
   ): Promise<ConductorPostulante>;
+  /** Revisión de un documento; al rechazar, el motivo es obligatorio. */
+  abstract revisarDocumento(
+    idDocumento: number,
+    aprobado: boolean,
+    datos?: { motivo?: string; fechaVencimiento?: string },
+  ): Promise<DocumentoConductor>;
 }
 
 /** Ubicación en tiempo real. */

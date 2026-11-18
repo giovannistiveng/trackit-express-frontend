@@ -17,10 +17,10 @@ import { RouterLink } from '@angular/router';
 
 const COLOR_ESTADO: Record<string, string> = {
   Pendiente: '#f5c518',
-  Asignado: '#fb923c',
-  'En Ruta': '#c2410c',
+  Asignado: '#3f8f6c',
+  'En Ruta': '#0b5d45',
   Entregado: '#1e7a46',
-  Cancelado: '#a8a29e',
+  Cancelado: '#9aa59f',
 };
 const CIRCUNFERENCIA = 2 * Math.PI * 48;
 
@@ -90,7 +90,7 @@ const CIRCUNFERENCIA = 2 * Math.PI * 48;
                     role="img"
                     [attr.aria-label]="'Tasa de entrega ' + tasaEntrega() + ' %'"
                   >
-                    <circle cx="60" cy="60" r="48" fill="none" stroke="#f1ebe4" stroke-width="16" />
+                    <circle cx="60" cy="60" r="48" fill="none" stroke="#e8eee9" stroke-width="16" />
                     @for (s of segmentos(); track s.estado) {
                       <circle
                         cx="60"
@@ -161,7 +161,7 @@ const CIRCUNFERENCIA = 2 * Math.PI * 48;
                         aria-hidden="true"
                       >
                         <div
-                          class="h-full rounded-full bg-gradient-to-r from-marca to-[#ea580c] transition-[width] duration-700"
+                          class="h-full rounded-full bg-gradient-to-r from-marca to-[#0b5d45] transition-[width] duration-700"
                           [style.width.%]="(z.envios / maxZona()) * 100"
                         ></div>
                       </div>
@@ -206,7 +206,7 @@ export class DashboardPage implements OnInit {
       .filter((e) => e.envios > 0)
       .map((e) => {
         const largo = (e.envios / m.enviosTotales) * CIRCUNFERENCIA;
-        const s = { estado: e.estado, color: COLOR_ESTADO[e.estado] ?? '#a8a29e', largo, inicio };
+        const s = { estado: e.estado, color: COLOR_ESTADO[e.estado] ?? '#9aa59f', largo, inicio };
         inicio += largo;
         return s;
       });
@@ -248,7 +248,7 @@ export class DashboardPage implements OnInit {
   });
 
   protected colorEstado(estado: string): string {
-    return COLOR_ESTADO[estado] ?? '#a8a29e';
+    return COLOR_ESTADO[estado] ?? '#9aa59f';
   }
 
   ngOnInit(): void {

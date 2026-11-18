@@ -17,8 +17,13 @@ import { SessionService } from '../../core/auth/session.service';
 import {
   ASUNTOS_CONTACTO,
   AsuntoContacto,
+  ROL,
   EstadisticasPublicas,
+  SERVICIOS,
+  TIPOS_SERVICIO,
   TarifaVehiculo,
+  VALOR_AYUDANTE,
+  VALOR_PISO,
   Zona,
   precioEstimado,
 } from '../../core/domain';
@@ -31,17 +36,17 @@ import { IlustracionConductorComponent } from '../../shared/ilustraciones/conduc
 import { IlustracionHeroComponent } from '../../shared/ilustraciones/hero.component';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { IconoComponent, NombreIcono } from '../../shared/ui/icono.component';
-import { PlacaComponent } from '../../shared/ui/placa.component';
 import { SitioCabeceraComponent } from './sitio-cabecera.component';
 import { SitioPieComponent } from './sitio-pie.component';
 
 /** Minutos por kilómetro para la calculadora (≈ 30 km/h en la región). */
 export const MINUTOS_POR_KM = 2;
-/** Tarifas de referencia si el backend no responde (mismas que la migración 003). */
+/** Tarifas de referencia si el backend no responde (mismas que las migraciones). */
 export const TARIFAS_REFERENCIA: TarifaVehiculo[] = [
   { categoria: 'Moto Express', banderazo: 2000, porKm: 700, porMinuto: 50, minimo: 4500 },
   { categoria: 'Motocarro', banderazo: 4000, porKm: 950, porMinuto: 80, minimo: 8000 },
   { categoria: 'Camioneta', banderazo: 10000, porKm: 1600, porMinuto: 120, minimo: 18000 },
+  { categoria: 'Camión', banderazo: 25000, porKm: 2800, porMinuto: 250, minimo: 45000 },
 ];
 
 interface Paso {
@@ -52,112 +57,90 @@ interface Paso {
 
 const PASOS: Paso[] = [
   {
-    icono: 'calendar',
-    titulo: 'Cotiza en segundos',
+    icono: 'receipt',
+    titulo: 'Pide y mira el precio',
     texto:
-      'Escribe origen, destino y zona. Ves la distancia, el tiempo estimado y el precio antes de pedir.',
+      'Elige el servicio, el origen, el destino y qué llevas. El precio aparece antes de confirmar.',
   },
   {
-    icono: 'lock',
-    titulo: 'Recibe tu PIN',
-    texto: 'Al confirmar te damos un PIN de 4 dígitos. Solo tú lo ves y solo tú lo entregas.',
+    icono: 'key',
+    titulo: 'Recogida con código',
+    texto:
+      'Quien entrega la carga le dicta al conductor un código de 4 dígitos. Él cuenta los bultos y toma una foto.',
   },
   {
     icono: 'map-pinned',
     titulo: 'Síguelo en el mapa',
-    texto: 'Ves al conductor en tiempo real, cuánto le falta y la hora estimada de llegada.',
+    texto: 'Ves al conductor por las calles, la etapa en que va y cuánto le falta.',
   },
   {
     icono: 'package-check',
-    titulo: 'Entrega verificada',
-    texto: 'El conductor solo cierra la entrega con tu PIN y una foto como evidencia.',
+    titulo: 'Entrega con tu PIN',
+    texto: 'El servicio solo se cierra con el PIN de quien recibe y una foto como evidencia.',
   },
 ];
 
-const SERVICIOS: { icono: NombreIcono; titulo: string; texto: string; vehiculo: string }[] = [
-  {
-    icono: 'file-text',
-    titulo: 'Documentos',
-    texto: 'Contratos, facturas, trámites y sobres que no pueden esperar.',
-    vehiculo: 'Moto Express',
-  },
-  {
-    icono: 'store',
-    titulo: 'Mercancía general',
-    texto: 'Pedidos de tu tienda, mercado y paquetes medianos.',
-    vehiculo: 'Moto Express o Motocarro',
-  },
-  {
-    icono: 'package',
-    titulo: 'Carga pesada',
-    texto: 'Electrodomésticos, insumos agrícolas y bultos voluminosos.',
-    vehiculo: 'Motocarro o Camioneta',
-  },
-  {
-    icono: 'truck',
-    titulo: 'Acarreos',
-    texto: 'Trasteos pequeños y traslados entre veredas y el casco urbano.',
-    vehiculo: 'Camioneta',
-  },
-];
+/** Servicios en el orden del inicio, con su tipo para el enlace directo. */
+const LISTA_SERVICIOS = TIPOS_SERVICIO.map((tipo) => ({ tipo, ...SERVICIOS[tipo] }));
 
 const GARANTIAS: { icono: NombreIcono; titulo: string; texto: string }[] = [
   {
+    icono: 'key',
+    titulo: 'Código de recogida',
+    texto: 'La carga solo sale con el código que tiene quien la entrega.',
+  },
+  {
     icono: 'lock',
     titulo: 'PIN de entrega',
-    texto: 'Nadie más puede recibir tu paquete: la entrega se valida con tu código.',
+    texto: 'Nadie más puede recibirla: la entrega se valida con tu código.',
   },
   {
     icono: 'camera',
-    titulo: 'Foto como evidencia',
-    texto: 'Cada entrega queda con una foto tomada por el conductor.',
+    titulo: 'Fotos al recoger y al entregar',
+    texto: 'Queda constancia de cómo salió la carga y de cómo llegó.',
   },
   {
     icono: 'badge-check',
     titulo: 'Conductores verificados',
-    texto: 'Revisamos cédula, SOAT y licencia antes de aprobar a cada conductor.',
-  },
-  {
-    icono: 'bell-ring',
-    titulo: 'Avisos en cada paso',
-    texto: 'Te avisamos cuando lo aceptan, cuando sale y cuando llega.',
+    texto:
+      'Cédula, selfie, licencia, SOAT, tarjeta de propiedad y antecedentes, revisados uno por uno. Si un documento vence, el conductor queda suspendido.',
   },
   {
     icono: 'circle-dollar',
-    titulo: 'Precio claro',
-    texto: 'Según la distancia real, el vehículo y la zona. Lo ves antes de confirmar.',
+    titulo: 'Precio antes de pedir',
+    texto: 'Según la distancia real, el vehículo, los ayudantes y la zona.',
   },
   {
     icono: 'star',
     titulo: 'Calificación',
-    texto: 'Califica cada servicio. La reputación de los conductores es visible.',
+    texto: 'Calificas cada servicio y la reputación de los conductores es visible.',
   },
 ];
 
 const PREGUNTAS = [
   {
-    p: '¿Cómo se calcula la tarifa?',
-    r: 'Se suma un banderazo, los kilómetros y los minutos del trayecto según el vehículo (moto, motocarro o camioneta), con una tarifa mínima para viajes cortos. Algunas zonas alejadas tienen un pequeño recargo y de 8:00 p. m. a 6:00 a. m. hay un recargo nocturno del 20 %. La distancia se calcula por carretera con OpenStreetMap y ves el precio con su desglose antes de confirmar.',
+    p: '¿Cómo se calcula el precio?',
+    r: 'Se suma un banderazo, los kilómetros y los minutos del trayecto según el vehículo, con una tarifa mínima para viajes cortos. En trasteos se suman los ayudantes y los pisos sin ascensor; si el acceso es por carretera destapada hay un recargo del 15 %. Algunas zonas alejadas tienen un recargo fijo y de 8:00 p. m. a 6:00 a. m. hay un recargo nocturno del 20 %. Ves el desglose antes de confirmar.',
   },
   {
-    p: '¿Para qué sirve el PIN?',
-    r: 'Es la llave de tu entrega. El conductor solo puede cerrar el servicio con el PIN que tú le dictas al recibir el paquete, así nadie más lo puede reclamar.',
+    p: '¿Para qué sirven el código de recogida y el PIN?',
+    r: 'Al pedir recibes dos códigos. El de recogida se lo das a quien entrega la carga: sin él, el conductor no puede llevársela. El PIN es para quien recibe: el conductor solo cierra la entrega cuando se lo dictan.',
   },
   {
-    p: '¿Puedo cancelar un envío?',
-    r: 'Sí. Mientras ningún conductor lo haya tomado, lo cancelas desde el detalle del envío sin costo.',
+    p: '¿Llegan a las veredas?',
+    r: 'Sí, dentro de las zonas de cobertura. Al pedir indica si el acceso es destapado y marca el punto exacto en el mapa; así te asignamos el vehículo adecuado y el conductor llega sin perderse.',
   },
   {
-    p: '¿Cómo sigo mi paquete?',
-    r: 'Desde "Mis envíos" abres el seguimiento: ves al conductor en el mapa, el recorrido, la distancia que falta y la hora estimada de llegada.',
+    p: '¿Puedo cancelar un pedido?',
+    r: 'Sí. Mientras ningún conductor lo haya tomado, lo cancelas desde el detalle del pedido sin costo.',
   },
   {
     p: '¿Qué necesito para ser conductor?',
-    r: 'Crear tu cuenta como conductor, registrar tu vehículo (moto, motocarro o camioneta) y subir tu cédula, SOAT y licencia. Puedes tomarles foto con la cámara del celular. Cuando te aprobamos, empiezas a tomar servicios.',
+    r: 'Crear tu cuenta, registrar tu vehículo y subir cédula, una selfie, licencia, SOAT, tarjeta de propiedad y certificado de antecedentes (la revisión técnico-mecánica si aplica). Revisamos cada documento y lo cruzamos con el RUNT, la Policía y la Procuraduría antes de aprobarte.',
   },
   {
     p: '¿Cuánto gana un conductor?',
-    r: 'El 80 % de la tarifa de cada servicio que completa. En su panel ve lo que ha ganado en el mes y en total.',
+    r: 'El 80 % de la tarifa de cada servicio que completa, más los ayudantes que cobra en trasteos. En su panel ve lo que ha ganado en el mes y en total.',
   },
 ];
 
@@ -175,7 +158,6 @@ const PREGUNTAS = [
     IlustracionHeroComponent,
     IlustracionCoberturaComponent,
     IlustracionConductorComponent,
-    PlacaComponent,
     RevelarDirective,
     ContadorDirective,
     CopPipe,
@@ -193,79 +175,67 @@ const PREGUNTAS = [
           class="fondo-puntos pointer-events-none absolute inset-0 [mask-image:linear-gradient(to_bottom,black,transparent_75%)]"
         ></div>
         <div
-          class="contenedor-ancho relative grid items-center gap-12 pb-16 lg:grid-cols-[1.05fr_1fr] lg:pb-24"
+          class="contenedor-ancho relative grid items-center gap-12 pb-12 lg:grid-cols-[1.05fr_1fr] lg:pb-16"
         >
           <div class="animate-[var(--animate-aparecer)]">
             <p class="antetitulo">
               <ti-icono nombre="mountain" class="size-4" /> Fusagasugá y la región del Sumapaz
             </p>
             <h1 class="mt-4 text-[2.5rem] leading-[1.05] font-extrabold sm:text-[3.5rem]">
-              De la vereda al casco urbano, <span class="text-marca">seguro y a tiempo.</span>
+              De la vereda al casco urbano, lo que necesites mover.
             </h1>
             <p class="mt-5 max-w-xl text-lg text-piedra">
-              Cotiza, pide y sigue tus envíos en el mapa. Cada entrega se confirma con un PIN que
-              solo tú conoces y una foto como evidencia.
+              Mandados, mercado, paquetes, trasteos e insumos del campo. Ves el precio antes de
+              pedir, la carga sale solo con tu código de recogida y se entrega solo con tu PIN.
             </p>
             <div class="mt-8 flex flex-wrap gap-3">
-              <a
-                [routerLink]="session.estaAutenticado() ? session.inicioDelRol() : '/registro'"
-                class="btn-primario btn-grande"
-              >
-                {{ session.estaAutenticado() ? 'Ir a mi panel' : 'Cotizar mi envío' }}
+              <a [routerLink]="enlacePedir()" class="btn-primario btn-grande">
+                {{ session.estaAutenticado() ? 'Ir a mi panel' : 'Pedir un servicio' }}
                 <ti-icono nombre="arrow-right" />
               </a>
               <a routerLink="/" fragment="conductores" class="btn-secundario btn-grande">
-                <ti-icono nombre="bike" class="text-marca" /> Quiero ser conductor
+                <ti-icono nombre="truck" class="text-marca" /> Quiero ser conductor
               </a>
             </div>
-            <ul class="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold text-piedra">
-              <li class="flex items-center gap-2">
-                <ti-icono nombre="shield-check" class="text-bosque" /> Conductores verificados
-              </li>
-              <li class="flex items-center gap-2">
-                <ti-icono nombre="radar" class="text-bosque" /> Seguimiento en vivo
-              </li>
-              <li class="flex items-center gap-2">
-                <ti-icono nombre="lock" class="text-bosque" /> Entrega con PIN
-              </li>
-            </ul>
           </div>
 
-          <div class="relative animate-[var(--animate-aparecer)] [animation-delay:150ms]">
+          <div
+            class="relative hidden animate-[var(--animate-aparecer)] [animation-delay:150ms] lg:block"
+          >
             <div class="overflow-hidden rounded-[2.25rem] shadow-[var(--shadow-elevada)]">
               <ti-ilustracion-hero />
             </div>
-            <div
-              class="tarjeta absolute -left-3 top-8 hidden w-56 p-3 sm:block lg:-left-10"
-              style="animation: var(--animate-flotar)"
-            >
-              <p class="flex items-center gap-2 text-xs font-bold text-bosque">
+          </div>
+        </div>
+
+        <!-- Selector de servicio: el atajo principal del sitio -->
+        <div id="servicios" class="contenedor-ancho relative scroll-mt-24 pb-16 lg:pb-24">
+          <h2 class="text-xl font-extrabold sm:text-2xl">¿Qué necesitas mover hoy?</h2>
+          <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            @for (s of servicios; track s.tipo) {
+              <article
+                class="tarjeta-interactiva group relative flex flex-col p-4 sm:p-5"
+                [class]="s.tipo === 'insumos' ? 'col-span-2 sm:col-span-1' : ''"
+              >
                 <span
-                  class="size-2 rounded-full bg-bosque"
-                  style="animation: var(--animate-pulso)"
-                ></span>
-                EN VIVO
-              </p>
-              <p class="mt-1 font-bold">Envío #1043 va en camino</p>
-              <p class="text-sm text-piedra">
-                Llega en <strong class="text-tinta">12 min</strong> · 3,4 km
-              </p>
-            </div>
-            <div
-              class="tarjeta absolute -right-2 bottom-8 hidden items-center gap-3 p-3 sm:flex lg:-right-8"
-              style="animation: var(--animate-flotar); animation-delay: -2.5s"
-            >
-              <ti-placa
-                valor="4821"
-                etiqueta="PIN de entrega de ejemplo"
-                pie="PIN"
-                tamano="pequeno"
-              />
-              <div>
-                <p class="text-sm font-bold">Entregado</p>
-                <p class="text-xs text-piedra">Validado con PIN y foto</p>
-              </div>
-            </div>
+                  class="grid size-12 place-items-center rounded-xl bg-marca-suave text-marca transition-colors group-hover:bg-marca group-hover:text-white"
+                >
+                  <ti-icono [nombre]="s.icono" class="size-6" />
+                </span>
+                <h3 class="mt-4 text-base sm:text-lg">
+                  <a
+                    [routerLink]="enlaceServicio()"
+                    [queryParams]="esCliente() ? { servicio: s.tipo } : null"
+                    class="after:absolute after:inset-0 after:rounded-[inherit] focus-visible:outline-none"
+                    >{{ s.nombre }}</a
+                  >
+                </h3>
+                <p class="mt-1 text-sm text-piedra">{{ s.descripcion }}</p>
+                <p class="mt-auto pt-3 text-xs font-semibold text-bosque">
+                  Desde {{ s.vehiculoMinimo }}
+                </p>
+              </article>
+            }
           </div>
         </div>
       </section>
@@ -292,13 +262,16 @@ const PREGUNTAS = [
       }
 
       <!-- Cómo funciona -->
-      <section id="como-funciona" class="py-20 sm:py-24">
+      <section id="como-funciona" class="bg-papel py-20 sm:py-24">
         <div class="contenedor-ancho">
           <div tiRevelar class="mx-auto max-w-2xl text-center">
             <p class="antetitulo">Cómo funciona</p>
-            <h2 class="mt-3 text-3xl font-extrabold sm:text-4xl">Tu envío en cuatro pasos</h2>
+            <h2 class="mt-3 text-3xl font-extrabold sm:text-4xl">
+              Cada parte sabe qué hacer y cuándo
+            </h2>
             <p class="mt-4 text-lg text-piedra">
-              Sin llamadas ni esperas: todo desde el celular o el computador.
+              Dos códigos cierran el recorrido: uno para recoger y otro para entregar. Así nadie se
+              lleva la carga equivocada.
             </p>
           </div>
           <ol class="relative mt-14 grid gap-6 md:grid-cols-4">
@@ -313,7 +286,7 @@ const PREGUNTAS = [
                 y1="1"
                 x2="100"
                 y2="1"
-                stroke="#fdba74"
+                stroke="#8cc4a7"
                 stroke-width="2"
                 vector-effect="non-scaling-stroke"
                 class="ruta-animada"
@@ -326,7 +299,7 @@ const PREGUNTAS = [
                 >
                   <ti-icono [nombre]="p.icono" class="size-8" />
                   <span
-                    class="absolute -right-2 -top-2 grid size-7 place-items-center rounded-full border-2 border-niebla bg-placa text-sm font-extrabold text-tinta"
+                    class="absolute -right-2 -top-2 grid size-7 place-items-center rounded-full border-2 border-papel bg-placa text-sm font-extrabold text-tinta"
                     >{{ i + 1 }}</span
                   >
                 </span>
@@ -338,41 +311,7 @@ const PREGUNTAS = [
         </div>
       </section>
 
-      <!-- Servicios -->
-      <section id="servicios" class="bg-papel py-20 sm:py-24">
-        <div class="contenedor-ancho">
-          <div tiRevelar class="flex flex-col justify-between gap-6 md:flex-row md:items-end">
-            <div class="max-w-xl">
-              <p class="antetitulo">Servicios</p>
-              <h2 class="mt-3 text-3xl font-extrabold sm:text-4xl">
-                Llevamos lo que necesites mover
-              </h2>
-            </div>
-            <p class="max-w-md text-piedra">
-              Elige el tipo de carga y, si hace falta, el vehículo. Solo lo verán conductores con
-              ese vehículo.
-            </p>
-          </div>
-          <div class="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            @for (s of servicios; track s.titulo; let i = $index) {
-              <article tiRevelar [retraso]="i * 100" class="tarjeta-interactiva group p-6">
-                <span
-                  class="grid size-14 place-items-center rounded-xl bg-marca-suave text-marca transition-colors group-hover:bg-marca group-hover:text-white"
-                >
-                  <ti-icono [nombre]="s.icono" class="size-7" />
-                </span>
-                <h3 class="mt-5 text-lg">{{ s.titulo }}</h3>
-                <p class="mt-2 text-piedra">{{ s.texto }}</p>
-                <p class="mt-4 flex items-center gap-2 text-sm font-semibold text-bosque">
-                  <ti-icono nombre="bike" class="size-4" /> {{ s.vehiculo }}
-                </p>
-              </article>
-            }
-          </div>
-        </div>
-      </section>
-
-      <!-- Seguridad y app -->
+      <!-- Seguridad -->
       <section class="overflow-hidden py-20 sm:py-24">
         <div class="contenedor-ancho grid items-center gap-14 lg:grid-cols-2">
           <div tiRevelar class="relative mx-auto w-full max-w-sm">
@@ -387,36 +326,37 @@ const PREGUNTAS = [
             >
               <div class="overflow-hidden rounded-[2.1rem] bg-niebla">
                 <div class="flex items-center justify-between bg-papel px-5 pb-3 pt-4">
-                  <span class="text-sm font-extrabold">Envío #1043</span>
-                  <span class="insignia bg-marca text-white">En Ruta</span>
+                  <span class="text-sm font-extrabold">Trasteo #1043</span>
+                  <span class="insignia bg-marca text-white">En camino</span>
                 </div>
-                <svg viewBox="0 0 300 220" class="block w-full bg-[#eef2ec]">
+                <svg viewBox="0 0 300 200" class="block w-full bg-[#eef2ec]">
                   <path
-                    d="M0 60 H300 M0 150 H300 M80 0 V220 M210 0 V220"
+                    d="M0 60 H300 M0 150 H300 M80 0 V200 M210 0 V200"
                     stroke="#fff"
                     stroke-width="10"
                   />
                   <path
-                    d="M0 105 C 60 100, 90 140, 150 130 S 250 70, 300 80"
-                    stroke="#dbe7df"
-                    stroke-width="16"
-                    fill="none"
-                  />
-                  <path
-                    d="M40 180 C 80 170, 100 120, 150 120 S 230 60, 260 50"
-                    stroke="#c2410c"
+                    d="M40 170 C 80 160, 100 115, 150 115 S 230 55, 260 45"
+                    stroke="#0b5d45"
                     stroke-width="5"
                     fill="none"
                     stroke-linecap="round"
                     class="ruta-animada"
                   />
-                  <circle cx="40" cy="180" r="9" fill="#1f1a17" stroke="#fff" stroke-width="3" />
-                  <g transform="translate(260 50)">
-                    <circle r="11" fill="#c2410c" stroke="#fff" stroke-width="3" />
-                    <circle r="4" fill="#f5c518" />
+                  <g transform="translate(40 170)">
+                    <circle r="11" fill="#142019" stroke="#fff" stroke-width="3" />
+                    <text y="4" text-anchor="middle" font-size="11" font-weight="800" fill="#fff">
+                      A
+                    </text>
                   </g>
-                  <g transform="translate(150 120)">
-                    <circle r="18" fill="#c2410c" opacity="0.2">
+                  <g transform="translate(260 45)">
+                    <circle r="11" fill="#0b5d45" stroke="#fff" stroke-width="3" />
+                    <text y="4" text-anchor="middle" font-size="11" font-weight="800" fill="#fff">
+                      B
+                    </text>
+                  </g>
+                  <g transform="translate(150 115)">
+                    <circle r="18" fill="#0b5d45" opacity="0.2">
                       <animate
                         attributeName="r"
                         values="12;22;12"
@@ -424,28 +364,34 @@ const PREGUNTAS = [
                         repeatCount="indefinite"
                       />
                     </circle>
-                    <circle r="10" fill="#c2410c" stroke="#fff" stroke-width="3" />
+                    <circle r="9" fill="#f5c518" stroke="#142019" stroke-width="2.5" />
                   </g>
                 </svg>
                 <div class="space-y-3 p-4">
-                  <div class="tarjeta flex items-center justify-between p-3">
-                    <div>
-                      <p class="text-xs text-piedra">Llegada estimada</p>
-                      <p class="text-xl font-extrabold">12 min</p>
-                    </div>
-                    <div class="text-right">
-                      <p class="text-xs text-piedra">Faltan</p>
-                      <p class="text-xl font-extrabold">3,4 km</p>
-                    </div>
-                  </div>
+                  <ol class="tarjeta space-y-2 p-3 text-sm">
+                    <li class="flex items-center gap-2 text-piedra">
+                      <span class="grid size-5 place-items-center rounded-full bg-bosque text-white"
+                        ><ti-icono nombre="check" class="size-3"
+                      /></span>
+                      Recogido con código, 6 bultos
+                    </li>
+                    <li class="flex items-center gap-2 font-bold">
+                      <span class="size-5 rounded-full border-4 border-marca bg-placa"></span>
+                      En camino, llega en 12 min
+                    </li>
+                    <li class="flex items-center gap-2 text-piedra">
+                      <span class="size-5 rounded-full border-2 border-linea"></span>
+                      Entrega con tu PIN
+                    </li>
+                  </ol>
                   <div class="tarjeta flex items-center gap-3 p-3">
                     <span
                       class="grid size-10 place-items-center rounded-full bg-marca-suave font-bold text-marca"
                       >CR</span
                     >
                     <div class="text-sm">
-                      <p class="font-bold">Camilo R. · ★ 4,9</p>
-                      <p class="text-piedra">Moto Express · ABC12D</p>
+                      <p class="font-bold">Camilo R. <span class="text-piedra">★ 4,9</span></p>
+                      <p class="text-piedra">Camioneta, placa ABC12D</p>
                     </div>
                   </div>
                 </div>
@@ -457,8 +403,8 @@ const PREGUNTAS = [
               <p class="antetitulo">Seguridad</p>
               <h2 class="mt-3 text-3xl font-extrabold sm:text-4xl">Tranquilidad en cada entrega</h2>
               <p class="mt-4 text-lg text-piedra">
-                Diseñamos cada paso para que tu paquete llegue a quien debe, y para que siempre
-                sepas dónde está.
+                Sabes quién lleva tu carga, por dónde va y en qué paso está. Y queda constancia de
+                cada entrega.
               </p>
             </div>
             <ul class="mt-10 grid gap-6 sm:grid-cols-2">
@@ -488,7 +434,8 @@ const PREGUNTAS = [
             <h2 class="mt-3 text-3xl font-extrabold sm:text-4xl">Precios claros, sin sorpresas</h2>
             <p class="mt-4 text-lg text-piedra">
               Pagas por la distancia real y el vehículo que necesitas, con una tarifa mínima para
-              viajes cortos. Calcula un valor aproximado:
+              viajes cortos. En trasteos sumas {{ valorAyudante | cop }} por ayudante y
+              {{ valorPiso | cop }} por piso sin ascensor. Calcula un valor aproximado:
             </p>
 
             @if (zonas().length > 0) {
@@ -524,7 +471,7 @@ const PREGUNTAS = [
                     <label for="calc-km" class="etiqueta"
                       >Distancia: <span class="numeros text-marca">{{ km() }} km</span>
                       <span class="font-normal text-piedra"
-                        >· unos {{ km() * minutosPorKm }} min</span
+                        >(unos {{ km() * minutosPorKm }} min)</span
                       ></label
                     >
                     <input
@@ -546,7 +493,7 @@ const PREGUNTAS = [
                         + recargo {{ zonaElegida()?.tarifaBase | cop }}
                       }
                       <br /><span class="text-xs"
-                        >Mínimo {{ t.minimo | cop }} · sin recargo nocturno</span
+                        >Mínimo {{ t.minimo | cop }}, sin recargo nocturno</span
                       >
                     }
                   </p>
@@ -599,11 +546,11 @@ const PREGUNTAS = [
           <div tiRevelar>
             <p class="antetitulo !text-placa">Trabaja con nosotros</p>
             <h2 class="mt-3 text-3xl font-extrabold sm:text-4xl">
-              Gana con tu moto, motocarro o camioneta
+              Gana con tu moto, motocarro, camioneta o camión
             </h2>
             <p class="mt-4 text-lg text-white/85">
               Tú decides qué servicios tomar. Te quedas con el 80 % de cada tarifa y ves tus
-              ganancias en tiempo real.
+              ganancias en tiempo real. Antes de empezar revisamos tus documentos uno por uno.
             </p>
             <ul class="mt-8 space-y-4">
               @for (b of beneficios; track b) {
@@ -802,38 +749,6 @@ const PREGUNTAS = [
           </div>
         </div>
       </section>
-
-      <!-- Llamado final -->
-      <section class="py-20">
-        <div tiRevelar class="contenedor-ancho">
-          <div
-            class="relative overflow-hidden rounded-[2rem] bg-noche px-6 py-14 text-center text-white sm:px-12"
-          >
-            <div
-              class="pointer-events-none absolute -left-20 -top-20 size-72 rounded-full bg-marca/40 blur-3xl"
-              aria-hidden="true"
-            ></div>
-            <div
-              class="pointer-events-none absolute -bottom-24 -right-10 size-72 rounded-full bg-placa/20 blur-3xl"
-              aria-hidden="true"
-            ></div>
-            <h2 class="relative text-3xl font-extrabold sm:text-4xl">
-              Tu próximo envío empieza aquí
-            </h2>
-            <p class="relative mx-auto mt-4 max-w-xl text-white/80">
-              Crea tu cuenta gratis y cotiza en menos de un minuto.
-            </p>
-            <div class="relative mt-8 flex flex-wrap justify-center gap-3">
-              <a routerLink="/registro" class="btn-primario btn-grande">Crear mi cuenta</a>
-              <a
-                routerLink="/login"
-                class="btn btn-grande border border-white/30 text-white hover:bg-white/10"
-                >Ya tengo cuenta</a
-              >
-            </div>
-          </div>
-        </div>
-      </section>
     </main>
 
     <ti-sitio-pie />
@@ -847,17 +762,32 @@ export class InicioPage implements OnInit {
   private readonly fb = inject(NonNullableFormBuilder);
 
   protected readonly pasos = PASOS;
-  protected readonly servicios = SERVICIOS;
+  protected readonly servicios = LISTA_SERVICIOS;
+  protected readonly valorAyudante = VALOR_AYUDANTE;
+  protected readonly valorPiso = VALOR_PISO;
   protected readonly garantias = GARANTIAS;
   protected readonly preguntas = PREGUNTAS;
   protected readonly asuntos = ASUNTOS_CONTACTO;
   protected readonly minutosPorKm = MINUTOS_POR_KM;
   protected readonly beneficios = [
-    'Registro en línea: sube tu cédula, SOAT y licencia con la cámara del celular.',
-    'Ves el destino, el tipo de carga y lo que ganas antes de aceptar.',
-    'Navegación con el mapa y avisos de cada servicio.',
-    'Tu calificación crece con cada entrega bien hecha.',
+    'Registro en línea: tomas la foto de cada documento con el celular.',
+    'Antes de aceptar ves qué llevas, a dónde, cuánto pesa y lo que ganas.',
+    'Un solo botón por paso: llegué, recogí, llegué al destino, entregué.',
+    'Te avisamos 15 días antes de que se venza un documento.',
   ];
+
+  /** Botón principal: al panel si ya hay sesión, al registro si no. */
+  protected readonly enlacePedir = computed(() =>
+    this.session.estaAutenticado() ? this.session.inicioDelRol() : '/registro',
+  );
+
+  protected readonly esCliente = computed(() => this.session.rol() === ROL.CLIENTE);
+
+  /** Las tarjetas de servicio abren el pedido directo para el cliente. */
+  protected readonly enlaceServicio = computed(() => {
+    if (this.esCliente()) return '/cliente/nuevo-envio';
+    return this.enlacePedir();
+  });
 
   protected readonly estadisticas = signal<EstadisticasPublicas | null>(null);
   protected readonly zonas = signal<Zona[]>([]);
