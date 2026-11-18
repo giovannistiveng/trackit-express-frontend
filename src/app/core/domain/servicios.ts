@@ -46,7 +46,7 @@ export const SERVICIOS: Record<TipoServicio, InfoServicio> = {
     nombre: 'Trasteo',
     descripcion: 'Muebles, electrodomésticos y cajas, con ayudantes si los necesitas',
     icono: 'sofa',
-    vehiculoMinimo: 'Motocarro',
+    vehiculoMinimo: 'Furgoneta',
     pideCodigoRecogida: true,
     conCompra: false,
   },
@@ -90,12 +90,12 @@ export const VALOR_PISO = 4000;
 export const RECARGO_DESTAPADO = 0.15;
 export const CAPACIDAD_KG: Record<CategoriaVehiculo, number> = {
   'Moto Express': 20,
-  Motocarro: 300,
-  Camioneta: 1000,
-  Camión: 3500,
+  Furgoneta: 1500,
 };
+/** Peso máximo de un pedido (lo que lleva la furgoneta). */
+export const PESO_MAXIMO_KG = CAPACIDAD_KG.Furgoneta;
 
-const ORDEN: CategoriaVehiculo[] = ['Moto Express', 'Motocarro', 'Camioneta', 'Camión'];
+const ORDEN: CategoriaVehiculo[] = ['Moto Express', 'Furgoneta'];
 
 /** Vehículo más pequeño que puede hacer el servicio con ese peso. */
 export function vehiculoMinimo(
@@ -104,7 +104,7 @@ export function vehiculoMinimo(
 ): CategoriaVehiculo {
   let minimo = SERVICIOS[tipo].vehiculoMinimo;
   if (detalle.pesoKg) {
-    const porPeso = ORDEN.find((c) => CAPACIDAD_KG[c] >= (detalle.pesoKg as number)) ?? 'Camión';
+    const porPeso = ORDEN.find((c) => CAPACIDAD_KG[c] >= (detalle.pesoKg as number)) ?? 'Furgoneta';
     if (ORDEN.indexOf(porPeso) > ORDEN.indexOf(minimo)) minimo = porPeso;
   }
   return minimo;

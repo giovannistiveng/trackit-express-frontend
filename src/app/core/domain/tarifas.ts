@@ -39,9 +39,7 @@ export function tarifaValida(t: TarifaVehiculo): boolean {
 /** Capacidad relativa: un vehículo puede llevar pedidos de su categoría o de una menor. */
 const CAPACIDAD: Record<CategoriaVehiculo, number> = {
   'Moto Express': 1,
-  Motocarro: 2,
-  Camioneta: 3,
-  Camión: 4,
+  Furgoneta: 2,
 };
 
 /** Categorías de pedido que ve un conductor con este vehículo (igual que el backend). */

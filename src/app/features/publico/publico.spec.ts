@@ -97,11 +97,11 @@ describe('InicioPage (sitio público)', () => {
     // 2.000 + 14.000 + 40 min × 50 = 18.000 + recargo 12.000
     expect(texto()).toContain('$ 30.000');
     const vehiculo = q<HTMLSelectElement>(el, '#calc-vehiculo');
-    vehiculo.value = 'Camioneta';
+    vehiculo.value = 'Furgoneta';
     vehiculo.dispatchEvent(new Event('change'));
     await estable();
-    // 10.000 + 32.000 + 4.800 = 46.800 + 12.000
-    expect(texto()).toContain('$ 58.800');
+    // 12.000 + 20 km × 1.800 + 40 min × 150 = 54.000 + 12.000
+    expect(texto()).toContain('$ 66.000');
     expect(texto()).toContain('recargo $ 12.000');
   });
 

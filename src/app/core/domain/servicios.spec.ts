@@ -29,12 +29,11 @@ describe('servicios', () => {
   it('el vehículo mínimo sube con el peso y nunca baja del mínimo del servicio', () => {
     expect(vehiculoMinimo('paquete')).toBe('Moto Express');
     expect(vehiculoMinimo('paquete', { pesoKg: 20 })).toBe('Moto Express');
-    expect(vehiculoMinimo('paquete', { pesoKg: 21 })).toBe('Motocarro');
-    expect(vehiculoMinimo('insumos', { pesoKg: 800 })).toBe('Camioneta');
-    expect(vehiculoMinimo('insumos', { pesoKg: 3000 })).toBe('Camión');
-    expect(vehiculoMinimo('insumos', { pesoKg: 9000 })).toBe('Camión');
-    // Un trasteo ya pide motocarro aunque pese poco
-    expect(vehiculoMinimo('trasteo', { pesoKg: 5 })).toBe('Motocarro');
+    expect(vehiculoMinimo('paquete', { pesoKg: 21 })).toBe('Furgoneta');
+    expect(vehiculoMinimo('insumos', { pesoKg: 800 })).toBe('Furgoneta');
+    expect(vehiculoMinimo('insumos', { pesoKg: 9000 })).toBe('Furgoneta');
+    // Un trasteo siempre va en furgoneta aunque pese poco
+    expect(vehiculoMinimo('trasteo', { pesoKg: 5 })).toBe('Furgoneta');
   });
 
   it('resume el detalle en frases cortas', () => {

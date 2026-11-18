@@ -41,9 +41,7 @@ export const RADIOS_RAPIDOS = [1, 3, 5, 10, 20];
 
 const ICONO_VEHICULO: Record<CategoriaVehiculo, NombreIcono> = {
   'Moto Express': 'bike',
-  Motocarro: 'bike',
-  Camioneta: 'truck',
-  Camión: 'truck',
+  Furgoneta: 'truck',
 };
 
 interface Borrador {

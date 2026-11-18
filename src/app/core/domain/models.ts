@@ -25,7 +25,8 @@ export const RECORRIDO_ENVIO = [
 
 export type EstadoAprobacion = 'Pendiente' | 'Aprobado' | 'Rechazado' | 'Suspendido';
 
-export const CATEGORIAS_VEHICULO = ['Moto Express', 'Motocarro', 'Camioneta', 'Camión'] as const;
+/** Solo dos vehículos: la moto para lo liviano y la furgoneta para trasteos y carga pesada. */
+export const CATEGORIAS_VEHICULO = ['Moto Express', 'Furgoneta'] as const;
 export type CategoriaVehiculo = (typeof CATEGORIAS_VEHICULO)[number];
 
 export const TIPOS_DOCUMENTO = [

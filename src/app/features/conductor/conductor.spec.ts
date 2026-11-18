@@ -73,7 +73,7 @@ describe('DriverProfileStore', () => {
     await s.cargar();
     expect(obtener).toHaveBeenCalledTimes(1);
     expect(s.aprobado()).toBe(true);
-    s.registrarVehiculo({ id: 1, placa: 'ABC123', categoria: 'Camioneta' });
+    s.registrarVehiculo({ id: 1, placa: 'ABC123', categoria: 'Furgoneta' });
     expect(s.perfil()?.vehiculo?.placa).toBe('ABC123');
     obtener.mockImplementation(rechaza(new ApiError(500, 'x')));
     expect(await s.cargar(true)).toBeNull();
@@ -112,7 +112,7 @@ describe('CU-003 y CU-004 PerfilPage', () => {
     elegir(q(el, '#categoria'), 1);
     botonPorTexto(el, 'Registrar vehículo').click();
     await estable();
-    expect(v.registrar).toHaveBeenCalledWith({ placa: 'ABC12D', categoria: 'Motocarro' });
+    expect(v.registrar).toHaveBeenCalledWith({ placa: 'ABC12D', categoria: 'Furgoneta' });
     expect(q(el, '[aria-label="Placa del vehículo: A B C 1 2 D"]')).toBeTruthy();
     expect(el.textContent).toContain('Vehículo registrado');
   });

@@ -144,12 +144,12 @@ describe('mapeadores de acarreos', () => {
       nombre: 'Ana',
       correo: 'a@t.co',
       estado_aprobacion: 'Suspendido',
-      vehiculo: { placa: 'ABC12D', categoria: 'Camión' },
+      vehiculo: { placa: 'ABC12D', categoria: 'Furgoneta' },
       requisitos: { completo: true, pendientes: [], items: [] },
       consultas: [{ fuente: 'SIMIT', url: 'https://simit' }],
     });
     expect(p.estadoAprobacion).toBe('Suspendido');
-    expect(p.vehiculo).toEqual({ placa: 'ABC12D', categoria: 'Camión' });
+    expect(p.vehiculo).toEqual({ placa: 'ABC12D', categoria: 'Furgoneta' });
     expect(p.requisitos?.completo).toBe(true);
     expect(p.consultas).toHaveLength(1);
     expect(
@@ -195,7 +195,7 @@ describe('mapeadores de acarreos', () => {
 
   it('desglose y cotización con extras, recargo de acceso y vehículo mínimo', () => {
     const d = aDesglose({
-      categoria: 'Camión',
+      categoria: 'Furgoneta',
       banderazo: 1,
       distancia: 2,
       tiempo: 3,
@@ -225,10 +225,10 @@ describe('mapeadores de acarreos', () => {
       tarifa_base: 0,
       tarifa_total: 9000,
       tipo_servicio: 'trasteo',
-      vehiculo_minimo: 'Motocarro',
+      vehiculo_minimo: 'Furgoneta',
     });
     expect(c.tipoServicio).toBe('trasteo');
-    expect(c.vehiculoMinimo).toBe('Motocarro');
+    expect(c.vehiculoMinimo).toBe('Furgoneta');
     expect(
       aCotizacion({ distancia_km: 3, tarifa_base: 0, tarifa_total: 1, vehiculo_minimo: 'x' })
         .vehiculoMinimo,

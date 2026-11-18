@@ -57,8 +57,7 @@ const ZONAS: Zona[] = [
 
 const TARIFAS: TarifaVehiculo[] = [
   { categoria: 'Moto Express', banderazo: 2000, porKm: 700, porMinuto: 50, minimo: 4500 },
-  { categoria: 'Motocarro', banderazo: 4000, porKm: 950, porMinuto: 80, minimo: 8000 },
-  { categoria: 'Camioneta', banderazo: 10000, porKm: 1600, porMinuto: 120, minimo: 18000 },
+  { categoria: 'Furgoneta', banderazo: 12000, porKm: 1800, porMinuto: 150, minimo: 22000 },
 ];
 
 function envioAdmin(id: number, estado: EnvioAdmin['estado']): EnvioAdmin {
@@ -257,7 +256,7 @@ describe('ZonasPage', () => {
     const { el, ops, estable } = await montarAdmin(ZonasPage);
     const guardar = () =>
       q<HTMLButtonElement>(el, '[aria-label="Guardar la tarifa de Moto Express"]');
-    expect(el.querySelectorAll('form[class*="tarjeta"]').length).toBeGreaterThanOrEqual(3);
+    expect(el.querySelectorAll('form[class*="tarjeta"]')).toHaveLength(2);
     // Ejemplo: 2,5 km y 8 min en moto → 2.000 + 1.750 + 400 = 4.150 → mínimo 4.500
     expect(texto(el)).toContain('$ 4.500');
     expect(guardar().disabled).toBe(true);
@@ -286,9 +285,9 @@ describe('ZonasPage', () => {
     );
     const { el, estable } = await montarAdmin(ZonasPage, ops);
     const toast = vi.spyOn(TestBed.inject(ToastService), 'error');
-    cambiar(q(el, '#tarifa-camioneta-porKm'), '1700');
+    cambiar(q(el, '#tarifa-furgoneta-porKm'), '1900');
     await estable();
-    q<HTMLButtonElement>(el, '[aria-label="Guardar la tarifa de Camioneta"]').click();
+    q<HTMLButtonElement>(el, '[aria-label="Guardar la tarifa de Furgoneta"]').click();
     await estable();
     expect(toast).toHaveBeenCalledWith('No se pudo guardar la tarifa ahora.');
 

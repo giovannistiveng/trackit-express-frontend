@@ -149,10 +149,10 @@ describe('Adaptadores HTTP', () => {
         destino: 'b',
         tipoCarga: 'c',
         idZona: 1,
-        categoria: 'Motocarro',
+        categoria: 'Furgoneta',
       });
       const req = await esperar(ctrl, 'POST', `${API_BASE}/envios/crear`);
-      expect(req.request.body.categoria).toBe('Motocarro');
+      expect(req.request.body.categoria).toBe('Furgoneta');
       req.flush(API.crear);
     });
 
@@ -388,13 +388,13 @@ describe('Adaptadores HTTP', () => {
       (await esperar(ctrl, 'GET', `${API_BASE}/conductores/me`)).flush({
         id_conductor: 3,
         estado_aprobacion: 'Aprobado',
-        vehiculo: { id: 1, placa: 'ABC123', categoria: 'Camioneta' },
+        vehiculo: { id: 1, placa: 'ABC123', categoria: 'Furgoneta' },
       });
       expect(await p).toEqual({
         idConductor: 3,
         estadoAprobacion: 'Aprobado',
         motivoRechazo: null,
-        vehiculo: { id: 1, placa: 'ABC123', categoria: 'Camioneta' },
+        vehiculo: { id: 1, placa: 'ABC123', categoria: 'Furgoneta' },
       });
     });
 

@@ -24,6 +24,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import {
   CAPACIDAD_KG,
+  PESO_MAXIMO_KG,
   CATEGORIAS_VEHICULO,
   CategoriaVehiculo,
   DetalleServicio,
@@ -68,11 +69,13 @@ export const ESPERA_AUTOCOTIZAR_MS = 500;
 export const PROGRAMAR_MINIMO_MIN = 30;
 export const PROGRAMAR_MAXIMO_DIAS = 7;
 const TEXTO_SIN_UBICAR = 'Ubícala: elige una sugerencia, usa tu ubicación o márcala en el mapa.';
+const AYUDA_VEHICULO: Record<CategoriaVehiculo, string> = {
+  'Moto Express': 'Mandados, mercados y paquetes hasta 20 kg',
+  Furgoneta: 'Trasteos y carga pesada hasta 1.500 kg',
+};
 const ICONO_VEHICULO: Record<CategoriaVehiculo, NombreIcono> = {
   'Moto Express': 'bike',
-  Motocarro: 'bike',
-  Camioneta: 'truck',
-  Camión: 'truck',
+  Furgoneta: 'truck',
 };
 /** Atajos para escribir lo que se lleva. */
 const SUGERENCIAS_PAQUETE = ['Documentos', 'Ropa', 'Repuestos', 'Comida', 'Encomienda'];
@@ -116,8 +119,8 @@ export function errorDetalle(tipo: TipoServicio, d: DetalleServicio): string {
   if (tipo === 'trasteo' && !d.objetos?.trim()) return 'Cuéntanos qué vas a trastear.';
   if (tipo === 'insumos' && !d.insumo?.trim()) return 'Indica qué insumo llevas.';
   if (tipo === 'insumos' && !d.pesoKg) return 'Indica el peso aproximado en kilos.';
-  if (d.pesoKg !== undefined && (d.pesoKg < 1 || d.pesoKg > CAPACIDAD_KG['Camión']))
-    return `El peso debe estar entre 1 y ${CAPACIDAD_KG['Camión']} kg.`;
+  if (d.pesoKg !== undefined && (d.pesoKg < 1 || d.pesoKg > PESO_MAXIMO_KG))
+    return `El peso debe estar entre 1 y ${PESO_MAXIMO_KG.toLocaleString('es-CO')} kg.`;
   return '';
 }
 
@@ -235,7 +238,7 @@ const entero = (v: unknown): number | undefined => {
             <dt class="text-piedra">Servicio</dt>
             <dd class="font-medium">{{ nombreServicio(envio) }}</dd>
             <dt class="text-piedra">Vehículo</dt>
-            <dd class="font-medium">{{ envio.categoria ?? 'El adecuado' }}</dd>
+            <dd class="font-medium">{{ envio.categoria ?? 'El que pueda llevarlo' }}</dd>
             <dt class="text-piedra">Tarifa</dt>
             <dd class="numeros font-bold">{{ envio.tarifa | cop }}</dd>
             <dt class="text-piedra">Pago</dt>
@@ -677,40 +680,41 @@ const entero = (v: unknown): number | undefined => {
             <section class="tarjeta space-y-5 p-5 sm:p-6" aria-labelledby="titulo-vehiculo">
               <fieldset class="min-w-0">
                 <legend id="titulo-vehiculo" class="text-base font-bold">Vehículo</legend>
-                <div
-                  class="mt-3 grid grid-cols-2 gap-2"
-                  [class.sm:grid-cols-4]="opcionesVehiculo().length > 3"
-                >
+                <div class="mt-3 grid grid-cols-2 gap-3">
                   @for (op of opcionesVehiculo(); track op.valor) {
                     <label
-                      class="flex min-h-20 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border-2 p-2 text-center text-sm font-semibold transition-colors"
-                      [class]="
-                        valores().categoria === op.valor
-                          ? 'border-marca bg-marca-suave text-marca'
-                          : 'border-linea hover:border-marca/40'
-                      "
+                      class="relative flex min-h-24 flex-col gap-1 rounded-xl border-2 p-3 text-sm transition-colors"
+                      [class]="claseVehiculo(op.valor, op.disponible)"
                     >
                       <input
                         type="radio"
                         class="sr-only"
-                        formControlName="categoria"
+                        name="vehiculo"
+                        [id]="'vehiculo-' + op.id"
                         [value]="op.valor"
-                        [attr.id]="op.valor === '' ? 'categoria' : null"
+                        [checked]="vehiculoElegido() === op.valor"
+                        [disabled]="!op.disponible"
+                        (change)="elegirVehiculo(op.valor)"
                       />
-                      <ti-icono [nombre]="op.icono" class="size-6" />
-                      {{ op.texto }}
-                      @if (precioDe(op.valor); as p) {
-                        <span class="numeros text-xs font-bold text-tinta">{{ p | cop }}</span>
-                      } @else {
-                        <span class="text-xs font-normal text-piedra">{{ op.ayuda }}</span>
+                      <span class="flex items-center gap-2 font-bold">
+                        <ti-icono [nombre]="op.icono" class="size-6" /> {{ op.valor }}
+                      </span>
+                      <span class="text-xs text-piedra">{{ op.ayuda }}</span>
+                      @if (!op.disponible) {
+                        <span class="text-xs font-semibold text-alerta">{{ op.motivo }}</span>
+                      } @else if (precioDe(op.valor); as p) {
+                        <span class="numeros mt-auto text-base font-extrabold text-tinta">{{
+                          p | cop
+                        }}</span>
                       }
                     </label>
                   }
                 </div>
-                <p class="ayuda">
-                  "El adecuado" es el más económico que puede llevar tu pedido ({{ minimo() }}). Uno
-                  más grande también puede tomarlo.
-                </p>
+                @if (minimo() === 'Moto Express') {
+                  <p class="ayuda">
+                    Una furgoneta también puede tomar tu pedido si la moto no está disponible.
+                  </p>
+                }
               </fieldset>
               <fieldset class="min-w-0">
                 <legend class="etiqueta">Opciones</legend>
@@ -1190,23 +1194,25 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
   protected readonly minimo = computed(
     () => this.cotizacion()?.vehiculoMinimo ?? vehiculoMinimo(this.servicio(), this.detalle()),
   );
+  /** Las dos opciones; la moto se desactiva si el pedido no le cabe (trasteo o mucho peso). */
   protected readonly opcionesVehiculo = computed(() => {
     const min = CATEGORIAS_VEHICULO.indexOf(this.minimo());
-    return [
-      {
-        valor: '' as const,
-        texto: 'El adecuado',
-        icono: 'sparkles' as NombreIcono,
-        ayuda: this.minimo() as string,
-      },
-      ...CATEGORIAS_VEHICULO.filter((_, i) => i >= min).map((c) => ({
-        valor: c,
-        texto: c,
-        icono: ICONO_VEHICULO[c],
-        ayuda: `Hasta ${CAPACIDAD_KG[c].toLocaleString('es-CO')} kg`,
-      })),
-    ];
+    return CATEGORIAS_VEHICULO.map((c, i) => ({
+      valor: c,
+      id: c === 'Furgoneta' ? 'furgoneta' : 'moto',
+      icono: ICONO_VEHICULO[c],
+      ayuda: AYUDA_VEHICULO[c],
+      disponible: i >= min,
+      motivo:
+        this.servicio() === 'trasteo'
+          ? 'Los trasteos van en furgoneta'
+          : `Más de ${CAPACIDAD_KG[c]} kg va en furgoneta`,
+    }));
   });
+  /** Vehículo marcado: el que eligió el cliente o, si no eligió, el mínimo para el pedido. */
+  protected readonly vehiculoElegido = computed<CategoriaVehiculo>(
+    () => this.valores().categoria || this.minimo(),
+  );
   protected readonly coordsParadas = computed(() =>
     this.paradas()
       .map((p) => p.coords())
@@ -1294,9 +1300,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     const cat = this.valores().categoria || this.minimo();
     return c.opciones?.find((o) => o.categoria === cat)?.tarifaTotal ?? c.tarifaTotal;
   });
-  protected readonly vehiculoCotizado = computed(
-    () => this.valores().categoria || `${this.minimo()} (el adecuado)`,
-  );
+  protected readonly vehiculoCotizado = computed(() => this.valores().categoria || this.minimo());
   protected readonly tarifaCambio = computed(() => {
     const e = this.creado();
     return !!this.cotizacion() && !!e && this.precioElegido() !== e.tarifa;
@@ -1329,7 +1333,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
         if (listo && firma !== this.firmaCotizada()) this.programarCotizacion();
       });
     });
-    // Si el vehículo elegido ya no alcanza para el pedido, vuelve a "El adecuado"
+    // Si el vehículo elegido ya no alcanza para el pedido, vuelve al mínimo
     effect(() => {
       const min = CATEGORIAS_VEHICULO.indexOf(this.minimo());
       const cat = this.valores().categoria;
@@ -1464,6 +1468,18 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
 
   protected err(c: 'origen' | 'destino'): boolean {
     return mostrarError(this.form.controls[c]);
+  }
+
+  /** Elegir el mínimo es "cualquiera que pueda llevarlo"; elegir uno mayor lo exige. */
+  protected elegirVehiculo(c: CategoriaVehiculo): void {
+    this.form.controls.categoria.setValue(c === this.minimo() ? '' : c);
+  }
+
+  protected claseVehiculo(c: CategoriaVehiculo, disponible: boolean): string {
+    if (!disponible) return 'cursor-not-allowed border-linea bg-niebla/60 opacity-70';
+    return this.vehiculoElegido() === c
+      ? 'cursor-pointer border-marca bg-marca-suave'
+      : 'cursor-pointer border-linea hover:border-marca/40';
   }
 
   protected precioDe(valor: CategoriaVehiculo | ''): number | null {

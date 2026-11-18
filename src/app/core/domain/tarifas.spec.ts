@@ -29,7 +29,6 @@ describe('tarifas', () => {
   it('un vehículo grande atiende pedidos de su tamaño o menores', () => {
     expect(categoriasAtendibles(null)).toEqual([]);
     expect(categoriasAtendibles('Moto Express')).toEqual(['Moto Express']);
-    expect(categoriasAtendibles('Motocarro')).toEqual(['Moto Express', 'Motocarro']);
-    expect(categoriasAtendibles('Camioneta')).toHaveLength(3);
+    expect(categoriasAtendibles('Furgoneta')).toEqual(['Moto Express', 'Furgoneta']);
   });
 });

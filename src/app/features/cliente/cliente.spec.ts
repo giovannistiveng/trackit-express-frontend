@@ -64,8 +64,7 @@ const COTIZACION: Cotizacion = {
   desglose: DESGLOSE,
   opciones: [
     { categoria: 'Moto Express', tarifaTotal: 31600, minimoAplicado: false },
-    { categoria: 'Motocarro', tarifaTotal: 44300, minimoAplicado: false },
-    { categoria: 'Camioneta', tarifaTotal: 75500, minimoAplicado: false },
+    { categoria: 'Furgoneta', tarifaTotal: 75500, minimoAplicado: false },
   ],
   nocturno: false,
   origenCoords: null,
@@ -201,7 +200,8 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     const precios = Array.from(el.querySelectorAll('fieldset label .numeros')).map((x) =>
       x.textContent?.replace(/\s+/g, ' ').trim(),
     );
-    expect(precios).toEqual(['$ 31.600', '$ 31.600', '$ 44.300', '$ 75.500']);
+    expect(precios).toEqual(['$ 31.600', '$ 75.500']);
+    expect(q<HTMLInputElement>(el, '#vehiculo-moto').checked).toBe(true);
     expect(confirmar(el).textContent).toMatch(/\$\s31\.600/);
   });
 
@@ -266,11 +266,9 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
       servicio: 'trasteo',
     });
     expect(q<HTMLInputElement>(el, '#servicio-trasteo').checked).toBe(true);
-    const vehiculos = () =>
-      Array.from(el.querySelectorAll('[aria-labelledby="titulo-vehiculo"] fieldset label')).map(
-        (l) => l.textContent?.replace(/\s+/g, ' ').trim().split(' ')[0],
-      );
-    expect(vehiculos()).not.toContain('Moto');
+    expect(q<HTMLInputElement>(el, '#vehiculo-moto').disabled).toBe(true);
+    expect(q<HTMLInputElement>(el, '#vehiculo-furgoneta').checked).toBe(true);
+    expect(el.textContent).toContain('Los trasteos van en furgoneta');
     escribir(q(el, '#det-objetos'), 'Nevera y cama doble');
     elegir(q(el, '#det-piso-d'), 2);
     q<HTMLButtonElement>(el, '[aria-label="Agregar un ayudante"]').click();
@@ -294,9 +292,9 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     escribir(q(el, '#det-insumo'), 'Abono');
     escribir(q(el, '#det-peso'), '1500');
     await estable();
-    expect(el.textContent).toContain(
-      '"El adecuado" es el más económico que puede llevar tu pedido (Camión)',
-    );
+    expect(q<HTMLInputElement>(el, '#vehiculo-moto').disabled).toBe(true);
+    expect(q<HTMLInputElement>(el, '#vehiculo-furgoneta').checked).toBe(true);
+    expect(el.textContent).toContain('Más de 20 kg va en furgoneta');
   });
 
   it('errorDetalle valida cada servicio como el backend', () => {
@@ -305,6 +303,9 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     expect(errorDetalle('insumos', {})).toContain('insumo');
     expect(errorDetalle('insumos', { insumo: 'Abono' })).toContain('peso');
     expect(errorDetalle('paquete', { pesoKg: 999_999 })).toContain('entre 1 y');
+    expect(errorDetalle('insumos', { insumo: 'Arena', pesoKg: 2000 })).toBe(
+      'El peso debe estar entre 1 y 1.500 kg.',
+    );
     expect(errorDetalle('paquete', {})).toBe('');
   });
 
@@ -552,18 +553,15 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { el, p, fixture } = await montarNuevo();
     const paso = pasoCon(fixture);
-    expect(q<HTMLInputElement>(el, '#categoria').checked).toBe(true);
+    expect(q<HTMLInputElement>(el, '#vehiculo-moto').checked).toBe(true);
     await llenarCotizacion(fixture);
     await paso(ESPERA_AUTOCOTIZAR_MS);
     expect(p.cotizar.cotizar).toHaveBeenCalledTimes(1);
-    const camioneta = Array.from(el.querySelectorAll('fieldset label')).find((l) =>
-      l.textContent?.includes('Camioneta'),
-    );
-    q<HTMLInputElement>(camioneta as HTMLElement, 'input[type=radio]').click();
+    q<HTMLInputElement>(el, '#vehiculo-furgoneta').click();
     await paso(ESPERA_AUTOCOTIZAR_MS);
     expect(p.cotizar.cotizar).toHaveBeenCalledTimes(2);
     expect(p.cotizar.cotizar).toHaveBeenLastCalledWith(
-      expect.objectContaining({ categoria: 'Camioneta' }),
+      expect.objectContaining({ categoria: 'Furgoneta' }),
     );
     expect(confirmar(el).textContent).toMatch(/\$\s75\.500/);
     escribir(q(el, '#notas'), '  Portería  ');
@@ -571,7 +569,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     confirmar(el).click();
     await paso();
     expect(p.envios.crear).toHaveBeenCalledWith(
-      expect.objectContaining({ categoria: 'Camioneta', notas: 'Portería' }),
+      expect.objectContaining({ categoria: 'Furgoneta', notas: 'Portería' }),
     );
   });
 

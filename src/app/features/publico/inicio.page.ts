@@ -44,9 +44,7 @@ export const MINUTOS_POR_KM = 2;
 /** Tarifas de referencia si el backend no responde (mismas que las migraciones). */
 export const TARIFAS_REFERENCIA: TarifaVehiculo[] = [
   { categoria: 'Moto Express', banderazo: 2000, porKm: 700, porMinuto: 50, minimo: 4500 },
-  { categoria: 'Motocarro', banderazo: 4000, porKm: 950, porMinuto: 80, minimo: 8000 },
-  { categoria: 'Camioneta', banderazo: 10000, porKm: 1600, porMinuto: 120, minimo: 18000 },
-  { categoria: 'Camión', banderazo: 25000, porKm: 2800, porMinuto: 250, minimo: 45000 },
+  { categoria: 'Furgoneta', banderazo: 12000, porKm: 1800, porMinuto: 150, minimo: 22000 },
 ];
 
 interface Paso {
@@ -275,23 +273,11 @@ const PREGUNTAS = [
             </p>
           </div>
           <ol class="relative mt-14 grid gap-6 md:grid-cols-4">
-            <svg
-              class="pointer-events-none absolute left-[12%] right-[12%] top-9 hidden h-2 md:block"
-              preserveAspectRatio="none"
-              viewBox="0 0 100 2"
+            <!-- Línea que une el centro del primer paso con el del último -->
+            <span
+              class="pointer-events-none absolute left-[12.5%] right-[12.5%] top-9 hidden border-t-2 border-dashed border-[#8cc4a7] md:block"
               aria-hidden="true"
-            >
-              <line
-                x1="0"
-                y1="1"
-                x2="100"
-                y2="1"
-                stroke="#8cc4a7"
-                stroke-width="2"
-                vector-effect="non-scaling-stroke"
-                class="ruta-animada"
-              />
-            </svg>
+            ></span>
             @for (p of pasos; track p.titulo; let i = $index) {
               <li tiRevelar [retraso]="i * 120" class="relative text-center">
                 <span
@@ -391,7 +377,7 @@ const PREGUNTAS = [
                     >
                     <div class="text-sm">
                       <p class="font-bold">Camilo R. <span class="text-piedra">★ 4,9</span></p>
-                      <p class="text-piedra">Camioneta, placa ABC12D</p>
+                      <p class="text-piedra">Furgoneta, placa ABC12D</p>
                     </div>
                   </div>
                 </div>
@@ -546,7 +532,7 @@ const PREGUNTAS = [
           <div tiRevelar>
             <p class="antetitulo !text-placa">Trabaja con nosotros</p>
             <h2 class="mt-3 text-3xl font-extrabold sm:text-4xl">
-              Gana con tu moto, motocarro, camioneta o camión
+              Gana con tu moto o tu furgoneta
             </h2>
             <p class="mt-4 text-lg text-white/85">
               Tú decides qué servicios tomar. Te quedas con el 80 % de cada tarifa y ves tus

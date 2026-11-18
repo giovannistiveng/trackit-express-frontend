@@ -58,7 +58,7 @@ describe('DesgloseTarifaComponent y EtapasServicioComponent', () => {
   it('el desglose lista extras, acceso destapado, nocturno y tarifa mínima', async () => {
     const f = TestBed.createComponent(DesgloseTarifaComponent);
     f.componentRef.setInput('desglose', {
-      categoria: 'Camioneta',
+      categoria: 'Furgoneta',
       banderazo: 10000,
       distancia: 8000,
       tiempo: 2000,
