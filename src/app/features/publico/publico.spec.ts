@@ -1,3 +1,4 @@
+import { TestBed } from '@angular/core/testing';
 import { CLIENTE } from '../../../testing/fixtures';
 import { botonPorTexto, escribir, q, rechaza } from '../../../testing/fakes';
 import { montar } from '../../../testing/pantallas';
@@ -66,7 +67,7 @@ describe('InicioPage (sitio público)', () => {
     const cifras = el.querySelector(
       'section[aria-label="TrackIt Express en cifras"]',
     ) as HTMLElement;
-    const textos = cifras.textContent?.replace(/\s+/g, ' ') ?? '';
+    const textos = cifras.textContent?.replaceAll(/\s+/g, ' ') ?? '';
     expect(textos).toContain('envíos entregados');
     expect(textos).toContain('1.240');
     expect(textos).toContain('4,8 ★');
@@ -84,7 +85,7 @@ describe('InicioPage (sitio público)', () => {
 
   it('la calculadora usa la tarifa del vehículo, la distancia, el tiempo y el recargo de la zona', async () => {
     const { el, estable } = await montarInicio();
-    const texto = () => q(el, '#tarifas').textContent?.replace(/\s+/g, ' ') ?? '';
+    const texto = () => q(el, '#tarifas').textContent?.replaceAll(/\s+/g, ' ') ?? '';
     // Moto: 2.000 + 5 km × 700 + 10 min × 50 = 6.000 + recargo 5.000
     expect(texto()).toContain('$ 11.000');
     const zona = q<HTMLSelectElement>(el, '#calc-zona');
@@ -109,7 +110,7 @@ describe('InicioPage (sitio público)', () => {
     const s = sitio();
     s.tarifas.mockImplementation(rechaza(new ApiError(0, 'x')));
     const { el } = await montarInicio(s);
-    expect(q(el, '#tarifas').textContent?.replace(/\s+/g, ' ')).toContain('$ 11.000');
+    expect(q(el, '#tarifas').textContent?.replaceAll(/\s+/g, ' ')).toContain('$ 11.000');
   });
 
   it('el formulario de contacto valida, envía y confirma', async () => {
@@ -152,6 +153,43 @@ describe('InicioPage (sitio público)', () => {
     expect(q(el, '#contacto [role="alert"]').textContent).toContain('Demasiados intentos');
   });
 
+  it('zona sin recargo, tarifas reales sin el vehículo elegido, sin zonas y mientras envía el contacto', async () => {
+    const s = sitio();
+    s.zonas.mockImplementation(async () => [{ id: 1, nombre: 'Casco Urbano', tarifaBase: 0 }]);
+    s.tarifas.mockImplementation(async () => ({
+      tarifas: [TARIFAS_REFERENCIA[1]],
+      recargoNocturno: 0.2,
+      horarioNocturno: '',
+    }));
+    let terminar!: () => void;
+    s.contactar.mockImplementation(
+      () => new Promise<undefined>((ok) => (terminar = () => ok(undefined))),
+    );
+    const { el, estable } = await montarInicio(s);
+    expect(q(el, '#tarifas').textContent).toContain('sin recargo');
+    expect(q(el, '#tarifas').textContent).not.toContain('+ recargo');
+    escribir(q(el, '#c-nombre'), 'Ana Gómez');
+    escribir(q(el, '#c-correo'), 'ana@correo.co');
+    escribir(q(el, '#c-mensaje'), 'Quiero cotizar un trasteo grande');
+    botonPorTexto(el, /Enviar mensaje/).click();
+    await estable();
+    expect(el.textContent).toContain('Enviando…');
+    terminar();
+    await estable();
+    TestBed.resetTestingModule();
+    const vacio = sitio();
+    vacio.zonas.mockImplementation(async () => []);
+    const r = await montarInicio(vacio);
+    expect(r.el.querySelector('#calc-zona')).toBeNull();
+  });
+
+  it('el menú móvil con sesión iniciada ofrece ir al panel', async () => {
+    const { el, estable } = await montar(SitioCabeceraComponent, { usuario: CLIENTE });
+    q<HTMLButtonElement>(el, 'button[aria-controls="menu-sitio"]').click();
+    await estable();
+    expect(q(el, '#menu-sitio').textContent).toContain('Ir a mi panel');
+  });
+
   it('con sesión iniciada ofrece ir al panel', async () => {
     const { el } = await montarInicio(sitio(), CLIENTE);
     expect(el.textContent).toContain('Ir a mi panel');
@@ -166,13 +204,13 @@ describe('SitioCabeceraComponent', () => {
     boton.click();
     await estable();
     expect(el.querySelectorAll('#menu-sitio li')).toHaveLength(5);
-    (q(el, '#menu-sitio a') as HTMLAnchorElement).click();
+    q<HTMLAnchorElement>(el, '#menu-sitio a').click();
     await estable();
     expect(el.querySelector('#menu-sitio')).toBeNull();
-    Object.defineProperty(window, 'scrollY', { value: 200, configurable: true });
-    window.dispatchEvent(new Event('scroll'));
+    Object.defineProperty(globalThis, 'scrollY', { value: 200, configurable: true });
+    globalThis.dispatchEvent(new Event('scroll'));
     await estable();
     expect(q(el, 'header').className).toContain('backdrop-blur-md');
-    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true });
+    Object.defineProperty(globalThis, 'scrollY', { value: 0, configurable: true });
   });
 });

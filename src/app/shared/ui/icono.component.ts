@@ -285,7 +285,7 @@ export class IconoComponent {
     effect(() => {
       const n = this.nombre();
       cache[n] ??= nodoIcono(n);
-      this.host.nativeElement.replaceChildren(document.importNode(cache[n] as SVGElement, true));
+      this.host.nativeElement.replaceChildren(document.importNode(cache[n], true));
     });
   }
 }

@@ -473,15 +473,15 @@ const PREGUNTAS = [
                 </div>
                 <div class="mt-6 flex items-end justify-between gap-4 border-t border-linea pt-5">
                   <p class="text-sm text-piedra">
-                    @if (tarifaElegida(); as t) {
-                      {{ t.banderazo | cop }} + {{ t.porKm | cop }}/km + {{ t.porMinuto | cop }}/min
-                      @if ((zonaElegida()?.tarifaBase ?? 0) > 0) {
-                        + recargo {{ zonaElegida()?.tarifaBase | cop }}
-                      }
-                      <br /><span class="text-xs"
-                        >Mínimo {{ t.minimo | cop }}, sin recargo nocturno</span
-                      >
+                    @let t = tarifaElegida();
+                    @let recargo = recargoElegido();
+                    {{ t.banderazo | cop }} + {{ t.porKm | cop }}/km + {{ t.porMinuto | cop }}/min
+                    @if (recargo > 0) {
+                      + recargo {{ recargo | cop }}
                     }
+                    <br /><span class="text-xs"
+                      >Mínimo {{ t.minimo | cop }}, sin recargo nocturno</span
+                    >
                   </p>
                   <p class="numeros text-3xl font-extrabold text-marca">{{ estimado() | cop }}</p>
                 </div>
@@ -782,22 +782,22 @@ export class InicioPage implements OnInit {
   protected readonly vehiculoCalculo = signal<string>('Moto Express');
   protected readonly zonaCalculo = signal(0);
   protected readonly km = signal(5);
-  protected readonly zonaElegida = computed<Zona | undefined>(
-    () => this.zonas().find((z) => z.id === this.zonaCalculo()) ?? this.zonas()[0],
+  /** Recargo de la zona elegida (la calculadora solo se muestra con zonas cargadas). */
+  protected readonly recargoElegido = computed(
+    () => (this.zonas().find((z) => z.id === this.zonaCalculo()) as Zona).tarifaBase,
   );
-  protected readonly tarifaElegida = computed<TarifaVehiculo | undefined>(
+  /** Siempre hay tarifas: las de referencia hasta que respondan las reales. */
+  protected readonly tarifaElegida = computed<TarifaVehiculo>(
     () => this.tarifas().find((t) => t.categoria === this.vehiculoCalculo()) ?? this.tarifas()[0],
   );
-  protected readonly estimado = computed(() => {
-    const t = this.tarifaElegida();
-    if (!t) return 0;
-    return precioEstimado(
-      t,
+  protected readonly estimado = computed(() =>
+    precioEstimado(
+      this.tarifaElegida(),
       this.km(),
       this.km() * MINUTOS_POR_KM,
-      this.zonaElegida()?.tarifaBase ?? 0,
-    );
-  });
+      this.recargoElegido(),
+    ),
+  );
 
   /** Solo se muestran cifras reales y con valor: un sitio nuevo no exhibe ceros. */
   protected readonly cifras = computed(() => {

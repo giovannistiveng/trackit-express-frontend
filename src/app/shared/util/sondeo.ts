@@ -19,8 +19,8 @@ export class Sondeo<T> {
   private enCurso = false;
   private fallos = 0;
   private readonly doc: OpcionesSondeo<T>['documento'];
+  // Solo está suscrito mientras el sondeo está activo
   private readonly alCambiarVisibilidad = () => {
-    if (!this.activo) return;
     if (this.doc?.visibilityState === 'hidden') this.limpiar();
     else void this.ejecutar();
   };
@@ -29,7 +29,7 @@ export class Sondeo<T> {
     private readonly consulta: () => Promise<T>,
     private readonly opciones: OpcionesSondeo<T>,
   ) {
-    this.doc = opciones.documento ?? (typeof document !== 'undefined' ? document : undefined);
+    this.doc = opciones.documento ?? document;
   }
 
   get fallosSeguidos(): number {

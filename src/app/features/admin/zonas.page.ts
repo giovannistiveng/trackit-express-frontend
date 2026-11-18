@@ -241,7 +241,7 @@ const CAMPOS_TARIFA: {
                 <button
                   type="button"
                   class="btn-secundario shrink-0"
-                  (click)="mapa()?.verTodas()"
+                  (click)="mapa().verTodas()"
                   title="Ver todas las zonas"
                   aria-label="Ver todas las zonas"
                 >
@@ -274,6 +274,7 @@ const CAMPOS_TARIFA: {
               }
 
               <ti-selector-mapa
+                #selectorMapa
                 [zonas]="zonas()"
                 [idZonaActiva]="borrador()?.id ?? null"
                 [punto]="borrador() ? borrador()!.centro : prueba()"
@@ -293,22 +294,23 @@ const CAMPOS_TARIFA: {
                   para ubicar el centro de la zona.
                 </p>
               } @else if (prueba(); as p) {
+                @let zonaPrueba = zonaEn(p);
                 <div
                   class="mt-3 flex flex-wrap items-center gap-3 rounded-2xl border p-3"
                   [class]="
-                    zonaPrueba()
+                    zonaPrueba
                       ? 'border-bosque/30 bg-bosque-suave'
                       : 'border-alerta/30 bg-alerta-suave'
                   "
                   role="status"
                 >
                   <ti-icono
-                    [nombre]="zonaPrueba() ? 'circle-check' : 'circle-x'"
+                    [nombre]="zonaPrueba ? 'circle-check' : 'circle-x'"
                     class="size-5 shrink-0"
-                    [class]="zonaPrueba() ? 'text-bosque' : 'text-alerta'"
+                    [class]="zonaPrueba ? 'text-bosque' : 'text-alerta'"
                   />
                   <p class="min-w-0 flex-1 text-sm">
-                    @if (zonaPrueba(); as z) {
+                    @if (zonaPrueba; as z) {
                       Este punto tiene servicio en <strong>{{ z.nombre }}</strong>
                       <span class="text-piedra">
                         ({{
@@ -319,7 +321,7 @@ const CAMPOS_TARIFA: {
                       <strong>Sin cobertura.</strong> Un cliente aquí no podría pedir servicio.
                     }
                   </p>
-                  @if (!zonaPrueba()) {
+                  @if (!zonaPrueba) {
                     <button type="button" class="btn-texto" (click)="nuevaZona(p)">
                       <ti-icono nombre="plus" class="size-4" /> Crear zona aquí
                     </button>
@@ -344,7 +346,7 @@ const CAMPOS_TARIFA: {
               @if (borrador(); as b) {
                 <form
                   class="tarjeta space-y-4 border-2 border-marca p-5"
-                  (ngSubmit)="guardarZona()"
+                  (ngSubmit)="guardarZona(b)"
                   novalidate
                 >
                   <h3 class="font-bold">{{ b.id ? 'Editar ' + b.nombre : 'Nueva zona' }}</h3>
@@ -594,7 +596,8 @@ export class ZonasPage implements OnInit {
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
   private readonly geo = inject(GeoPort);
-  protected readonly mapa = viewChild(SelectorMapaComponent);
+  // Por referencia de plantilla (#selectorMapa): la consulta por clase deja una función sin ejecutar
+  protected readonly mapa = viewChild.required<SelectorMapaComponent>('selectorMapa');
   protected readonly porBorrar = signal<Zona | null>(null);
   protected readonly borrando = signal(false);
 
@@ -622,10 +625,10 @@ export class ZonasPage implements OnInit {
   protected readonly buscando = signal(false);
   protected readonly avisoBusqueda = signal('');
 
-  protected readonly zonaPrueba = computed(() => {
-    const p = this.prueba();
-    return p ? zonaDePunto(this.zonas(), p) : null;
-  });
+  /** Zona que cubre el punto de prueba (o null: sin cobertura). */
+  protected zonaEn(p: Coordenadas): Zona | null {
+    return zonaDePunto(this.zonas(), p);
+  }
 
   protected readonly superpuestas = computed(() => {
     const b = this.borrador();
@@ -673,7 +676,7 @@ export class ZonasPage implements OnInit {
   // ------------------------------------------------------------ Tarifas por vehículo
 
   protected idCampo(t: TarifaVehiculo, clave: string): string {
-    return `tarifa-${t.categoria.replace(/\s+/g, '-').toLowerCase()}-${clave}`;
+    return `tarifa-${t.categoria.replaceAll(/\s+/g, '-').toLowerCase()}-${clave}`;
   }
 
   protected ejemplo(t: TarifaVehiculo, km: number, minutos: number): number {
@@ -776,7 +779,7 @@ export class ZonasPage implements OnInit {
     // Editando: el lugar pasa a ser el centro de la zona. Si no, se prueba su cobertura.
     if (this.borrador()) this.editar({ centro: r.coords });
     else this.prueba.set(r.coords);
-    this.mapa()?.irA(r.coords, 14);
+    this.mapa().irA(r.coords, 14);
   }
 
   protected alElegirEnMapa(p: Coordenadas): void {
@@ -785,7 +788,7 @@ export class ZonasPage implements OnInit {
   }
 
   protected verZona(z: Zona): void {
-    this.mapa()?.enfocarZona(z);
+    this.mapa().enfocarZona(z);
   }
 
   protected nuevaZona(centro: Coordenadas | null = null): void {
@@ -822,12 +825,13 @@ export class ZonasPage implements OnInit {
   private mostrarEditor(): void {
     setTimeout(() => {
       desplazarA('titulo-zonas', 'start');
-      document.getElementById('zona-nombre')?.focus({ preventScroll: true });
+      document.querySelector<HTMLElement>('#zona-nombre')?.focus({ preventScroll: true });
     }, 50);
   }
 
   protected editar(cambios: Partial<Borrador>): void {
-    this.borrador.update((b) => (b ? { ...b, ...cambios } : b));
+    // Solo se edita con el editor abierto (hay borrador)
+    this.borrador.update((b) => ({ ...(b as Borrador), ...cambios }));
   }
 
   protected cancelarZona(): void {
@@ -835,9 +839,8 @@ export class ZonasPage implements OnInit {
     this.errorZona.set('');
   }
 
-  async guardarZona(): Promise<void> {
-    const b = this.borrador();
-    if (!b || this.guardandoZona()) return;
+  async guardarZona(b: Borrador): Promise<void> {
+    if (this.guardandoZona()) return;
     const nombre = b.nombre.trim();
     if (nombre.length < 2) return this.errorZona.set('Escribe el nombre de la zona.');
     if (!Number.isFinite(b.tarifaBase) || b.tarifaBase < 0 || b.tarifaBase > TARIFA_MAXIMA)

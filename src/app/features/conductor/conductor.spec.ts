@@ -12,7 +12,14 @@ import {
 } from '../../../testing/fakes';
 import { configurar, montar } from '../../../testing/pantallas';
 import { ApiError } from '../../core/http/api-error';
-import { EventoCarga, MensajeChat, Parada, PerfilConductor, Requisito } from '../../core/domain';
+import {
+  Envio,
+  EventoCarga,
+  MensajeChat,
+  Parada,
+  PerfilConductor,
+  Requisito,
+} from '../../core/domain';
 import {
   ChatPort,
   DeliveryPort,
@@ -34,7 +41,7 @@ import {
 } from './components/entrega-modal.component';
 import { MENSAJE_PLACA_DUPLICADA, PerfilPage } from './perfil.page';
 import { ServicioPage, accionDe } from './servicio.page';
-import { faltaRecogida } from './components/recogida-modal.component';
+import { RecogidaModalComponent, faltaRecogida } from './components/recogida-modal.component';
 import {
   CompartirUbicacionService,
   LATIDO_UBICACION_MS,
@@ -115,6 +122,19 @@ describe('CU-003 y CU-004 PerfilPage', () => {
     expect(v.registrar).toHaveBeenCalledWith({ placa: 'ABC12D', categoria: 'Furgoneta' });
     expect(q(el, '[aria-label="Placa del vehículo: A B C 1 2 D"]')).toBeTruthy();
     expect(el.textContent).toContain('Vehículo registrado');
+  });
+
+  it('salir del campo vacío no cambia nada y mientras guarda lo indica', async () => {
+    const v = vehiculos();
+    v.registrar.mockImplementation(() => new Promise(() => undefined));
+    const { el, estable } = await montarPerfil(v);
+    q(el, '#placa').dispatchEvent(new Event('blur'));
+    expect(q<HTMLInputElement>(el, '#placa').value).toBe('');
+    escribir(q(el, '#placa'), 'abc12d');
+    q(el, '#placa').dispatchEvent(new Event('blur'));
+    botonPorTexto(el, 'Registrar vehículo').click();
+    await estable();
+    expect(el.textContent).toContain('Guardando…');
   });
 
   it('debería rechazar una placa con formato inválido sin llamar a la API', async () => {
@@ -212,7 +232,7 @@ describe('CU-003 y CU-004 PerfilPage', () => {
       },
     });
     expect(el.querySelectorAll('ti-documento-card')).toHaveLength(3);
-    expect(el.textContent?.replace(/\s+/g, ' ')).toMatch(/1\s*(de|\/)\s*2/);
+    expect(el.textContent?.replaceAll(/\s+/g, ' ')).toMatch(/1\s*(de|\/)\s*2/);
   });
 });
 
@@ -291,10 +311,53 @@ describe('CU-004 DocumentoCardComponent', () => {
       },
       providers: [{ provide: DocumentsPort, useValue: { subir: vi.fn() } }],
     });
-    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
     expect(texto).toContain('Corregir');
     expect(texto).toContain('Motivo: Foto borrosa');
     expect(texto).toContain('Vence en 3 días');
+  });
+
+  it('textos de vencimiento, fecha escrita a mano y un error al subir reinicia la carga', async () => {
+    const eventos = new Subject<EventoCarga>();
+    const doc = (diasParaVencer: number | undefined) => ({
+      ...REQ_SOAT,
+      estado: 'aprobado' as const,
+      documento: {
+        id: 9,
+        tipo: 'SOAT' as const,
+        urlArchivo: 'https://c/s.pdf',
+        estado: 'Aprobado' as const,
+        fechaVencimiento: '2027-01-10',
+        diasParaVencer,
+      },
+    });
+    const { el, c, estable, fixture } = await montar(DocumentoCardComponent, {
+      inputs: { requisito: doc(undefined) },
+      providers: [
+        { provide: DocumentsPort, useValue: { subir: vi.fn(() => eventos.asObservable()) } },
+      ],
+    });
+    const texto = () => el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
+    expect(texto()).toContain('Vence el');
+    for (const [dias, esperado] of [
+      [-2, 'Venció el'],
+      [0, 'Vence hoy'],
+      [1, 'Vence en 1 día'],
+      [200, 'Vence el'],
+    ] as const) {
+      fixture.componentRef.setInput('requisito', doc(dias));
+      await estable();
+      expect(texto()).toContain(esperado);
+    }
+    fixture.componentRef.setInput('requisito', { ...REQ_SOAT, estado: 'falta', documento: null });
+    await estable();
+    escribir(q(el, '#vence-soat'), '2027-05-01');
+    await estable();
+    expect(c.vencimiento()).toBe('2027-05-01');
+    c.subir(new File(['x'], 'soat.pdf', { type: 'application/pdf' }));
+    eventos.error(new ApiError(500, 'x'));
+    await estable();
+    expect(c.estado()).toBe('error');
   });
 
   it('un documento aprobado oculta la carga hasta pedir reemplazarlo', async () => {
@@ -366,7 +429,6 @@ describe('CU-007 TableroPage', () => {
         ),
         obtener: vi.fn(async () => buildEnvio({ id: 5, estado: 'Asignado' })),
         activo: vi.fn<() => Promise<ReturnType<typeof buildEnvio> | null>>(async () => null),
-        iniciarRuta: vi.fn(),
       },
     };
   }
@@ -623,6 +685,64 @@ function chatFalso() {
   };
 }
 
+describe('Modales de recogida y entrega: casos de borde', () => {
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it('entrega: compra incluida, mientras finaliza lo indica, no repite y se cierra con la X', async () => {
+    const p = {
+      evidencia: { subir: vi.fn(() => new Promise<string>(() => undefined)) },
+      entrega: { validar: vi.fn() },
+    };
+    const r = await montar(EntregaModalComponent, {
+      inputs: { idEnvio: 1, cobroEfectivo: 50000, incluyeCompra: true },
+      providers: [
+        { provide: EvidenceStoragePort, useValue: p.evidencia },
+        { provide: DeliveryPort, useValue: p.entrega },
+      ],
+    });
+    const cerrar = vi.fn();
+    r.c.cerrar.subscribe(cerrar);
+    expect(r.el.textContent).toContain('Incluye la compra según la factura.');
+    q<HTMLButtonElement>(r.el, '[role="dialog"] button[aria-label="Cerrar"]').click();
+    expect(cerrar).toHaveBeenCalled();
+    for (const d of '1234') botonPorTexto(r.el, d).click();
+    const input = q<HTMLInputElement>(r.el, 'input[type=file]');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['x'], 'f.jpg', { type: 'image/jpeg' })],
+      configurable: true,
+    });
+    input.dispatchEvent(new Event('change'));
+    await r.estable();
+    q<HTMLInputElement>(r.el, 'input[type=checkbox]').click();
+    await r.estable();
+    botonPorTexto(r.el, 'Finalizar entrega').click();
+    await r.estable();
+    expect(botonPorTexto(r.el, /Subiendo|Validando|…/).disabled).toBe(true);
+    await r.c.finalizar();
+    expect(p.evidencia.subir).toHaveBeenCalledTimes(1);
+  });
+
+  it('recogida: campos numéricos vacíos, mientras envía lo indica y no repite', async () => {
+    const recoger = vi.fn(() => new Promise<Envio>(() => undefined));
+    const r = await montar(RecogidaModalComponent, {
+      inputs: { envio: buildEnvio({ id: 5, estado: 'Asignado', pin: undefined }) },
+      providers: [{ provide: DriverServicePort, useValue: { recoger } }],
+    });
+    r.c.codigo.set(null as unknown as string);
+    r.c.bultos.set(null as unknown as string);
+    r.c.foto.set(new File(['x'], 'f.jpg', { type: 'image/jpeg' }));
+    await r.estable();
+    botonPorTexto(r.el, /Confirmar y salir a entregar/).click();
+    await r.estable();
+    expect(r.el.textContent).toContain('Enviando…');
+    await r.c.confirmar();
+    expect(recoger).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('accionDe y faltaRecogida', () => {
   it('una sola acción por etapa, con su bloqueo', () => {
     const e = (o: Parameters<typeof buildEnvio>[0]) => buildEnvio({ pin: undefined, ...o });
@@ -674,7 +794,6 @@ describe('ServicioPage', () => {
         aceptar: vi.fn(),
         activo: vi.fn(),
         obtener: vi.fn(async () => envio),
-        iniciarRuta: vi.fn(async () => buildEnvio({ id: 5, estado: 'En Ruta', pin: undefined })),
         llegadaRecogida: vi.fn(async () =>
           buildEnvio({
             id: 5,
@@ -972,6 +1091,34 @@ describe('CU-008 CompartirUbicacionService', () => {
     expect(s.estado()).toBe('apagado');
   });
 
+  it('una posición que llega después de detener se descarta; sin posición el latido no envía; GPS del navegador', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    await preparar();
+    const s = TestBed.inject(CompartirUbicacionService);
+    const geo = TestBed.inject(GEOLOCALIZACION) as FakeGeolocation;
+    const registrar = vi.spyOn(TestBed.inject(LocationQueue), 'registrar');
+    s.iniciar(5);
+    await vi.advanceTimersByTimeAsync(LATIDO_UBICACION_MS);
+    expect(registrar).not.toHaveBeenCalled();
+    const exito = geo.exito;
+    s.detener();
+    exito?.({
+      coords: { latitude: 4.3, longitude: -74.3 },
+      timestamp: Date.now(),
+    } as GeolocationPosition);
+    await vaciarPromesas(10);
+    expect(registrar).not.toHaveBeenCalled();
+    vi.useRealTimers();
+    TestBed.resetTestingModule();
+    const gps = { watchPosition: vi.fn(), clearWatch: vi.fn() };
+    Object.defineProperty(navigator, 'geolocation', { value: gps, configurable: true });
+    expect(TestBed.inject(GEOLOCALIZACION)).toBe(gps);
+    Object.defineProperty(navigator, 'geolocation', { value: undefined, configurable: true });
+    delete (navigator as unknown as Record<string, unknown>)['geolocation'];
+    TestBed.resetTestingModule();
+    expect(TestBed.inject(GEOLOCALIZACION)).toBeNull();
+  });
+
   it('debería marcar permiso denegado y sincronizar al volver la red', async () => {
     await preparar();
     const s = TestBed.inject(CompartirUbicacionService);
@@ -990,7 +1137,7 @@ describe('CU-008 CompartirUbicacionService', () => {
     expect(s.estado()).toBe('activo');
     geo.fallar(3);
     expect(s.estado()).toBe('activo');
-    window.dispatchEvent(new Event('online'));
+    globalThis.dispatchEvent(new Event('online'));
     expect(sincronizar).toHaveBeenCalled();
     s.ngOnDestroy();
   });

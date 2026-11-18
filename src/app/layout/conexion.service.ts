@@ -3,17 +3,17 @@ import { Injectable, OnDestroy, signal } from '@angular/core';
 /** Estado de la red según navigator.onLine y los eventos online/offline. */
 @Injectable({ providedIn: 'root' })
 export class ConexionService implements OnDestroy {
-  readonly enLinea = signal(typeof navigator === 'undefined' ? true : navigator.onLine);
+  readonly enLinea = signal(navigator.onLine);
   private readonly on = () => this.enLinea.set(true);
   private readonly off = () => this.enLinea.set(false);
 
   constructor() {
-    window.addEventListener('online', this.on);
-    window.addEventListener('offline', this.off);
+    globalThis.addEventListener('online', this.on);
+    globalThis.addEventListener('offline', this.off);
   }
 
   ngOnDestroy(): void {
-    window.removeEventListener('online', this.on);
-    window.removeEventListener('offline', this.off);
+    globalThis.removeEventListener('online', this.on);
+    globalThis.removeEventListener('offline', this.off);
   }
 }

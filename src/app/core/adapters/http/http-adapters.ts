@@ -528,14 +528,6 @@ export class HttpDriverServiceAdapter implements DriverServicePort {
     );
     return r.envio ? aEnvio(r.envio, false) : null;
   }
-
-  async iniciarRuta(idEnvio: number): Promise<Envio> {
-    validarId(idEnvio);
-    const r = await firstValueFrom(
-      this.http.post<{ envio: ApiEnvio }>(this.url(`/envios/${idEnvio}/iniciar-ruta`), {}),
-    );
-    return aEnvio(r.envio, false);
-  }
 }
 
 @Injectable({ providedIn: 'root' })
@@ -1147,14 +1139,14 @@ export class HttpLogTransportAdapter implements LogTransportPort {
     try {
       await firstValueFrom(this.http.post(this.url('/logs/frontend'), { eventos }));
     } catch (e) {
-      const status = (e as { status?: number }).status ?? 0;
+      // El interceptor convierte todo fallo HTTP en ApiError (siempre con status)
+      const status = (e as ApiError).status;
       throw new ApiError(status, 'No se pudieron enviar los logs');
     }
   }
 
   enviarAlSalir(eventos: EventoLog[]): boolean {
-    if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function')
-      return false;
+    if (typeof navigator.sendBeacon !== 'function') return false;
     const blob = new Blob([JSON.stringify({ eventos })], { type: 'application/json' });
     return navigator.sendBeacon(this.url('/logs/frontend'), blob);
   }

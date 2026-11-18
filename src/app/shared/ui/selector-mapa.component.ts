@@ -6,9 +6,9 @@ import {
   ElementRef,
   OnDestroy,
   effect,
+  inject,
   input,
   output,
-  viewChild,
 } from '@angular/core';
 import type { LayerGroup, Map as LeafletMap, Marker } from 'leaflet';
 import { Coordenadas, Zona } from '../../core/domain';
@@ -26,7 +26,6 @@ const PIN_ELEGIDO =
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'relative isolate z-0 block' },
   template: `<div
-    #mapa
     class="w-full overflow-hidden rounded-2xl border border-linea bg-[#eef2ec]"
     [class]="alto()"
     role="application"
@@ -45,7 +44,8 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
   readonly etiqueta = input('Mapa: haz clic para elegir el punto');
   readonly elegir = output<Coordenadas>();
 
-  private readonly contenedor = viewChild.required<ElementRef<HTMLDivElement>>('mapa');
+  /** El mapa se dibuja en el único hijo del componente. */
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private L: typeof import('leaflet') | null = null;
   private mapa: LeafletMap | null = null;
   private capaZonas: LayerGroup | null = null;
@@ -73,10 +73,9 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
   async inicializar(): Promise<void> {
     this.L = await cargarLeaflet();
     const inicio = this.punto() ?? CENTRO_FUSAGASUGA;
-    this.mapa = this.L.map(this.contenedor().nativeElement, { scrollWheelZoom: true }).setView(
-      [inicio.lat, inicio.lon],
-      this.punto() ? 16 : 13,
-    );
+    this.mapa = this.L.map(this.host.nativeElement.firstElementChild as HTMLElement, {
+      scrollWheelZoom: true,
+    }).setView([inicio.lat, inicio.lon], this.punto() ? 16 : 13);
     agregarCapaBase(this.L, this.mapa);
     this.capaZonas = this.L.layerGroup().addTo(this.mapa);
     this.capaPunto = this.L.layerGroup().addTo(this.mapa);
@@ -100,8 +99,9 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
 
   /** Encuadra todas las zonas ubicadas (o vuelve al centro por defecto si no hay). */
   verTodas(): void {
-    if (!this.L || !this.mapa) return;
-    const L = this.L;
+    // L y mapa se crean juntos al cargar
+    if (!this.mapa) return;
+    const L = this.L as typeof import('leaflet');
     const circulos = this.zonas()
       .filter((z) => z.centro && z.radioKm)
       .map((z) => L.circle([z.centro!.lat, z.centro!.lon], { radius: z.radioKm! * 1000 }));
@@ -118,10 +118,10 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
 
   /** Encuadra una zona concreta. */
   enfocarZona(z: Zona): void {
-    if (!this.L || !this.mapa || !z.centro || !z.radioKm) return;
-    const c = this.L.circle([z.centro.lat, z.centro.lon], { radius: z.radioKm * 1000 }).addTo(
-      this.mapa,
-    );
+    if (!this.mapa || !z.centro || !z.radioKm) return;
+    const c = (this.L as typeof import('leaflet'))
+      .circle([z.centro.lat, z.centro.lon], { radius: z.radioKm * 1000 })
+      .addTo(this.mapa);
     this.mapa.fitBounds(c.getBounds(), { padding: [24, 24] });
     c.remove();
   }
@@ -176,7 +176,7 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
       this.mapa.setView([p.lat, p.lon], Math.max(this.mapa.getZoom(), 15), { animate: false });
     }
     this.encuadrado = true;
-    this.marcador = L.marker([p.lat, p.lon], {
+    const marcador = L.marker([p.lat, p.lon], {
       draggable: true,
       title: 'Punto elegido (puedes arrastrarlo)',
       icon: L.divIcon({
@@ -186,10 +186,11 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
         iconAnchor: [16, 32],
       }),
     }).addTo(this.capaPunto);
-    this.marcador.on('dragend', () => {
-      const ll = this.marcador?.getLatLng();
-      if (ll) this.elegir.emit(redondear(ll.lat, ll.lng));
+    marcador.on('dragend', () => {
+      const ll = marcador.getLatLng();
+      this.elegir.emit(redondear(ll.lat, ll.lng));
     });
+    this.marcador = marcador;
   }
 }
 

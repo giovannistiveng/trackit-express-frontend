@@ -9,7 +9,7 @@ import { apiInterceptor } from '../http/api.interceptor';
 import { SessionStoragePort } from '../ports';
 import { authInterceptor } from './auth.interceptor';
 import { authGuard, invitadoGuard, roleGuard } from './guards';
-import { CLAVE_SESION, SessionService } from './session.service';
+import { CLAVE_SESION, SessionService, limpiarCacheDeDatos } from './session.service';
 
 function preparar() {
   TestBed.configureTestingModule({
@@ -97,6 +97,66 @@ describe('SessionService', () => {
 
   it('sin sesión el inicio es /login', () =>
     expect(preparar().session.inicioDelRol()).toBe('/login'));
+});
+
+describe('SessionService: otras pestañas y casos de borde', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('sin nada guardado no restaura; sin sesión no cambia nombre ni correo; cerrar sin sesión', () => {
+    const { session, storage } = preparar();
+    session.restaurar();
+    expect(session.estaAutenticado()).toBe(false);
+    session.actualizarNombre('Otro');
+    session.marcarCorreoVerificado();
+    session.cerrar('expirada');
+    expect(storage.leer(CLAVE_SESION)).toBeNull();
+    expect(session.ultimoCierre()).toBe('expirada');
+  });
+
+  it('el correo ya verificado no se vuelve a guardar', () => {
+    const { session, storage } = preparar();
+    session.iniciar({ ...CLIENTE, correoVerificado: true }, jwtVigente());
+    const guardar = vi.spyOn(storage, 'guardar');
+    session.marcarCorreoVerificado();
+    expect(guardar).not.toHaveBeenCalled();
+    session.iniciar({ ...CLIENTE, correoVerificado: false }, jwtVigente());
+    session.marcarCorreoVerificado();
+    expect(session.usuario()?.correoVerificado).toBe(true);
+  });
+
+  it('sincroniza con otra pestaña: sin cambios, cerrada, otra cuenta y datos dañados', () => {
+    const { session, storage } = preparar();
+    expect(session.sincronizarDesdeOtraPestana()).toBe('sin-cambios');
+    session.iniciar(CLIENTE, jwtVigente());
+    expect(session.sincronizarDesdeOtraPestana()).toBe('sin-cambios');
+    storage.borrar(CLAVE_SESION);
+    expect(session.sincronizarDesdeOtraPestana()).toBe('cerrada');
+    storage.guardar(CLAVE_SESION, JSON.stringify({ token: jwtVigente(), user: ADMIN }));
+    expect(session.sincronizarDesdeOtraPestana()).toBe('otra-cuenta');
+    expect(session.rol()).toBe(ADMIN.rol);
+    storage.guardar(CLAVE_SESION, '{dañado');
+    expect(session.sincronizarDesdeOtraPestana()).toBe('sin-cambios');
+    storage.guardar(CLAVE_SESION, JSON.stringify({ token: crearJwt(1), user: CLIENTE }));
+    expect(session.sincronizarDesdeOtraPestana()).toBe('cerrada');
+  });
+
+  it('al cerrar borra solo la caché de datos; sin Cache Storage o con error no falla', async () => {
+    const borrar = vi.fn(async () => true);
+    vi.stubGlobal('caches', {
+      keys: vi.fn(async () => ['app:data:v1', 'app:assets:v1']),
+      delete: borrar,
+    });
+    await limpiarCacheDeDatos();
+    expect(borrar).toHaveBeenCalledWith('app:data:v1');
+    expect(borrar).toHaveBeenCalledTimes(1);
+    vi.stubGlobal('caches', {
+      keys: vi.fn(async () => Promise.reject(new Error('denegado'))),
+      delete: borrar,
+    });
+    await expect(limpiarCacheDeDatos()).resolves.toBeUndefined();
+    vi.stubGlobal('caches', undefined);
+    await expect(limpiarCacheDeDatos()).resolves.toBeUndefined();
+  });
 });
 
 describe('authInterceptor', () => {

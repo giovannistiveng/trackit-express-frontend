@@ -40,8 +40,8 @@ export class SessionService {
       if (!datos.token || !datos.user) throw new Error('incompleta');
       const expiraEn = leerExpiracionJwt(datos.token);
       if (expiraEn === null || expiraEn <= ahora) {
-        this.storage.borrar(CLAVE_SESION);
-        this.ultimoCierre.set('expirada');
+        // Si otra pestaña dejó una sesión vencida, esta tampoco queda abierta
+        this.cerrar('expirada');
         this.log.info('Sesion', 'Sesión guardada vencida al arrancar; se cierra');
         return;
       }

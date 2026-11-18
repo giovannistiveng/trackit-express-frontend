@@ -39,11 +39,9 @@ export class LoggerService implements LoggerPort, OnDestroy {
   constructor() {
     if (this.config.logs.enviarAlServidor) {
       this.intervalo = setInterval(() => void this.enviar(), INTERVALO_ENVIO_MS);
-      if (typeof window !== 'undefined') {
-        document.addEventListener('visibilitychange', this.alOcultar);
-        window.addEventListener('pagehide', this.alSalir);
-        window.addEventListener('online', this.alConectar);
-      }
+      document.addEventListener('visibilitychange', this.alOcultar);
+      window.addEventListener('pagehide', this.alSalir);
+      globalThis.addEventListener('online', this.alConectar);
       // Lo que quedó guardado de la sesión anterior se envía cuando el navegador esté libre
       queueMicrotask(() => void this.reenviarCola());
     }
@@ -51,11 +49,9 @@ export class LoggerService implements LoggerPort, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.intervalo) clearInterval(this.intervalo);
-    if (typeof window !== 'undefined') {
-      document.removeEventListener('visibilitychange', this.alOcultar);
-      window.removeEventListener('pagehide', this.alSalir);
-      window.removeEventListener('online', this.alConectar);
-    }
+    document.removeEventListener('visibilitychange', this.alOcultar);
+    window.removeEventListener('pagehide', this.alSalir);
+    globalThis.removeEventListener('online', this.alConectar);
   }
 
   debug(contexto: string, mensaje: string, meta?: unknown): void {
@@ -79,7 +75,7 @@ export class LoggerService implements LoggerPort, OnDestroy {
   async enviar(): Promise<void> {
     if (!this.config.logs.enviarAlServidor || this.enviando || this.pendientes.length === 0) return;
     if (Date.now() < this.pausaHasta) return;
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (!navigator.onLine) {
       await this.encolar(this.pendientes.splice(0));
       return;
     }
@@ -121,10 +117,10 @@ export class LoggerService implements LoggerPort, OnDestroy {
       mensaje: mensaje.slice(0, 2000),
       contexto,
       fecha: new Date().toISOString(),
-      url: typeof location !== 'undefined' ? location.pathname : undefined,
+      url: location.pathname,
       sesion: this.sesion,
       usuario: this.usuario,
-      ...(meta !== undefined ? { meta: sanitizar(meta) } : {}),
+      ...(meta === undefined ? {} : { meta: sanitizar(meta) }),
     };
     if (logs.consola) this.aConsola(evento);
     if (!logs.enviarAlServidor) return;
@@ -144,8 +140,8 @@ export class LoggerService implements LoggerPort, OnDestroy {
     }
   }
 
+  /** Guarda en el dispositivo (siempre se llama con eventos). */
   private async encolar(eventos: EventoLog[]): Promise<void> {
-    if (eventos.length === 0) return;
     const cola = [...((await this.leerCola()) ?? []), ...eventos];
     await this.almacen.set(CLAVE_COLA_LOGS, cola.slice(-MAX_COLA));
   }
@@ -160,7 +156,7 @@ export class LoggerService implements LoggerPort, OnDestroy {
 
   private aConsola(e: EventoLog): void {
     const linea = `[${e.nivel}] [${e.contexto}] ${e.mensaje}`;
-    const args: unknown[] = e.meta !== undefined ? [linea, e.meta] : [linea];
+    const args: unknown[] = e.meta === undefined ? [linea] : [linea, e.meta];
     if (e.nivel === 'ERROR') console.error(...args);
     else if (e.nivel === 'WARN') console.warn(...args);
     else if (e.nivel === 'INFO') console.info(...args);

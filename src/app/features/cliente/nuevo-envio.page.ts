@@ -11,6 +11,7 @@ import {
   WritableSignal,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
 import {
   AbstractControl,
   FormControl,
@@ -127,13 +128,15 @@ export function errorDetalle(tipo: TipoServicio, d: DetalleServicio): string {
 const textoValidator =
   (min: number, max: number): ValidatorFn =>
   (c: AbstractControl): ValidationErrors | null => {
-    const v = limpiarTexto(String(c.value ?? ''));
+    // Solo se usa en controles de texto no anulables
+    const v = limpiarTexto(c.value as string);
     return v.length >= min && v.length <= max ? null : { longitud: { min, max } };
   };
 
 const distintosValidator: ValidatorFn = (g: AbstractControl): ValidationErrors | null => {
-  const o = limpiarTexto(String(g.get('origen')?.value ?? '')).toLowerCase();
-  const d = limpiarTexto(String(g.get('destino')?.value ?? '')).toLowerCase();
+  const { origen, destino } = g.value as { origen: string; destino: string };
+  const o = limpiarTexto(origen).toLowerCase();
+  const d = limpiarTexto(destino).toLowerCase();
   return o && d && o === d ? { iguales: true } : null;
 };
 
@@ -178,7 +181,7 @@ const entero = (v: unknown): number | undefined => {
           <h1 id="titulo-creado" class="mt-1">
             Tu {{ nombreServicio(envio) }} #{{ envio.id }} está buscando conductor
           </h1>
-          <p class="mt-3 text-piedra">{{ textoCreado() }}</p>
+          <p class="mt-3 text-piedra">{{ textoCreado(envio) }}</p>
           @if (envio.pago?.metodo === 'nequi') {
             <ti-pago-panel
               class="mx-auto mt-6 block max-w-md text-left"
@@ -218,13 +221,13 @@ const entero = (v: unknown): number | undefined => {
               <div class="mt-4"><ti-pin-envio [pin]="envio.pin ?? ''" /></div>
             </div>
           </div>
-          @if (tarifaCambio()) {
+          @if (tarifaCambio(envio)) {
             <p
               class="mx-auto mt-4 max-w-md rounded-xl bg-aviso-suave px-4 py-3 text-left text-sm"
               role="status"
             >
               La tarifa final es {{ envio.tarifa | cop }}, distinta de la cotizada ({{
-                precioElegido() | cop
+                precioConfirmado() | cop
               }}), porque la ruta o el horario cambiaron al crear el pedido.
             </p>
           }
@@ -324,7 +327,8 @@ const entero = (v: unknown): number | undefined => {
                     formControlName="origen"
                     [placeholder]="placeholderOrigen()"
                     [conUbicacion]="true"
-                    [(coords)]="origenCoords"
+                    [coords]="origenCoords()"
+                    (coordsChange)="origenCoords.set($event)"
                     [zonas]="zonas()"
                     [invalido]="err('origen')"
                     [idError]="err('origen') ? 'origen-error' : null"
@@ -358,7 +362,8 @@ const entero = (v: unknown): number | undefined => {
                       [etiqueta]="'parada ' + (i + 1)"
                       [formControl]="p.control"
                       placeholder="Dirección de la parada"
-                      [(coords)]="p.coords"
+                      [coords]="p.coords()"
+                      (coordsChange)="p.coords.set($event)"
                       [zonas]="zonas()"
                       [invalido]="paradaSinUbicar(p)"
                     />
@@ -379,7 +384,8 @@ const entero = (v: unknown): number | undefined => {
                     etiqueta="entrega"
                     formControlName="destino"
                     placeholder="Dirección, barrio, vereda o finca"
-                    [(coords)]="destinoCoords"
+                    [coords]="destinoCoords()"
+                    (coordsChange)="destinoCoords.set($event)"
                     [zonas]="zonas()"
                     [invalido]="err('destino') || iguales()"
                     [idError]="err('destino') || iguales() ? 'destino-error' : null"
@@ -581,7 +587,7 @@ const entero = (v: unknown): number | undefined => {
                   <label
                     class="flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-sm"
                     [class]="
-                      valores().detalle?.accesoDestapado
+                      valores().detalle.accesoDestapado
                         ? 'border-marca bg-marca-suave'
                         : 'border-linea'
                     "
@@ -870,7 +876,7 @@ const entero = (v: unknown): number | undefined => {
                   maxlength="300"
                   placeholder="Ej.: casa de rejas verdes, preguntar por Juan, entrar por la portería 2"
                 ></textarea>
-                <p class="ayuda text-right">{{ (valores().notas ?? '').length }}/300</p>
+                <p class="ayuda text-right">{{ valores().notas.length }}/300</p>
               </div>
             </section>
 
@@ -965,10 +971,10 @@ const entero = (v: unknown): number | undefined => {
         >
           <div class="hoja flex items-center gap-3 px-4 py-3">
             <div class="min-w-0 flex-1">
-              @if (cotizacion() && vigente()) {
+              @if (cotizacionVigente(); as c) {
                 <p class="text-xs text-piedra">{{ vehiculoCotizado() }}</p>
                 <p class="numeros text-xl font-extrabold leading-tight" style="font-stretch: 112%">
-                  {{ precioElegido() | cop }}
+                  {{ precioEn(c) | cop }}
                 </p>
               } @else {
                 <p class="text-sm font-semibold">
@@ -1009,7 +1015,7 @@ const entero = (v: unknown): number | undefined => {
               {{ vigente() ? 'Tu precio' : 'Cotización vencida' }}
             </h2>
             <p class="numeros mt-1 text-4xl font-extrabold" style="font-stretch: 112%">
-              {{ precioElegido() | cop }}
+              {{ precioEn(c) | cop }}
             </p>
             <p class="mt-1 flex flex-wrap gap-x-4 text-sm text-white/85">
               <span class="inline-flex items-center gap-1"
@@ -1059,7 +1065,7 @@ const entero = (v: unknown): number | undefined => {
                 <ti-icono nombre="loader" class="animate-spin" /> Enviando pedido…
               } @else {
                 <ti-icono [nombre]="valores().metodoPago === 'nequi' ? 'smartphone' : 'check'" />
-                {{ textoBoton() }} {{ precioElegido() | cop }}
+                {{ textoBoton() }} {{ precioEn(c) | cop }}
               }
             </button>
           </div>
@@ -1159,9 +1165,13 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     },
     { validators: [distintosValidator] },
   );
-  protected readonly valores = toSignal(this.form.valueChanges, {
-    initialValue: this.form.getRawValue(),
-  });
+  /** Valores completos del formulario (getRawValue: ningún campo es opcional). */
+  protected readonly valores = toSignal(
+    this.form.valueChanges.pipe(map(() => this.form.getRawValue())),
+    {
+      initialValue: this.form.getRawValue(),
+    },
+  );
   protected readonly origenCoords = signal<Coordenadas | null>(null);
   protected readonly paradas = signal<ParadaForm[]>([]);
   private claveParada = 0;
@@ -1184,9 +1194,9 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
 
   /** Detalle del servicio elegido, solo con los campos que aplican. */
   protected readonly detalle = computed<DetalleServicio>(() =>
-    this.detalleDe(this.servicio(), this.valores().detalle ?? {}),
+    this.detalleDe(this.servicio(), this.valores().detalle),
   );
-  protected readonly ayudantes = computed(() => this.valores().detalle?.ayudantes ?? 0);
+  protected readonly ayudantes = computed(() => this.valores().detalle.ayudantes);
   protected readonly textoErrorDetalle = computed(() =>
     errorDetalle(this.servicio(), this.detalle()),
   );
@@ -1261,17 +1271,16 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     fechaLocalInput(new Date(this.reloj().getTime() + PROGRAMAR_MAXIMO_DIAS * 86_400_000)),
   );
   protected readonly errorFecha = computed(() => {
+    // Solo se lee con "Programar" activo
     const v = this.valores();
-    if (!v.programar) return '';
     const tocado = this.intento() || this.form.controls.fecha.touched;
-    const e = errorFechaProgramada(v.fecha ?? '', this.reloj());
+    const e = errorFechaProgramada(v.fecha, this.reloj());
     return tocado || v.fecha ? e : '';
   });
   protected readonly errNequi = computed(() => {
-    const v = this.valores();
-    if (v.metodoPago !== 'nequi') return false;
+    // Solo se lee con Nequi elegido
     const tocado = this.intento() || this.form.controls.telefonoNequi.touched;
-    return tocado && !celularValido(v.telefonoNequi ?? '');
+    return tocado && !celularValido(this.valores().telefonoNequi);
   });
   protected readonly errTelDestino = computed(() => {
     this.valores();
@@ -1280,31 +1289,33 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
   protected readonly textoBoton = computed(() =>
     this.valores().metodoPago === 'nequi' ? 'Pagar con Nequi' : 'Confirmar',
   );
-  protected readonly textoCreado = computed(() => {
-    const e = this.creado();
-    if (!e) return '';
+  protected textoCreado(e: Envio): string {
     if (e.pago?.metodo === 'nequi' && e.pago.estado !== 'aprobado')
       return 'Acepta el cobro en tu app Nequi y lo publicamos para los conductores.';
     if (e.fechaProgramada)
       return 'Lo publicaremos para los conductores una hora antes de la hora programada.';
     return 'Avisamos a los conductores cercanos. Te notificamos cuando uno lo acepte.';
-  });
+  }
   protected readonly vigente = computed(
     () =>
       this.cotizacion() !== null && !this.vencida() && this.firmaCotizada() === this.firmaActual(),
   );
+  protected readonly cotizacionVigente = computed(() =>
+    this.vigente() ? this.cotizacion() : null,
+  );
+  /** Precio cotizado del vehículo con que se confirmó el pedido. */
+  protected readonly precioConfirmado = signal(0);
+
   /** Precio del vehículo elegido (todas las opciones vienen en la misma cotización). */
-  protected readonly precioElegido = computed(() => {
-    const c = this.cotizacion();
-    if (!c) return 0;
+  protected precioEn(c: Cotizacion): number {
     const cat = this.valores().categoria || this.minimo();
     return c.opciones?.find((o) => o.categoria === cat)?.tarifaTotal ?? c.tarifaTotal;
-  });
+  }
   protected readonly vehiculoCotizado = computed(() => this.valores().categoria || this.minimo());
-  protected readonly tarifaCambio = computed(() => {
-    const e = this.creado();
-    return !!this.cotizacion() && !!e && this.precioElegido() !== e.tarifa;
-  });
+  /** El backend recalcula al crear: si la ruta o la hora cambiaron, el precio puede variar. */
+  protected tarifaCambio(e: Envio): boolean {
+    return this.precioConfirmado() !== e.tarifa;
+  }
   /** Vista previa del trayecto cuando las dos direcciones están en el mapa. */
   protected readonly rutaEnMapa = computed<Seguimiento | null>(() => {
     const o = this.cotizacion()?.origenCoords ?? this.origenCoords();
@@ -1314,8 +1325,8 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     return {
       idEnvio: 0,
       estado: 'Pendiente',
-      origen: { direccion: v.origen ?? '', coords: o },
-      destino: { direccion: v.destino ?? '', coords: d },
+      origen: { direccion: v.origen, coords: o },
+      destino: { direccion: v.destino, coords: d },
       ultima: null,
       recorrido: [],
       enVivo: false,
@@ -1333,15 +1344,6 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
         if (listo && firma !== this.firmaCotizada()) this.programarCotizacion();
       });
     });
-    // Si el vehículo elegido ya no alcanza para el pedido, vuelve al mínimo
-    effect(() => {
-      const min = CATEGORIAS_VEHICULO.indexOf(this.minimo());
-      const cat = this.valores().categoria;
-      untracked(() => {
-        if (cat && CATEGORIAS_VEHICULO.indexOf(cat) < min)
-          this.form.controls.categoria.setValue('');
-      });
-    });
   }
 
   ngOnInit(): void {
@@ -1353,7 +1355,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       // En el celular la fila de servicios se desliza: se deja a la vista el elegido
       setTimeout(() =>
         document
-          .getElementById(`servicio-${tipo}`)
+          .querySelector(`#servicio-${tipo}`)
           ?.closest('label')
           ?.scrollIntoView?.({ inline: 'center', block: 'nearest' }),
       );
@@ -1482,10 +1484,10 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       : 'cursor-pointer border-linea hover:border-marca/40';
   }
 
-  protected precioDe(valor: CategoriaVehiculo | ''): number | null {
+  protected precioDe(valor: CategoriaVehiculo): number | null {
     const c = this.cotizacion();
     if (!c?.opciones) return null;
-    return c.opciones.find((o) => o.categoria === (valor || this.minimo()))?.tarifaTotal ?? null;
+    return c.opciones.find((o) => o.categoria === valor)?.tarifaTotal ?? null;
   }
 
   /** Con las direcciones ubicadas, el detalle completo y la fecha válida (si se programa) se cotiza solo. */
@@ -1495,7 +1497,7 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       this.form.controls.origen.valid &&
       this.form.controls.destino.valid &&
       !this.form.errors?.['iguales'];
-    const fechaOk = !v.programar || errorFechaProgramada(v.fecha ?? '') === '';
+    const fechaOk = !v.programar || errorFechaProgramada(v.fecha) === '';
     return rutaValida && fechaOk && this.todoUbicado() && !this.textoErrorDetalle();
   }
 
@@ -1558,7 +1560,8 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
   }
 
   async confirmar(): Promise<void> {
-    if (!this.vigente() || this.creando()) return;
+    const c = this.cotizacionVigente();
+    if (!c || this.creando()) return;
     this.intento.set(true);
     this.form.markAllAsTouched();
     this.form.updateValueAndValidity();
@@ -1581,15 +1584,17 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
         tipoCarga: this.servicio() === 'paquete' && queEnvias ? queEnvias : undefined,
         notas: v.notas.trim() || undefined,
         metodoPago: v.metodoPago,
-        telefonoNequi: v.metodoPago === 'nequi' ? v.telefonoNequi.replace(/[\s-]/g, '') : undefined,
+        telefonoNequi:
+          v.metodoPago === 'nequi' ? v.telefonoNequi.replaceAll(/[\s-]/g, '') : undefined,
         destinatarioNombre: limpiarTexto(v.destinatarioNombre) || undefined,
-        destinatarioTelefono: v.destinatarioTelefono.replace(/[\s-]/g, '') || undefined,
+        destinatarioTelefono: v.destinatarioTelefono.replaceAll(/[\s-]/g, '') || undefined,
       });
       this.log.info('Envios', `Pedido creado #${envio.id}`, {
         tarifa: envio.tarifa,
         pago: envio.metodoPago,
         servicio: envio.tipoServicio,
       });
+      this.precioConfirmado.set(this.precioEn(c));
       this.creado.set(envio);
       this.toast.exito('Pedido enviado');
     } catch (e) {
@@ -1632,10 +1637,10 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
   /** Del formulario al modelo: solo los campos del servicio elegido. */
   private detalleDe(
     tipo: TipoServicio,
-    f: Partial<ReturnType<typeof this.form.controls.detalle.getRawValue>>,
+    f: ReturnType<typeof this.form.controls.detalle.getRawValue>,
   ): DetalleServicio {
     const d: DetalleServicio = {};
-    const texto = (s?: string) => limpiarTexto(s ?? '') || undefined;
+    const texto = (s: string) => limpiarTexto(s) || undefined;
     if (tipo === 'mandado' || tipo === 'mercado') {
       d.lista = texto(f.lista);
       d.presupuesto = entero(f.presupuesto);
@@ -1652,27 +1657,25 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
       d.pisosDestino = entero(f.pisosDestino) ?? 1;
       d.ascensorOrigen = !!f.ascensorOrigen;
       d.ascensorDestino = !!f.ascensorDestino;
-      d.ayudantes = f.ayudantes ?? 0;
+      d.ayudantes = f.ayudantes;
     }
     if (tipo === 'insumos') {
       d.insumo = texto(f.insumo);
       d.accesoDestapado = !!f.accesoDestapado;
     }
-    return Object.fromEntries(
-      Object.entries(d).filter(([, x]) => x !== undefined),
-    ) as DetalleServicio;
+    return Object.fromEntries(Object.entries(d).filter(([, x]) => x !== undefined));
   }
 
   /** Lo que define el precio: ruta (con paradas), vehículo, servicio y su detalle, ida y vuelta y hora. */
   private firma(
-    v: Partial<{
+    v: {
       origen: string;
       destino: string;
       categoria: string;
       idaYVuelta: boolean;
       programar: boolean;
       fecha: string;
-    }>,
+    },
     o: Coordenadas | null,
     d: Coordenadas | null,
     paradas: (Coordenadas | null)[],
@@ -1680,14 +1683,14 @@ export class NuevoEnvioPage implements OnInit, OnDestroy {
     detalle: DetalleServicio,
   ): string {
     return JSON.stringify([
-      limpiarTexto(v.origen ?? '').toLowerCase(),
-      limpiarTexto(v.destino ?? '').toLowerCase(),
+      limpiarTexto(v.origen).toLowerCase(),
+      limpiarTexto(v.destino).toLowerCase(),
       o,
       d,
       paradas,
-      v.categoria ?? '',
-      !!v.idaYVuelta,
-      v.programar ? (v.fecha ?? '') : '',
+      v.categoria,
+      v.idaYVuelta,
+      v.programar ? v.fecha : '',
       servicio,
       detalle,
     ]);

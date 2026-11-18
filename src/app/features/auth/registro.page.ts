@@ -8,6 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { MAX_CORREO, MAX_NOMBRE, nombreCompleto, requisitosContrasena } from '../../core/domain';
@@ -216,16 +217,19 @@ export class RegistroPage implements OnInit {
     { validators: coincidenValidator },
   );
 
-  private readonly valores = toSignal(this.form.valueChanges, {
-    initialValue: this.form.getRawValue(),
-  });
+  private readonly valores = toSignal(
+    this.form.valueChanges.pipe(map(() => this.form.getRawValue())),
+    {
+      initialValue: this.form.getRawValue(),
+    },
+  );
   protected readonly enviando = signal(false);
   protected readonly error = signal('');
   protected readonly errorCorreo = signal('');
   protected readonly verClave = signal(false);
 
   protected readonly listaRequisitos = computed(() => {
-    const r = requisitosContrasena(this.valores().password ?? '');
+    const r = requisitosContrasena(this.valores().password);
     return [
       { texto: 'Al menos 8 caracteres', ok: r.longitud },
       { texto: 'Una letra mayúscula', ok: r.mayuscula },
@@ -234,19 +238,17 @@ export class RegistroPage implements OnInit {
   });
   protected readonly nombreLargo = computed(() => {
     const v = this.valores();
-    return nombreCompleto(v.nombres ?? '', v.apellidos ?? '').length > MAX_NOMBRE;
+    return nombreCompleto(v.nombres, v.apellidos).length > MAX_NOMBRE;
   });
   protected readonly noCoinciden = computed(() => {
     const v = this.valores();
     return !!v.confirmar && !!v.password && v.confirmar !== v.password;
   });
 
-  constructor() {
-    this.form.controls.correo.valueChanges.subscribe(() => this.errorCorreo.set(''));
-  }
-
   ngOnInit(): void {
     if (this.rol() === 'conductor') this.form.controls.rol.setValue('3');
+    // El formulario vive con la página: no hace falta cancelar la suscripción
+    this.form.controls.correo.valueChanges.subscribe(() => this.errorCorreo.set(''));
   }
 
   protected err(campo: 'nombres' | 'apellidos' | 'correo' | 'password'): boolean {

@@ -190,7 +190,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
       tipoServicio: 'paquete',
       detalle: {},
     });
-    const texto = el.textContent?.replace(/\s/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s/g, ' ') ?? '';
     expect(texto).toContain('34.5 km');
     expect(texto).toContain('1 h 9 min');
     expect(texto).toContain('$ 31.600');
@@ -198,7 +198,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     expect(texto).toContain('Recargo de zona (Silvania)');
     expect(texto).toContain('Pagas en efectivo al recibir');
     const precios = Array.from(el.querySelectorAll('fieldset label .numeros')).map((x) =>
-      x.textContent?.replace(/\s+/g, ' ').trim(),
+      x.textContent?.replaceAll(/\s+/g, ' ').trim(),
     );
     expect(precios).toEqual(['$ 31.600', '$ 75.500']);
     expect(q<HTMLInputElement>(el, '#vehiculo-moto').checked).toBe(true);
@@ -483,7 +483,7 @@ describe('CU-005 y CU-006 NuevoEnvioPage', () => {
     await llenarCotizacion(fixture);
     calcular(el).click();
     await estable();
-    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
     expect(texto).toContain('2 paradas');
     expect(texto).toContain('ida y vuelta $ 24.150');
   });
@@ -649,6 +649,32 @@ describe('E6-HU2 EnviosPage', () => {
     expect(q(el, '#tab-activos').getAttribute('aria-selected')).toBe('true');
   });
 
+  it('flecha derecha cambia de pestaña; sin fecha, conductor sin datos y cancelado con motivo', async () => {
+    const p = puerto([
+      buildEnvio({
+        id: 3,
+        estado: 'Asignado',
+        historial: [],
+        fechaCreacion: undefined,
+        conductor: { nombre: 'Leo' },
+      }),
+      buildEnvio({ id: 4, estado: 'Cancelado', motivoCancelacion: 'Dirección errada' }),
+    ]);
+    const { el, estable } = await montar(EnviosPage, {
+      usuario: CLIENTE,
+      providers: [{ provide: ClientShipmentsPort, useValue: p }],
+    });
+    await estable();
+    expect(el.textContent).toContain('Leo');
+    expect(el.textContent).not.toContain('★');
+    q(el, '#tab-activos').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    await estable();
+    expect(el.textContent).toContain('Motivo: Dirección errada');
+    q<HTMLButtonElement>(el, '#tab-activos').click();
+    await estable();
+    expect(q(el, '#tab-activos').getAttribute('aria-selected')).toBe('true');
+  });
+
   it('debería mostrar vacío y error con Reintentar', async () => {
     const p = puerto([]);
     p.listar.mockImplementationOnce(rechaza(new ApiError(0, 'x', 'SIN_CONEXION')));
@@ -760,7 +786,7 @@ describe('CU-008 y CU-010 EnvioDetallePage', () => {
     await estable();
     expect(p.tracking.seguimiento).toHaveBeenCalledWith(1);
     expect(el.querySelector('ti-mapa-envio')).toBeTruthy();
-    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
     expect(texto).toContain('14 min');
     expect(texto).toContain('6,2 km');
     expect(texto).toContain('En vivo');
@@ -900,6 +926,27 @@ describe('CU-010 CalificarModalComponent', () => {
     expect(rating.calificar).toHaveBeenCalledWith(1, 4, undefined);
     expect(toast).toHaveBeenCalledWith('¡Gracias por calificar!');
     expect(salidas).toEqual([4]);
+  });
+
+  it('escribir un comentario, cerrar con la X, mientras envía y sin estrellas no envía', async () => {
+    const rating = { calificar: vi.fn(() => new Promise(() => undefined)) };
+    const { el, c, estable } = await montarModal(rating);
+    const cerrar = vi.fn();
+    c.cerrar.subscribe(cerrar);
+    await c.enviar();
+    expect(rating.calificar).not.toHaveBeenCalled();
+    q<HTMLButtonElement>(el, '[aria-label="5 estrellas"]').click();
+    await estable();
+    escribir(q(el, '#comentario'), 'Muy amable');
+    await estable();
+    botonPorTexto(el, 'Enviar calificación').click();
+    await estable();
+    expect(el.textContent).toContain('Enviando…');
+    await c.enviar();
+    expect(rating.calificar).toHaveBeenCalledTimes(1);
+    expect(rating.calificar).toHaveBeenCalledWith(1, 5, 'Muy amable');
+    q<HTMLButtonElement>(el, '[role="dialog"] button[aria-label="Cerrar"]').click();
+    expect(cerrar).toHaveBeenCalled();
   });
 
   it('debería armar el comentario con las sugerencias y enviarlo', async () => {

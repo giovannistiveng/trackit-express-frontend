@@ -3,7 +3,7 @@
  * navegador no soporta `scrollIntoView` (p. ej. jsdom en pruebas).
  */
 export function desplazarA(id: string, bloque: ScrollLogicalPosition = 'nearest'): void {
-  const el = document.getElementById(id);
+  const el = document.querySelector<HTMLElement>(`#${id}`);
   if (typeof el?.scrollIntoView === 'function')
     el.scrollIntoView({ behavior: 'smooth', block: bloque });
 }

@@ -9,7 +9,13 @@ import {
   signal,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { Envio, SERVICIOS, categoriasAtendibles, resumenDetalle } from '../../core/domain';
+import {
+  CategoriaVehiculo,
+  Envio,
+  SERVICIOS,
+  categoriasAtendibles,
+  resumenDetalle,
+} from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { DriverBoardPort, DriverServicePort, EventosPort, LoggerPort } from '../../core/ports';
@@ -54,7 +60,7 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
             </p>
             <p class="mt-1 text-sm text-piedra">
               @if (vehiculo(); as v) {
-                Con tu {{ v }} ves pedidos de {{ atendibles() }} y los que no exigen vehículo.
+                Con tu {{ v }} ves pedidos de {{ atendibles(v) }} y los que no exigen vehículo.
               } @else {
                 Solo ves pedidos sin vehículo definido.
                 <a routerLink="/conductor/perfil" class="btn-texto">Registra tu vehículo</a>
@@ -303,12 +309,11 @@ export class TableroPage implements OnInit, OnDestroy {
 
   protected readonly habilitado = computed(() => this.perfil.aprobado());
   protected readonly vehiculo = computed(() => this.perfil.perfil()?.vehiculo?.categoria ?? null);
-  protected readonly atendibles = computed(() => {
-    const lista = categoriasAtendibles(this.vehiculo());
-    return lista.length > 1
-      ? `${lista.slice(0, -1).join(', ')} y ${lista.at(-1)}`
-      : (lista[0] ?? '');
-  });
+  /** Categorías que puede llevar con su vehículo (siempre incluye la suya). */
+  protected atendibles(v: CategoriaVehiculo): string {
+    const lista = categoriasAtendibles(v);
+    return lista.length > 1 ? `${lista.slice(0, -1).join(', ')} y ${lista.at(-1)}` : v;
+  }
   protected readonly fase = computed<FaseCarga>(() =>
     faseDe({
       cargando: !this.cargado(),

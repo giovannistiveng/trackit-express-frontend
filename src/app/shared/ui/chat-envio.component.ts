@@ -9,7 +9,6 @@ import {
   inject,
   input,
   signal,
-  viewChild,
   Injector,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -42,7 +41,6 @@ const RAPIDAS: Record<'cliente' | 'conductor', string[]> = {
         }
       </header>
       <div
-        #lista
         class="flex max-h-80 min-h-40 flex-col gap-2 overflow-y-auto px-4 py-3"
         role="log"
         aria-live="polite"
@@ -133,7 +131,7 @@ export class ChatEnvioComponent implements OnInit {
   private readonly eventos = inject(EventosPort);
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly injector = inject(Injector);
-  private readonly lista = viewChild<ElementRef<HTMLElement>>('lista');
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   protected readonly maximo = LARGO_MAXIMO_MENSAJE;
   protected readonly mensajes = signal<MensajeChat[]>([]);
@@ -143,7 +141,7 @@ export class ChatEnvioComponent implements OnInit {
   protected readonly enviando = signal(false);
   protected readonly error = signal('');
   protected readonly rapidas = computed(() => RAPIDAS[this.rol()]);
-  private temporizador: ReturnType<typeof setInterval> | null = null;
+  private temporizador?: ReturnType<typeof setInterval>;
 
   constructor() {
     const sub = this.eventos.mensajes().subscribe((d) => {
@@ -154,7 +152,7 @@ export class ChatEnvioComponent implements OnInit {
     });
     inject(DestroyRef).onDestroy(() => {
       sub.unsubscribe();
-      if (this.temporizador) clearInterval(this.temporizador);
+      clearInterval(this.temporizador);
     });
   }
 
@@ -213,8 +211,9 @@ export class ChatEnvioComponent implements OnInit {
   private bajar(): void {
     afterNextRender(
       () => {
-        const el = this.lista()?.nativeElement;
-        if (el) el.scrollTop = el.scrollHeight;
+        // La lista de mensajes siempre está en la vista
+        const el = this.host.nativeElement.querySelector('[role="log"]') as HTMLElement;
+        el.scrollTop = el.scrollHeight;
       },
       { injector: this.injector },
     );

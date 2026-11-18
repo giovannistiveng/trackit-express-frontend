@@ -195,7 +195,7 @@ export function accionDe(
                 />
               }
 
-              @if (accion(); as a) {
+              @if (accion(e); as a) {
                 <section
                   class="hoja -mx-4 space-y-3 p-5 sm:mx-0 sm:rounded-3xl lg:hidden"
                   aria-label="Siguiente paso"
@@ -335,7 +335,7 @@ export function accionDe(
                     }
                   </div>
                   @if (
-                    e.estado === 'En Ruta' && !e.destinoVisitadoEn && paradasPendientes() === 0
+                    e.estado === 'En Ruta' && !e.destinoVisitadoEn && paradasPendientes(e) === 0
                   ) {
                     <a
                       class="btn-secundario shrink-0 !px-3"
@@ -417,7 +417,7 @@ export function accionDe(
             <aside class="space-y-4">
               @if (e.estado !== 'Entregado') {
                 <section class="space-y-4" aria-label="Acciones del servicio">
-                  @if (accion(); as a) {
+                  @if (accion(e); as a) {
                     <div class="hidden space-y-3 lg:block">
                       <ng-container
                         *ngTemplateOutlet="siguientePaso; context: { $implicit: a, e: e }"
@@ -444,7 +444,7 @@ export function accionDe(
                       /></span>
                       <div>
                         <p id="ubicacion-titulo" class="font-semibold">Compartir mi ubicación</p>
-                        <p class="text-sm text-piedra">{{ textoUbicacion() }}</p>
+                        <p class="text-sm text-piedra">{{ textoUbicacion(e) }}</p>
                       </div>
                     </div>
                     <button
@@ -452,10 +452,10 @@ export function accionDe(
                       role="switch"
                       aria-labelledby="ubicacion-titulo"
                       [attr.aria-checked]="ubicacion.estado() === 'activo'"
-                      [disabled]="!puedeCompartir()"
+                      [disabled]="!puedeCompartir(e)"
                       class="relative h-8 w-14 shrink-0 rounded-full transition-colors disabled:opacity-40"
                       [class]="ubicacion.estado() === 'activo' ? 'bg-exito' : 'bg-linea'"
-                      (click)="alternarUbicacion()"
+                      (click)="alternarUbicacion(e)"
                     >
                       <span
                         class="absolute top-1 size-6 rounded-full bg-papel shadow transition-[left]"
@@ -539,7 +539,7 @@ export class ServicioPage implements OnInit, OnDestroy {
 
   protected readonly envio = signal<Envio | null>(null);
   protected readonly seguimiento = signal<Seguimiento | null>(null);
-  private temporizadorMapa: ReturnType<typeof setInterval> | null = null;
+  private temporizadorMapa?: ReturnType<typeof setInterval>;
   protected readonly error = signal('');
   protected readonly modal = signal(false);
   protected readonly recogida = signal(false);
@@ -547,14 +547,13 @@ export class ServicioPage implements OnInit, OnDestroy {
   protected readonly ocupado = signal(false);
   private readonly eventos = inject(EventosPort);
 
-  protected readonly paradasPendientes = computed(
-    () => (this.envio()?.paradas ?? []).filter((p) => !p.completadaEn).length,
-  );
+  protected paradasPendientes(e: Envio): number {
+    return (e.paradas ?? []).filter((p) => !p.completadaEn).length;
+  }
+
   /** Qué falta antes de poder entregar (paradas, regreso), o '' si nada. */
-  protected readonly faltaParaEntregar = computed(() => {
-    const e = this.envio();
-    if (!e) return '';
-    const n = this.paradasPendientes();
+  protected faltaParaEntregar(e: Envio): string {
+    const n = this.paradasPendientes(e);
     if (n > 0)
       return n === 1
         ? 'Te falta 1 parada por marcar como hecha.'
@@ -562,7 +561,7 @@ export class ServicioPage implements OnInit, OnDestroy {
     if (e.idaYVuelta && !e.destinoVisitadoEn)
       return 'Marca la llegada al destino; la entrega se cierra al regresar al origen.';
     return '';
-  });
+  }
 
   protected readonly fase = computed<FaseCarga>(() =>
     faseDe({ cargando: !this.envio() && !this.error(), error: !this.envio() && this.error() }),
@@ -572,15 +571,14 @@ export class ServicioPage implements OnInit, OnDestroy {
   );
 
   /** Una sola acción principal según la etapa: así el conductor nunca duda qué sigue. */
-  protected readonly accion = computed<AccionServicio | null>(() => {
-    const e = this.envio();
-    if (!e) return null;
-    return accionDe(e, this.faltaParaEntregar(), this.paradasPendientes());
-  });
-  protected readonly puedeCompartir = computed(
-    () => !!this.envio() && puedeCompartirUbicacion(this.envio() as Envio),
-  );
-  protected readonly textoUbicacion = computed(() => {
+  protected accion(e: Envio): AccionServicio | null {
+    return accionDe(e, this.faltaParaEntregar(e), this.paradasPendientes(e));
+  }
+  protected puedeCompartir(e: Envio): boolean {
+    return puedeCompartirUbicacion(e);
+  }
+
+  protected textoUbicacion(e: Envio): string {
     switch (this.ubicacion.estado()) {
       case 'activo':
         return 'El cliente puede ver por dónde vas.';
@@ -592,9 +590,9 @@ export class ServicioPage implements OnInit, OnDestroy {
       case 'no-disponible':
         return 'Tu dispositivo no puede obtener la ubicación ahora.';
       default:
-        return this.puedeCompartir() ? 'Apagado.' : 'Disponible cuando el servicio esté en ruta.';
+        return this.puedeCompartir(e) ? 'Apagado.' : 'Disponible cuando el servicio esté en ruta.';
     }
-  });
+  }
 
   constructor() {
     // Cancelaciones o cambios del cliente llegan al instante
@@ -661,7 +659,7 @@ export class ServicioPage implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.ubicacion.detener();
-    if (this.temporizadorMapa) clearInterval(this.temporizadorMapa);
+    clearInterval(this.temporizadorMapa);
   }
 
   /** Enlace de navegación (abre la app de mapas del celular) hacia una dirección o coordenadas. */
@@ -738,9 +736,7 @@ export class ServicioPage implements OnInit, OnDestroy {
     }
   }
 
-  protected alternarUbicacion(): void {
-    const e = this.envio();
-    if (!e) return;
+  protected alternarUbicacion(e: Envio): void {
     if (this.ubicacion.estado() === 'activo') this.ubicacion.detener();
     else this.ubicacion.iniciar(e.id);
   }

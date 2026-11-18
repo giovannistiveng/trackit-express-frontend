@@ -24,9 +24,7 @@ export interface Camaras {
 export const CAMARAS = new InjectionToken<Camaras | null>('CAMARAS', {
   providedIn: 'root',
   factory: () =>
-    typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function'
-      ? navigator.mediaDevices
-      : null,
+    typeof navigator.mediaDevices?.getUserMedia === 'function' ? navigator.mediaDevices : null,
 });
 
 export type EstadoCamara = 'iniciando' | 'lista' | 'previa' | 'error';
@@ -34,7 +32,7 @@ export type EstadoCamara = 'iniciando' | 'lista' | 'previa' | 'error';
 /** Mensaje para cada error de getUserMedia. */
 export function mensajeErrorCamara(
   e: unknown,
-  seguro = typeof isSecureContext === 'boolean' ? isSecureContext : true,
+  seguro = globalThis.isSecureContext ?? true,
 ): string {
   const nombre = (e as { name?: string })?.name;
   if (!seguro) return 'La cámara solo funciona en una conexión segura (https o localhost).';

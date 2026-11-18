@@ -9,10 +9,17 @@ import {
 import { FormsModule } from '@angular/forms';
 import {
   ConductorPostulante,
+  DocumentoConductor,
   EstadoAprobacion,
   EstadoRequisito,
   Requisito,
 } from '../../core/domain';
+
+interface Revision {
+  conductor: ConductorPostulante;
+  requisito: Requisito;
+  documento: DocumentoConductor;
+}
 import { IconoComponent } from '../../shared/ui/icono.component';
 import { PlacaComponent } from '../../shared/ui/placa.component';
 import { ApiError } from '../../core/http/api-error';
@@ -105,7 +112,7 @@ export function esPdf(url: string): boolean {
                         <button
                           type="button"
                           class="grid size-12 shrink-0 place-items-center overflow-hidden rounded-lg border border-linea hover:border-marca"
-                          (click)="abrirRevision(c, r)"
+                          (click)="abrirRevision(c, r, d)"
                           [attr.aria-label]="'Revisar ' + r.nombre + ' de ' + c.nombre"
                         >
                           @if (pdf(d.urlArchivo)) {
@@ -148,7 +155,7 @@ export function esPdf(url: string): boolean {
                         <button
                           type="button"
                           class="btn-secundario min-h-9 px-3 text-sm"
-                          (click)="abrirRevision(c, r)"
+                          (click)="abrirRevision(c, r, r.documento)"
                         >
                           Revisar
                         </button>
@@ -211,77 +218,71 @@ export function esPdf(url: string): boolean {
         [cerrable]="!enviando()"
         (cerrar)="revision.set(null)"
       >
-        @if (v.requisito.documento; as d) {
-          @if (pdf(d.urlArchivo)) {
-            <a [href]="d.urlArchivo" target="_blank" rel="noopener" class="btn-primario"
-              >Abrir el PDF en otra pestaña</a
-            >
-          } @else {
-            <img
-              [src]="d.urlArchivo"
-              [alt]="v.requisito.nombre + ' de ' + v.conductor.nombre"
-              class="max-h-[55vh] w-full rounded-lg bg-niebla object-contain"
-            />
-            <a [href]="d.urlArchivo" target="_blank" rel="noopener" class="btn-texto mt-2 text-sm"
-              >Abrir en tamaño completo</a
-            >
-          }
-          @if (v.requisito.verificar; as f) {
-            <p class="mt-3 rounded-xl bg-crema p-3 text-sm">
-              Compara los datos con
-              <a
-                class="font-semibold text-marca underline"
-                [href]="f.url"
-                target="_blank"
-                rel="noopener"
-                >{{ f.fuente }}</a
-              >.
-            </p>
-          }
-          @if (v.requisito.vence) {
-            <div class="mt-4">
-              <label for="rev-vence" class="etiqueta">Fecha de vencimiento</label>
-              <input
-                id="rev-vence"
-                type="date"
-                class="campo max-w-52"
-                [(ngModel)]="fechaRevision"
-              />
-              <p class="ayuda">Corrígela si no coincide con el documento.</p>
-            </div>
-          }
+        @let d = v.documento;
+        @if (pdf(d.urlArchivo)) {
+          <a [href]="d.urlArchivo" target="_blank" rel="noopener" class="btn-primario"
+            >Abrir el PDF en otra pestaña</a
+          >
+        } @else {
+          <img
+            [src]="d.urlArchivo"
+            [alt]="v.requisito.nombre + ' de ' + v.conductor.nombre"
+            class="max-h-[55vh] w-full rounded-lg bg-niebla object-contain"
+          />
+          <a [href]="d.urlArchivo" target="_blank" rel="noopener" class="btn-texto mt-2 text-sm"
+            >Abrir en tamaño completo</a
+          >
+        }
+        @if (v.requisito.verificar; as f) {
+          <p class="mt-3 rounded-xl bg-crema p-3 text-sm">
+            Compara los datos con
+            <a
+              class="font-semibold text-marca underline"
+              [href]="f.url"
+              target="_blank"
+              rel="noopener"
+              >{{ f.fuente }}</a
+            >.
+          </p>
+        }
+        @if (v.requisito.vence) {
           <div class="mt-4">
-            <label for="rev-motivo" class="etiqueta">Motivo si lo rechazas</label>
-            <input
-              id="rev-motivo"
-              class="campo"
-              maxlength="255"
-              [(ngModel)]="motivoRevision"
-              placeholder="Ej.: la foto está borrosa"
-            />
-          </div>
-          @if (errorDecision()) {
-            <p class="error-campo mt-3" role="alert">{{ errorDecision() }}</p>
-          }
-          <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              class="btn-peligro"
-              [disabled]="enviando()"
-              (click)="revisar(false)"
-            >
-              Rechazar documento
-            </button>
-            <button
-              type="button"
-              class="btn-primario"
-              [disabled]="enviando()"
-              (click)="revisar(true)"
-            >
-              Aprobar documento
-            </button>
+            <label for="rev-vence" class="etiqueta">Fecha de vencimiento</label>
+            <input id="rev-vence" type="date" class="campo max-w-52" [(ngModel)]="fechaRevision" />
+            <p class="ayuda">Corrígela si no coincide con el documento.</p>
           </div>
         }
+        <div class="mt-4">
+          <label for="rev-motivo" class="etiqueta">Motivo si lo rechazas</label>
+          <input
+            id="rev-motivo"
+            class="campo"
+            maxlength="255"
+            [(ngModel)]="motivoRevision"
+            placeholder="Ej.: la foto está borrosa"
+          />
+        </div>
+        @if (errorDecision()) {
+          <p class="error-campo mt-3" role="alert">{{ errorDecision() }}</p>
+        }
+        <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            class="btn-peligro"
+            [disabled]="enviando()"
+            (click)="revisar(v, false)"
+          >
+            Rechazar documento
+          </button>
+          <button
+            type="button"
+            class="btn-primario"
+            [disabled]="enviando()"
+            (click)="revisar(v, true)"
+          >
+            Aprobar documento
+          </button>
+        </div>
       </ti-modal>
     }
 
@@ -349,10 +350,7 @@ export class ConductoresPage implements OnInit {
   protected readonly postulantes = signal<ConductorPostulante[]>([]);
   protected readonly cargando = signal(true);
   protected readonly error = signal('');
-  protected readonly revision = signal<{
-    conductor: ConductorPostulante;
-    requisito: Requisito;
-  } | null>(null);
+  protected readonly revision = signal<Revision | null>(null);
   protected fechaRevision = '';
   protected motivoRevision = '';
   protected readonly decision = signal<Decision | null>(null);
@@ -443,17 +441,19 @@ export class ConductoresPage implements OnInit {
     return d.fechaSubida ? `Subido el ${d.fechaSubida.toLocaleDateString('es-CO')}` : 'Subido';
   }
 
-  abrirRevision(conductor: ConductorPostulante, requisito: Requisito): void {
-    this.fechaRevision = requisito.documento?.fechaVencimiento ?? '';
+  abrirRevision(
+    conductor: ConductorPostulante,
+    requisito: Requisito,
+    documento: DocumentoConductor,
+  ): void {
+    this.fechaRevision = documento.fechaVencimiento ?? '';
     this.motivoRevision = '';
     this.errorDecision.set('');
-    this.revision.set({ conductor, requisito });
+    this.revision.set({ conductor, requisito, documento });
   }
 
-  async revisar(aprobado: boolean): Promise<void> {
-    const v = this.revision();
-    const doc = v?.requisito.documento;
-    if (!v || !doc?.id || this.enviando()) return;
+  async revisar(v: Revision, aprobado: boolean): Promise<void> {
+    if (this.enviando()) return;
     if (!aprobado && this.motivoRevision.trim().length < 3) {
       this.errorDecision.set('Escribe el motivo para que el conductor sepa qué corregir.');
       return;
@@ -461,7 +461,8 @@ export class ConductoresPage implements OnInit {
     this.enviando.set(true);
     this.errorDecision.set('');
     try {
-      await this.aprobacion.revisarDocumento(doc.id, aprobado, {
+      // Un documento subido siempre tiene id
+      await this.aprobacion.revisarDocumento(v.documento.id as number, aprobado, {
         motivo: this.motivoRevision,
         fechaVencimiento: v.requisito.vence ? this.fechaRevision || undefined : undefined,
       });

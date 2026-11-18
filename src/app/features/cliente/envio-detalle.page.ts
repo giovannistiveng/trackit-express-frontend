@@ -91,7 +91,7 @@ export const INTERVALO_TRAZABILIDAD_MS = 10_000;
               <ti-icono [nombre]="servicioDe(e).icono" class="size-4 text-marca" />
               {{ servicioDe(e).nombre }} #{{ e.id }}
             </p>
-            <h1 class="mt-1">{{ titular() }}</h1>
+            <h1 class="mt-1">{{ titular(e) }}</h1>
             <p class="mt-1 text-piedra">{{ textoEtapa(e) }}</p>
             <div class="mt-3 flex flex-wrap items-center gap-3 text-sm">
               <ti-estado-badge [estado]="e.estado" />
@@ -236,18 +236,18 @@ export const INTERVALO_TRAZABILIDAD_MS = 10_000;
                   <div class="mt-4 flex flex-wrap gap-2">
                     <a
                       class="btn-primario"
-                      [href]="enlaceWhatsapp()"
+                      [href]="enlaceWhatsapp(e)"
                       target="_blank"
                       rel="noopener"
                     >
                       <ti-icono nombre="message-circle" /> Enviar por WhatsApp
                     </a>
-                    <button type="button" class="btn-secundario" (click)="copiarEnlace()">
+                    <button type="button" class="btn-secundario" (click)="copiarEnlace(e)">
                       <ti-icono [nombre]="copiado() ? 'check' : 'copy'" />
                       {{ copiado() ? 'Copiado' : 'Copiar enlace' }}
                     </button>
                     @if (puedeCompartirNativo) {
-                      <button type="button" class="btn-secundario" (click)="compartirNativo()">
+                      <button type="button" class="btn-secundario" (click)="compartirNativo(e)">
                         <ti-icono nombre="share" /> Más opciones
                       </button>
                     }
@@ -421,7 +421,7 @@ export const INTERVALO_TRAZABILIDAD_MS = 10_000;
                   [idEnvio]="e.id"
                   [pagoInicial]="e.pago"
                   [editable]="e.estado === 'Pendiente'"
-                  (cambio)="alCambiarPago($event)"
+                  (cambio)="alCambiarPago(e, $event)"
                 />
               }
 
@@ -673,18 +673,17 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     const e = this.envio()?.estado;
     return e === 'Asignado' || e === 'En Ruta';
   });
-  protected readonly enlaceSeguimiento = computed(() => {
-    const t = this.envio()?.tokenSeguimiento;
-    return t ? `${location.origin}/seguimiento/${t}` : '';
-  });
-  protected readonly enlaceWhatsapp = computed(() => {
-    const e = this.envio();
-    if (!e) return '';
+  /** Solo se ofrece con token (la sección de compartir exige tokenSeguimiento). */
+  protected enlaceSeguimiento(e: Envio): string {
+    return `${location.origin}/seguimiento/${e.tokenSeguimiento}`;
+  }
+
+  protected enlaceWhatsapp(e: Envio): string {
     const nombre = e.destinatarioNombre ? ` ${e.destinatarioNombre.split(' ')[0]}` : '';
-    const texto = `Hola${nombre}, te envié un paquete con TrackIt Express. Puedes seguirlo aquí: ${this.enlaceSeguimiento()}`;
+    const texto = `Hola${nombre}, te envié un paquete con TrackIt Express. Puedes seguirlo aquí: ${this.enlaceSeguimiento(e)}`;
     const tel = telefonoWhatsapp(e.destinatarioTelefono);
     return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
-  });
+  }
 
   protected readonly fase = computed<FaseCarga>(() =>
     faseDe({ cargando: !this.envio() && !this.error(), error: !this.envio() && this.error() }),
@@ -701,10 +700,9 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     const e = this.envio()?.estado;
     return e === 'Asignado' || e === 'En Ruta';
   });
-  protected readonly titular = computed(() => {
-    const e = this.envio();
-    return e ? TEXTO_ETAPA[e.etapa].titulo : '';
-  });
+  protected titular(e: Envio): string {
+    return TEXTO_ETAPA[e.etapa].titulo;
+  }
   protected readonly eta = computed(() => {
     const m = this.seguimiento()?.etaMinutos;
     return m ? formatoDuracion(m) : null;
@@ -721,20 +719,21 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
   constructor() {
     // Cambios del envío al instante (aceptado, recogido, entregado, pago…) por el canal de eventos
     const sub = this.eventos.notificaciones().subscribe((n) => {
-      if (esDelEnvio(n.idEnvio, this.envio()) && n.tipo !== 'mensaje_chat') void this.refrescar();
+      if (n.tipo !== 'mensaje_chat') this.alCambiar(n.idEnvio);
     });
-    const sub2 = this.eventos.cambiosEnvio().subscribe((id) => {
-      if (esDelEnvio(id, this.envio())) void this.refrescar();
-    });
+    const sub2 = this.eventos.cambiosEnvio().subscribe((id) => this.alCambiar(id));
     inject(DestroyRef).onDestroy(() => {
       sub.unsubscribe();
       sub2.unsubscribe();
     });
   }
 
-  private async refrescar(): Promise<void> {
-    if (this.sondeo?.estaActivo) await this.sondeo.refrescar();
-    else if (this.envio()) this.alResultado(await this.shipments.obtener(this.envio()!.id));
+  /** Un aviso del canal en vivo sobre este envío: se vuelve a consultar. */
+  private alCambiar(idEnvio: number | null): void {
+    const e = this.envio();
+    if (!e || !esDelEnvio(idEnvio, e)) return;
+    if (this.sondeo?.estaActivo) void this.sondeo.refrescar();
+    else void this.shipments.obtener(e.id).then((r) => this.alResultado(r));
   }
 
   ngOnInit(): void {
@@ -768,27 +767,26 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     if (this.sondeo && !this.sondeo.estaActivo) this.sondeo.iniciar();
   }
 
-  protected alCambiarPago(pago: PagoResumen): void {
-    const e = this.envio();
-    if (e) this.envio.set({ ...e, pago, metodoPago: pago.metodo });
+  protected alCambiarPago(e: Envio, pago: PagoResumen): void {
+    this.envio.set({ ...e, pago, metodoPago: pago.metodo });
   }
 
-  protected async copiarEnlace(): Promise<void> {
+  protected async copiarEnlace(e: Envio): Promise<void> {
     try {
-      await navigator.clipboard.writeText(this.enlaceSeguimiento());
+      await navigator.clipboard.writeText(this.enlaceSeguimiento(e));
       this.copiado.set(true);
       setTimeout(() => this.copiado.set(false), 2500);
     } catch {
-      this.toast.mostrar(this.enlaceSeguimiento());
+      this.toast.mostrar(this.enlaceSeguimiento(e));
     }
   }
 
-  protected async compartirNativo(): Promise<void> {
+  protected async compartirNativo(e: Envio): Promise<void> {
     try {
       await navigator.share({
-        title: `Envío #${this.envio()?.id} · TrackIt Express`,
+        title: `Envío #${e.id} · TrackIt Express`,
         text: 'Sigue tu paquete en tiempo real',
-        url: this.enlaceSeguimiento(),
+        url: this.enlaceSeguimiento(e),
       });
     } catch {
       // El usuario cerró el menú de compartir
@@ -805,7 +803,6 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
   }
 
   protected async guardarEdicion(e: Envio): Promise<void> {
-    if (this.guardando()) return;
     const tipo = this.edTipo().trim();
     if (tipo.length < 1) {
       this.errorEdicion.set('Indica el tipo de carga.');
@@ -818,7 +815,7 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
         tipoCarga: tipo,
         notas: this.edNotas().trim(),
         destinatarioNombre: this.edNombre().trim(),
-        destinatarioTelefono: this.edTelefono().replace(/[\s-]/g, ''),
+        destinatarioTelefono: this.edTelefono().replaceAll(/[\s-]/g, ''),
       });
       this.envio.set({ ...e, ...actualizado, pin: actualizado.pin ?? e.pin });
       this.edicion.set(false);
@@ -836,7 +833,6 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
   }
 
   protected async cancelar(e: Envio): Promise<void> {
-    if (this.cancelando()) return;
     this.cancelando.set(true);
     this.errorCancelar.set('');
     try {

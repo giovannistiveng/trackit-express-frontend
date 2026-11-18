@@ -104,9 +104,7 @@ export function aDetalle(d: ApiDetalleServicio | null | undefined): DetalleServi
     ['insumo', d.insumo],
     ['accesoDestapado', d.acceso_destapado],
   ];
-  return Object.fromEntries(
-    pares.filter(([, v]) => v !== undefined && v !== null),
-  ) as DetalleServicio;
+  return Object.fromEntries(pares.filter(([, v]) => v !== undefined && v !== null));
 }
 
 /** Detalle para el backend (camelCase → snake_case), sin campos vacíos. */
@@ -128,9 +126,7 @@ export function aDetalleApi(d: DetalleServicio): ApiDetalleServicio {
     ['insumo', d.insumo?.trim()],
     ['acceso_destapado', d.accesoDestapado],
   ];
-  return Object.fromEntries(
-    pares.filter(([, v]) => v !== undefined && v !== null && v !== ''),
-  ) as ApiDetalleServicio;
+  return Object.fromEntries(pares.filter(([, v]) => v !== undefined && v !== null && v !== ''));
 }
 
 export function aDocumento(d: ApiDocumento): DocumentoConductor {

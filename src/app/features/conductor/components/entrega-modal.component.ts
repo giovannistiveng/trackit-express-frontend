@@ -30,7 +30,11 @@ export const MENSAJE_PIN_INCORRECTO =
       <section aria-labelledby="paso-pin">
         <h3 id="paso-pin">PIN de entrega</h3>
         <p class="mb-4 text-sm text-piedra">Pídele a quien recibe los 4 dígitos del PIN.</p>
-        <ti-teclado-pin [(valor)]="pin" [deshabilitado]="enviando()" />
+        <ti-teclado-pin
+          [valor]="pin()"
+          (valorChange)="pin.set($event)"
+          [deshabilitado]="enviando()"
+        />
       </section>
       <section class="mt-6" aria-labelledby="paso-foto">
         <h3 id="paso-foto" class="mb-2">Foto de la entrega</h3>

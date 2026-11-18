@@ -128,7 +128,7 @@ describe('CU-011 ConductoresPage', () => {
     Array.from(el.querySelectorAll('ul.space-y-5 > li')).find((t) =>
       t.textContent?.includes(nombre),
     ) as HTMLElement;
-  const texto = (n: Element) => n.textContent?.replace(/\s+/g, ' ') ?? '';
+  const texto = (n: Element) => n.textContent?.replaceAll(/\s+/g, ' ') ?? '';
 
   it('lista cada conductor con su vehículo, avance y requisitos con la fuente oficial', async () => {
     const { el } = await montarPagina();
@@ -145,9 +145,7 @@ describe('CU-011 ConductoresPage', () => {
     expect(luz).toContain('No aplica o no lo ha subido.');
     expect(luz).toContain('Vence el 2026-12-01 (en 10 días)');
     expect(luz).toContain('Falta: Licencia en revisión; Falta Cédula');
-    expect(
-      botonPorTexto(tarjeta(el, 'Luz'), 'Aprobar conductor') as HTMLButtonElement,
-    ).toHaveProperty('disabled', true);
+    expect(botonPorTexto(tarjeta(el, 'Luz'), 'Aprobar conductor')).toHaveProperty('disabled', true);
   });
 
   it('revisa un documento: exige motivo para rechazar y aprueba con la fecha corregida', async () => {
@@ -287,6 +285,145 @@ describe('CU-011 ConductoresPage', () => {
     expect(el.textContent).toContain('No hay conductores ni documentos esperando revisión.');
   });
 
+  it('estados de cada requisito, conductores ya aprobados y modales que se cierran con la X', async () => {
+    const p = puertos();
+    const base = postulantes()[1];
+    p.lista.listarPendientes.mockImplementation(async () => [
+      {
+        ...base,
+        idConductor: 3,
+        nombre: 'Ana Activa',
+        estadoAprobacion: 'Aprobado' as const,
+        requisitos: {
+          completo: false,
+          pendientes: ['SOAT vencido'],
+          items: [
+            REQ({
+              tipo: 'Cédula',
+              estado: 'rechazado',
+              documento: {
+                id: 31,
+                tipo: 'Cédula',
+                urlArchivo: 'https://x/c.jpg',
+                estado: 'Rechazado',
+                motivoRechazo: 'Borrosa',
+              },
+            }),
+            REQ({
+              tipo: 'Licencia',
+              estado: 'rechazado',
+              documento: {
+                id: 32,
+                tipo: 'Licencia',
+                urlArchivo: 'https://x/l.jpg',
+                estado: 'Rechazado',
+                fechaSubida: new Date('2026-11-01T12:00:00'),
+              },
+            }),
+            REQ({
+              tipo: 'SOAT',
+              estado: 'vencido',
+              vence: true,
+              documento: {
+                id: 33,
+                tipo: 'SOAT',
+                urlArchivo: 'https://x/s.jpg',
+                estado: 'Aprobado',
+                fechaVencimiento: '2026-10-01',
+                diasParaVencer: -48,
+              },
+            }),
+            REQ({
+              tipo: 'Tecnomecánica',
+              estado: 'pendiente',
+              vence: true,
+              documento: {
+                id: 34,
+                tipo: 'Tecnomecánica',
+                urlArchivo: 'https://x/t.jpg',
+                estado: 'Pendiente',
+                fechaVencimiento: '2027-06-01',
+              },
+            }),
+            REQ({
+              tipo: 'Antecedentes',
+              estado: 'pendiente',
+              documento: {
+                id: 35,
+                tipo: 'Antecedentes',
+                urlArchivo: 'https://x/a.jpg',
+                estado: 'Pendiente',
+              },
+            }),
+          ],
+        },
+      },
+      postulantes()[0],
+    ]);
+    const { el, estable, p: puertosUsados } = await montarPagina(p);
+    const ana = texto(tarjeta(el, 'Ana'));
+    expect(ana).toContain('Rechazado: Borrosa');
+    expect(ana).toContain('Subido el');
+    expect(ana).toContain('Venció el 2026-10-01');
+    expect(ana).toContain('Vence el 2027-06-01');
+    expect(ana).toContain('Subido');
+    expect(ana).not.toContain('Aprobar conductor');
+    // Revisión: la X la cierra; aprobar con vencimiento vacío no envía fecha
+    botonPorTexto(tarjeta(el, 'Ana'), 'Revisar').click();
+    await estable();
+    q<HTMLButtonElement>(el, '[role="dialog"] button[aria-label="Cerrar"]').click();
+    await estable();
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+    botonPorTexto(tarjeta(el, 'Ana'), 'Revisar').click();
+    await estable();
+    escribir(q(el, '#rev-vence'), '');
+    await estable();
+    botonPorTexto(el, 'Aprobar documento').click();
+    await estable();
+    expect(puertosUsados.aprobacion.revisarDocumento).toHaveBeenCalledWith(34, true, {
+      motivo: '',
+      fechaVencimiento: undefined,
+    });
+    q<HTMLButtonElement>(el, '[aria-label="Revisar Antecedentes de Ana Activa"]').click();
+    await estable();
+    expect(el.querySelector('#rev-vence')).toBeNull();
+    botonPorTexto(el, 'Aprobar documento').click();
+    await estable();
+    expect(puertosUsados.aprobacion.revisarDocumento).toHaveBeenLastCalledWith(35, true, {
+      motivo: '',
+      fechaVencimiento: undefined,
+    });
+    // Decisión: la X la cierra
+    botonPorTexto(tarjeta(el, 'Camilo'), 'Rechazar').click();
+    await estable();
+    q<HTMLButtonElement>(el, '[role="dialog"] button[aria-label="Cerrar"]').click();
+    await estable();
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('no envía dos revisiones ni dos decisiones a la vez', async () => {
+    const p = puertos();
+    let revisar!: () => void;
+    p.aprobacion.revisarDocumento.mockImplementation(
+      () => new Promise<undefined>((ok) => (revisar = () => ok(undefined))),
+    );
+    const r = await montarPagina(p);
+    botonPorTexto(tarjeta(r.el, 'Luz'), 'Revisar').click();
+    await r.estable();
+    botonPorTexto(r.el, 'Aprobar documento').click();
+    const interna = r.c as unknown as {
+      revisar(v: unknown, a: boolean): Promise<void>;
+      revision(): unknown;
+      confirmar(d: unknown): Promise<void>;
+    };
+    await interna.revisar(interna.revision(), true);
+    expect(p.aprobacion.revisarDocumento).toHaveBeenCalledTimes(1);
+    await interna.confirmar({ conductor: postulantes()[0], aprobar: true });
+    expect(p.aprobacion.decidir).not.toHaveBeenCalled();
+    revisar();
+    await r.estable();
+  });
+
   it('esPdf reconoce PDF con query o hash', () => {
     expect(esPdf('a.pdf')).toBe(true);
     expect(esPdf('a.PDF?x=1')).toBe(true);
@@ -308,7 +445,7 @@ describe('E7-HU2 DashboardPage', () => {
     botonPorTexto(el, 'Reintentar').click();
     await new Promise((r) => setTimeout(r, 200));
     await estable();
-    const texto = el.textContent?.replace(/\s/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s/g, ' ') ?? '';
     expect(texto).toContain('Envíos totales');
     expect(texto).toContain('248');
     expect(texto).toContain('$ 4.862.000');
@@ -383,5 +520,25 @@ describe('E7-HU2 AuditoriaPage', () => {
     await esperar();
     expect(q(el, '[role="alert"]')).toBeTruthy();
     botonPorTexto(el, 'Exportar CSV');
+  });
+
+  it('Anterior, error al cargar con Reintentar, exportando y error al exportar', async () => {
+    const { el, auditoria, esperar } = await montarAuditoria();
+    botonPorTexto(el, 'Siguiente').click();
+    await esperar();
+    botonPorTexto(el, 'Anterior').click();
+    await esperar();
+    expect(auditoria).toHaveBeenLastCalledWith(expect.objectContaining({ pagina: 1 }));
+    let exportar!: (e: unknown) => void;
+    auditoria.mockImplementationOnce(() => new Promise((_ok, mal) => (exportar = mal)));
+    botonPorTexto(el, /Exportar CSV/).click();
+    await esperar();
+    expect(el.textContent).toContain('Exportando…');
+    exportar(new ApiError(500, 'x'));
+    await esperar();
+    expect(el.textContent).toContain('Exportar CSV');
+    botonPorTexto(el, 'Reintentar').click();
+    await esperar();
+    expect(el.textContent).toContain('registros');
   });
 });

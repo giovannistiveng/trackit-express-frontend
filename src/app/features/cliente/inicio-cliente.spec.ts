@@ -36,7 +36,7 @@ describe('InicioClientePage', () => {
 
   it('saluda, ofrece los cinco servicios y muestra lo que va en curso y lo que puede repetir', async () => {
     const { el } = await montarInicio();
-    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
     expect(texto).toContain(CLIENTE.nombre.split(' ')[0]);
     expect(el.querySelectorAll('ul[aria-label="Servicios"] a')).toHaveLength(5);
     expect(q<HTMLAnchorElement>(el, '#servicio-insumos').href).toContain('servicio=insumos');

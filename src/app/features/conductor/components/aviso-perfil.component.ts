@@ -9,14 +9,15 @@ import { PerfilConductor } from '../../../core/domain';
   imports: [RouterLink],
   template: `
     <div class="rounded-2xl border border-placa/60 bg-aviso-suave p-5" role="status">
-      @if (!perfil()) {
+      @let p = perfil();
+      @if (!p) {
         <p class="font-bold">No pudimos cargar tu perfil de conductor</p>
         <p class="mt-1 text-sm">Revisa tu conexión y vuelve a intentarlo en un momento.</p>
-      } @else if (perfil()?.estadoAprobacion === 'Rechazado') {
+      } @else if (p.estadoAprobacion === 'Rechazado') {
         <p class="font-bold">Tu solicitud fue rechazada</p>
-        @if (perfil()?.motivoRechazo) {
+        @if (p.motivoRechazo) {
           <p class="mt-1 text-sm">
-            <span class="font-semibold">Motivo:</span> {{ perfil()?.motivoRechazo }}
+            <span class="font-semibold">Motivo:</span> {{ p.motivoRechazo }}
           </p>
         }
         <p class="mt-1 text-sm">
@@ -25,10 +26,10 @@ import { PerfilConductor } from '../../../core/domain';
         @if (conEnlace()) {
           <a routerLink="/conductor/perfil" class="btn-texto mt-2">Ir a mis documentos</a>
         }
-      } @else if (perfil()?.estadoAprobacion === 'Suspendido') {
+      } @else if (p.estadoAprobacion === 'Suspendido') {
         <p class="font-bold">Tu cuenta está en pausa</p>
-        @if (perfil()?.motivoRechazo) {
-          <p class="mt-1 text-sm">{{ perfil()?.motivoRechazo }}.</p>
+        @if (p.motivoRechazo) {
+          <p class="mt-1 text-sm">{{ p.motivoRechazo }}.</p>
         }
         <p class="mt-1 text-sm">Sube el documento renovado y volverás a revisión.</p>
         @if (conEnlace()) {
@@ -36,11 +37,12 @@ import { PerfilConductor } from '../../../core/domain';
         }
       } @else {
         <p class="font-bold">Tu cuenta está en revisión</p>
-        @if (perfil()?.requisitos?.pendientes?.length) {
+        @let pendientes = p.requisitos?.pendientes ?? [];
+        @if (pendientes.length) {
           <p class="mt-1 text-sm">Para que te aprueben falta:</p>
           <ul class="mt-1 list-disc pl-5 text-sm">
-            @for (p of perfil()?.requisitos?.pendientes ?? []; track p) {
-              <li>{{ p }}</li>
+            @for (item of pendientes; track item) {
+              <li>{{ item }}</li>
             }
           </ul>
         } @else {

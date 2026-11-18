@@ -16,6 +16,7 @@ import { DocumentsPort, LoggerPort } from '../../../core/ports';
 import { CargaArchivoComponent } from '../../../shared/ui/carga-archivo.component';
 import { IconoComponent, NombreIcono } from '../../../shared/ui/icono.component';
 import { Subscription } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 /** Estado local de la carga (mientras sube o si falló). */
 export type EstadoCargaDocumento = 'reposo' | 'subiendo' | 'error';
@@ -92,6 +93,7 @@ export function hoyIso(ahora = new Date()): string {
             </div>
           }
           <ti-carga-archivo
+            #carga
             [tipos]="['image/jpeg', 'image/png', 'image/webp', 'application/pdf']"
             [conCamara]="true"
             [tituloCamara]="requisito().nombre"
@@ -141,8 +143,10 @@ export class DocumentoCardComponent {
   private readonly docs = inject(DocumentsPort);
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly log = inject(LoggerPort);
-  private readonly carga = viewChild(CargaArchivoComponent);
+  // La carga está abierta mientras se sube (solo se lee al fallar una subida)
+  private readonly carga = viewChild.required<CargaArchivoComponent>('carga');
   private sub: Subscription | null = null;
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly hoy = hoyIso();
   readonly estado = signal<EstadoCargaDocumento>('reposo');
@@ -154,21 +158,22 @@ export class DocumentoCardComponent {
 
   /** "Cédula" → "cedula" para ids y el nombre del archivo de la foto. */
   protected readonly prefijo = computed(() =>
-    this.requisito().tipo.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '-'),
+    this.requisito()
+      .tipo.toLowerCase()
+      .normalize('NFD')
+      .replaceAll(/[̀-ͯ]/g, '')
+      .replaceAll(/\s+/g, '-'),
   );
-  protected readonly presentacion = computed(() =>
-    this.estado() === 'subiendo'
-      ? { texto: 'Subiendo', clase: 'bg-marca-suave text-marca', icono: 'loader' as NombreIcono }
-      : PRESENTACION[this.requisito().estado],
+  protected readonly presentacion = computed<{ texto: string; clase: string; icono: NombreIcono }>(
+    () =>
+      this.estado() === 'subiendo'
+        ? { texto: 'Subiendo', clase: 'bg-marca-suave text-marca', icono: 'loader' }
+        : PRESENTACION[this.requisito().estado],
   );
   protected readonly abierto = computed(
     () => this.reemplazar() || ['falta', 'rechazado', 'vencido'].includes(this.requisito().estado),
   );
   protected readonly bloqueado = computed(() => this.requisito().vence && !this.vencimiento());
-
-  constructor() {
-    inject(DestroyRef).onDestroy(() => this.sub?.unsubscribe());
-  }
 
   protected textoVencimiento(d: DocumentoConductor): string {
     const dias = d.diasParaVencer;
@@ -194,6 +199,8 @@ export class DocumentoCardComponent {
     const tipo = this.requisito().tipo;
     this.sub = this.docs
       .subir(archivo, tipo, this.requisito().vence ? this.vencimiento() : undefined)
+      // Se cancela la subida en curso si la tarjeta se destruye
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (ev) => {
           if (ev.tipo === 'progreso') this.progreso.set(ev.porcentaje);
@@ -208,7 +215,7 @@ export class DocumentoCardComponent {
         error: (e: unknown) => {
           this.estado.set('error');
           this.error.set(this.mapper.traducir(e));
-          this.carga()?.reiniciar();
+          this.carga().reiniciar();
         },
       });
   }

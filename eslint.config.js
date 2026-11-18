@@ -4,6 +4,8 @@ const { defineConfig } = require('eslint/config');
 const tseslint = require('typescript-eslint');
 const angular = require('angular-eslint');
 const sonarjs = require('eslint-plugin-sonarjs');
+const unicorn = require('eslint-plugin-unicorn').default;
+const { reglasSonarWay } = require('./eslint.sonar-way.js');
 
 module.exports = defineConfig([
   {
@@ -15,10 +17,12 @@ module.exports = defineConfig([
       angular.configs.tsRecommended,
       sonarjs.configs.recommended,
     ],
+    plugins: { unicorn },
     processor: angular.processInlineTemplates,
     // Con información de tipos, las reglas de Sonar distinguen promesas (p. ej. "void promesa")
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: __dirname } },
     rules: {
+      ...reglasSonarWay,
       '@angular-eslint/directive-selector': [
         'error',
         { type: 'attribute', prefix: 'ti', style: 'camelCase' },

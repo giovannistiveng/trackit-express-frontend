@@ -19,7 +19,8 @@ const SUGERENCIAS = ['Puntual', 'Amable', 'Cuidó el paquete', 'Buena comunicaci
       <p class="text-piedra">Califica el servicio del envío #{{ idEnvio() }}.</p>
       <div class="mt-5 flex justify-center">
         <ti-estrellas
-          [(valor)]="puntuacion"
+          [valor]="puntuacion()"
+          (valorChange)="puntuacion.set($event)"
           etiqueta="Calificación del servicio"
           [deshabilitado]="enviando()"
         />

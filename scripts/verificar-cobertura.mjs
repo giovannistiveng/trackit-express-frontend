@@ -1,9 +1,9 @@
-// Verifica el umbral de 90 % en core/domain y core/adapters/http (el builder de Angular
+// Verifica el umbral de 100 % en core/domain y core/adapters/http (el builder de Angular
 // solo admite umbrales globales). Se ejecuta después de `ng test --coverage`.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, sep } from 'node:path';
 
-const UMBRAL = 90;
+const UMBRAL = 100;
 const CARPETAS = [
   ['src', 'app', 'core', 'domain'].join(sep),
   ['src', 'app', 'core', 'adapters', 'http'].join(sep),

@@ -9,7 +9,6 @@ import {
   inject,
   input,
   signal,
-  viewChild,
 } from '@angular/core';
 import type { LayerGroup, Map as LeafletMap, Marker } from 'leaflet';
 import { Coordenadas, RutaMapa, Seguimiento } from '../../core/domain';
@@ -83,7 +82,8 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
   readonly alto = input<'normal' | 'alto'>('normal');
 
   private readonly geo = inject(GeoPort);
-  private readonly contenedor = viewChild.required<ElementRef<HTMLDivElement>>('mapa');
+  /** El mapa se dibuja en el primer hijo del componente (el div #mapa). */
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly descripcion = signal('Mapa del envío');
   protected readonly rutaInfo = signal<RutaMapa | null>(null);
   private L: typeof import('leaflet') | null = null;
@@ -119,7 +119,7 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
     this.L = await cargarLeaflet();
     const s = this.seguimiento();
     const centro = s?.ultima ?? s?.origen.coords ?? CENTRO_FUSAGASUGA;
-    this.mapa = this.L.map(this.contenedor().nativeElement, {
+    this.mapa = this.L.map(this.host.nativeElement.firstElementChild as HTMLElement, {
       zoomControl: true,
       scrollWheelZoom: false,
     }).setView([centro.lat, centro.lon], 14);

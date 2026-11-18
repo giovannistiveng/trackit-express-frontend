@@ -174,8 +174,6 @@ export abstract class DriverServicePort {
   abstract obtener(idEnvio: number): Promise<Envio>;
   /** Servicio en curso del conductor (RN_OP_002: como máximo uno). */
   abstract activo(): Promise<Envio | null>;
-  /** Asignado → En Ruta. */
-  abstract iniciarRuta(idEnvio: number): Promise<Envio>;
   /** El conductor llegó al punto de recogida (avisa al cliente). */
   abstract llegadaRecogida(idEnvio: number): Promise<Envio>;
   /** Recoge la carga (código, bultos, compra y foto): el envío pasa a En Ruta. */

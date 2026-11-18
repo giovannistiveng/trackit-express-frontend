@@ -86,7 +86,7 @@ export class FakeLogger implements LoggerPort {
 export class FakeLogTransport implements LogTransportPort {
   readonly lotes: EventoLog[][] = [];
   readonly balizas: EventoLog[][] = [];
-  fallo: unknown = null;
+  fallo: Error | null = null;
   balizaOk = true;
   async enviar(eventos: EventoLog[]) {
     if (this.fallo) throw this.fallo;
@@ -206,7 +206,7 @@ export class FakeGeolocation implements Geo {
 /** Buscador de direcciones falso: devuelve `resultados` y nombra cualquier punto como "Calle falsa". */
 export class FakeGeo implements GeoPort {
   resultados: SugerenciaDireccion[] = [];
-  fallo: unknown = null;
+  fallo: Error | null = null;
   readonly buscar = vi.fn(async (_texto: string) => {
     if (this.fallo) throw this.fallo;
     return this.resultados;

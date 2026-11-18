@@ -34,7 +34,7 @@ function textoGeneradas(n: number): string {
   return n === 1 ? '1 liquidación generada' : `${n} liquidaciones generadas`;
 }
 
-const CLASE_ESTADO: Partial<Record<EstadoPago, string>> = {
+const CLASE_ESTADO: Record<EstadoPago, string> = {
   aprobado: 'bg-exito-suave text-exito',
   cobrado: 'bg-exito-suave text-exito',
   reembolsado: 'bg-exito-suave text-exito',
@@ -42,6 +42,8 @@ const CLASE_ESTADO: Partial<Record<EstadoPago, string>> = {
   por_cobrar: 'bg-aviso-suave',
   reembolso_pendiente: 'bg-alerta-suave text-alerta',
   rechazado: 'bg-alerta-suave text-alerta',
+  expirado: 'bg-niebla',
+  anulado: 'bg-niebla',
 };
 
 /** Administración: liquidaciones semanales a conductores y pagos de los envíos (Nequi y efectivo). */
@@ -332,7 +334,7 @@ export class PagosAdminPage implements OnInit {
   }
 
   protected claseEstado(e: EstadoPago): string {
-    return CLASE_ESTADO[e] ?? 'bg-niebla';
+    return CLASE_ESTADO[e];
   }
 
   protected cambiar(p: 'liquidaciones' | 'pagos'): void {
@@ -397,16 +399,16 @@ export class PagosAdminPage implements OnInit {
     this.guardando.set(true);
     try {
       const actualizada = await this.ops.pagarLiquidacion(l.id, this.referencia().trim());
-      this.liquidaciones.update((p) =>
-        p
-          ? {
-              ...p,
-              items: p.items.map((x) =>
-                x.id === l.id ? { ...x, ...actualizada, conductor: x.conductor } : x,
-              ),
-            }
-          : p,
-      );
+      // Se paga desde la lista: ya está cargada
+      this.liquidaciones.update((p) => {
+        const pagina = p as Pagina<Liquidacion>;
+        return {
+          ...pagina,
+          items: pagina.items.map((x) =>
+            x.id === l.id ? { ...x, ...actualizada, conductor: x.conductor } : x,
+          ),
+        };
+      });
       this.pagando.set(null);
       this.toast.exito('Liquidación registrada como pagada');
     } catch (e) {

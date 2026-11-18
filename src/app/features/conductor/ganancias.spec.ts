@@ -37,7 +37,7 @@ describe('GananciasPage', () => {
       providers: [{ provide: DriverStatsPort, useValue: p }],
     });
     await estable();
-    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
     expect(texto).toContain('63.200');
     expect(texto).toContain('$ 126.400');
     expect(texto).toContain('$ 31.600'); // promedio por entrega
@@ -71,5 +71,44 @@ describe('GananciasPage', () => {
     await estable();
     expect(el.textContent).toContain('Aún no has terminado servicios.');
     expect(el.textContent).toContain('1 opinión');
+  });
+});
+
+describe('GananciasPage: casos de borde', () => {
+  it('saldo en contra, sin semanas anteriores, entrega sin ganancia registrada y calificación sin comentario', async () => {
+    const p = {
+      ...puerto(),
+      historial: vi.fn(async () => [
+        buildEnvio({
+          id: 5,
+          estado: 'Entregado',
+          tarifa: 20000,
+          gananciaConductor: undefined,
+          calificacion: 5,
+          comentario: null,
+        }),
+      ]),
+      billetera: vi.fn(async () => ({
+        pendiente: {
+          servicios: 1,
+          gananciaNequi: 0,
+          cobradoEfectivo: 30000,
+          comisionEfectivo: 6000,
+          saldo: -6000,
+        },
+        movimientos: [],
+        liquidaciones: [],
+      })),
+    };
+    const { el, estable } = await montar(GananciasPage, {
+      usuario: CONDUCTOR,
+      providers: [{ provide: DriverStatsPort, useValue: p }],
+    });
+    await estable();
+    const texto = el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
+    expect(texto).toContain('Debes a la plataforma');
+    expect(texto).not.toContain('Semanas anteriores');
+    expect(texto).toContain('+ $ 20.000');
+    expect(texto).not.toContain('“');
   });
 });

@@ -3,13 +3,12 @@ import {
   Component,
   InjectionToken,
   OnDestroy,
-  forwardRef,
   inject,
   input,
   model,
   signal,
 } from '@angular/core';
-import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
+import { ControlValueAccessor, NgControl } from '@angular/forms';
 import { Coordenadas, SugerenciaDireccion, Zona } from '../../core/domain';
 import { GeoPort } from '../../core/ports';
 import { IconoComponent } from './icono.component';
@@ -44,13 +43,6 @@ let contador = 0;
   selector: 'ti-campo-direccion',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [IconoComponent, ModalComponent, SelectorMapaComponent],
-  providers: [
-    {
-      provide: NG_VALUE_ACCESSOR,
-      useExisting: forwardRef(() => CampoDireccionComponent),
-      multi: true,
-    },
-  ],
   host: { class: 'block' },
   template: `
     <div class="relative">
@@ -222,8 +214,9 @@ export class CampoDireccionComponent implements ControlValueAccessor, OnDestroy 
   protected readonly avisoMapa = signal('');
   private readonly entorno = inject(ENTORNO_UBICACION);
 
-  private alCambiar: (v: string) => void = () => undefined;
-  private alTocar: () => void = () => undefined;
+  // Los formularios registran estas funciones al enlazar el control (siempre se usa con uno)
+  private alCambiar!: (v: string) => void;
+  private alTocar!: () => void;
   private temporizador: ReturnType<typeof setTimeout> | null = null;
   private consulta = 0;
 
@@ -231,8 +224,13 @@ export class CampoDireccionComponent implements ControlValueAccessor, OnDestroy 
     return [this.idError(), this.idEstado].filter(Boolean).join(' ');
   }
 
-  writeValue(v: string | null): void {
-    this.texto.set(v ?? '');
+  constructor() {
+    // Se registra como su propio ControlValueAccessor: siempre se usa con formControl(Name)
+    inject(NgControl, { self: true }).valueAccessor = this;
+  }
+
+  writeValue(v: string): void {
+    this.texto.set(v);
   }
   registerOnChange(fn: (v: string) => void): void {
     this.alCambiar = fn;
@@ -347,11 +345,8 @@ export class CampoDireccionComponent implements ControlValueAccessor, OnDestroy 
       }
       await this.nombrarPunto(p);
     } catch (e) {
-      this.aviso.set(
-        e instanceof ErrorUbicacion
-          ? e.message
-          : 'No pudimos obtener tu ubicación. Márcala en el mapa.',
-      );
+      // obtenerUbicacion siempre lanza ErrorUbicacion, con el mensaje listo para mostrar
+      this.aviso.set((e as ErrorUbicacion).message);
     } finally {
       this.ubicando.set(false);
     }

@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { SwPush } from '@angular/service-worker';
-import { Subject, of } from 'rxjs';
+import { EMPTY, Subject, of } from 'rxjs';
+import { signal } from '@angular/core';
 import { CLIENTE, CONDUCTOR, buildEnvio } from '../../testing/fixtures';
 import {
   FakeRealtime,
@@ -24,6 +25,7 @@ import { ApiError } from '../core/http/api-error';
 import {
   AuthPort,
   ChatPort,
+  EventosPort,
   DriverBoardPort,
   DriverProfilePort,
   DriverServicePort,
@@ -62,7 +64,11 @@ import {
   RestablecerContrasenaPage,
   VerificarCorreoPage,
 } from './auth/recuperacion.pages';
-import { PagoPanelComponent, celularValido } from './cliente/components/pago-panel.component';
+import {
+  INTERVALO_PAGO_MS,
+  PagoPanelComponent,
+  celularValido,
+} from './cliente/components/pago-panel.component';
 import { EnvioDetallePage } from './cliente/envio-detalle.page';
 import { GananciasPage } from './conductor/ganancias.page';
 import { TableroPage } from './conductor/tablero.page';
@@ -76,7 +82,8 @@ class FuenteFalsa {
   static get ultima(): FuenteFalsa | null {
     return FuenteFalsa.instancias.at(-1) ?? null;
   }
-  onerror: (() => void) | null = null;
+  /** Simula un error de conexión: avisa a los oyentes de "error". */
+  readonly onerror = () => this.emitir('error', '');
   cerrada = false;
   private readonly oyentes = new Map<string, ((e: MessageEvent) => void)[]>();
   constructor(readonly url: string) {
@@ -208,6 +215,50 @@ describe('Recuperación de contraseña y verificación de correo', () => {
   });
 });
 
+describe('Recuperación: casos de borde', () => {
+  it('mientras envía lo indica; otro error sin enlace nuevo; verificar sin sesión lleva a /login', async () => {
+    let terminar!: () => void;
+    const a = {
+      olvidePassword: vi.fn(() => new Promise<undefined>((ok) => (terminar = () => ok(undefined)))),
+      restablecerPassword: vi.fn(rechaza(new ApiError(500, 'x'))),
+      verificarCorreo: vi.fn(
+        () => new Promise<undefined>((ok) => (terminar = () => ok(undefined))),
+      ),
+    };
+    const olvide = await montar(OlvideContrasenaPage, {
+      providers: [{ provide: AuthPort, useValue: a }],
+    });
+    escribir(q(olvide.el, '#correo'), 'ana@correo.co');
+    botonPorTexto(olvide.el, 'Enviar enlace').click();
+    await olvide.estable();
+    expect(olvide.el.textContent).toContain('Enviando…');
+    terminar();
+    await olvide.estable();
+    TestBed.resetTestingModule();
+    const r = await montar(RestablecerContrasenaPage, {
+      inputs: { token: 'tok' },
+      providers: [{ provide: AuthPort, useValue: a }],
+    });
+    escribir(q(r.el, '#nueva'), 'Segura123');
+    escribir(q(r.el, '#confirmar'), 'Segura123');
+    botonPorTexto(r.el, 'Guardar contraseña').click();
+    r.fixture.detectChanges();
+    expect(r.el.textContent).toContain('Guardando…');
+    await r.estable();
+    expect(q(r.el, '[role="alert"]').textContent).not.toContain('Pedir otro enlace');
+    TestBed.resetTestingModule();
+    const v = await montar(VerificarCorreoPage, {
+      inputs: { token: 'tok' },
+      providers: [{ provide: AuthPort, useValue: a }],
+    });
+    expect(v.el.textContent).toContain('Verificando…');
+    terminar();
+    await vaciarPromesas();
+    await v.estable();
+    expect(q<HTMLAnchorElement>(v.el, 'a.btn-primario').getAttribute('href')).toBe('/login');
+  });
+});
+
 // ------------------------------------------------------------------ seguimiento público
 
 const SEGUIMIENTO: Seguimiento = {
@@ -250,7 +301,7 @@ describe('SeguimientoPublicoPage', () => {
     });
     await vi.advanceTimersByTimeAsync(0);
     fixture.detectChanges();
-    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
     expect(texto).toContain('Para Ana');
     expect(texto).toContain('En camino');
     expect(texto).toContain('Paquete #7');
@@ -268,6 +319,38 @@ describe('SeguimientoPublicoPage', () => {
     fixture.detectChanges();
     expect(el.querySelector('h1')?.textContent).toContain('Entregado');
     expect(el.textContent).toContain('Ver horas de cada cambio');
+    fixture.destroy();
+  });
+
+  it('sin ida y vuelta, sin tiempo ni distancia, paradas, conductor sin vehículo y fallo de red ya cargado', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const datos = {
+      ...PUBLICO,
+      idaYVuelta: false,
+      historial: [],
+      conductor: { nombre: 'Leo', vehiculo: null, placa: null },
+      paradas: [
+        { orden: 1, direccion: 'Droguería', completada: true },
+        { orden: 2, direccion: 'Panadería', completada: false },
+      ],
+      mapa: PUBLICO.mapa ? { ...PUBLICO.mapa, etaMinutos: null, distanciaRestanteKm: null } : null,
+    };
+    const sitio = { seguimiento: vi.fn(async () => datos) };
+    const { el, fixture } = await montar(SeguimientoPublicoPage, {
+      inputs: { token: 'tok' },
+      providers: [{ provide: PublicSitePort, useValue: sitio }],
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    fixture.detectChanges();
+    const texto = el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
+    expect(texto).not.toContain('Ida y vuelta');
+    expect(texto).toContain('Parada 1, hecha');
+    expect(texto).toContain('—');
+    expect(texto).not.toContain('Ver horas de cada cambio');
+    sitio.seguimiento.mockImplementation(rechaza(new ApiError(0, 'x')));
+    await vi.advanceTimersByTimeAsync(15_000);
+    fixture.detectChanges();
+    expect(el.textContent).not.toContain('Revisa tu conexión');
     fixture.destroy();
   });
 
@@ -451,6 +534,69 @@ describe('PagoPanelComponent', () => {
     expect(el.textContent).toContain('Pagado desde Nequi');
   });
 
+  it('sin pago no muestra nada; solo lectura; sin teléfono ni hora; cobro vencido sin cuenta regresiva', async () => {
+    const vacio = await montar(PagoPanelComponent, {
+      inputs: { idEnvio: 3, pagoInicial: undefined },
+      providers: [{ provide: PaymentsPort, useValue: pagos() }],
+    });
+    expect(vacio.el.querySelector('section')).toBeNull();
+    vacio.fixture.destroy();
+    TestBed.resetTestingModule();
+    const r = await montar(PagoPanelComponent, {
+      inputs: {
+        idEnvio: 3,
+        editable: false,
+        pagoInicial: { ...PENDIENTE, actualizado: undefined },
+      },
+      providers: [{ provide: PaymentsPort, useValue: pagos() }],
+    });
+    expect(r.el.textContent).not.toContain('vence en');
+    expect(r.el.querySelector('button')).toBeNull();
+    r.fixture.componentRef.setInput('pagoInicial', {
+      ...PENDIENTE,
+      actualizado: new Date(Date.now() - 3_600_000),
+    });
+    await r.estable();
+    expect(r.el.textContent).not.toContain('vence en');
+    r.fixture.componentRef.setInput('pagoInicial', { ...PENDIENTE, estado: 'rechazado' });
+    await r.estable();
+    expect(r.el.querySelector('#tel-reintento')).toBeNull();
+    r.fixture.destroy();
+    TestBed.resetTestingModule();
+    const sinTel = await montar(PagoPanelComponent, {
+      inputs: { idEnvio: 3, pagoInicial: { ...PENDIENTE, estado: 'rechazado', telefono: null } },
+      providers: [{ provide: PaymentsPort, useValue: pagos() }],
+    });
+    expect(q<HTMLInputElement>(sinTel.el, '#tel-reintento').placeholder).toBe('300 123 4567');
+    botonPorTexto(sinTel.el, /Pagar en efectivo/).click();
+    await sinTel.estable();
+    expect(sinTel.el.textContent).toContain('en efectivo al conductor');
+    sinTel.fixture.destroy();
+  });
+
+  it('consulta sola cada 4 s, el reloj avanza y no repite una acción en curso', async () => {
+    const tiempos = vi.spyOn(globalThis, 'setTimeout');
+    const intervalos = vi.spyOn(globalThis, 'setInterval');
+    const p = pagos();
+    let terminar!: (x: PagoResumen) => void;
+    p.pagarEnEfectivo.mockImplementation(() => new Promise((ok) => (terminar = ok)));
+    const r = await montar(PagoPanelComponent, {
+      inputs: { idEnvio: 3, pagoInicial: { ...PENDIENTE, actualizado: new Date() } },
+      providers: [{ provide: PaymentsPort, useValue: p }],
+    });
+    (tiempos.mock.calls.find((c) => c[1] === INTERVALO_PAGO_MS)?.[0] as () => void)();
+    (intervalos.mock.calls.find((c) => c[1] === 1000)?.[0] as () => void)();
+    await r.estable();
+    expect(p.estado).toHaveBeenCalled();
+    void r.c.efectivo();
+    void r.c.efectivo();
+    expect(p.pagarEnEfectivo).toHaveBeenCalledTimes(1);
+    terminar({ ...PENDIENTE, metodo: 'efectivo', estado: 'por_cobrar' });
+    await r.estable();
+    vi.restoreAllMocks();
+    r.fixture.destroy();
+  });
+
   it('celularValido', () => {
     expect(celularValido('3001234567')).toBe(true);
     expect(celularValido('+57 300-123-4567')).toBe(true);
@@ -532,7 +678,7 @@ describe('EnvioDetallePage: pago, compartir, editar, recogida, paradas y chat', 
       ],
     });
     const { el, estable, shipments } = await montarDetalle(envio);
-    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
     expect(texto).toContain('Programado');
     expect(texto).toContain('Ida y vuelta');
     expect(texto).toContain('Esperando que aceptes el cobro');
@@ -666,6 +812,60 @@ describe('ChatEnvioComponent', () => {
     expect(cerrado.el.querySelector('form')).toBeNull();
   });
 
+  it('con el canal conectado no consulta; mensajes repetidos o de otro envío; mientras envía y sin texto', async () => {
+    const intervalos = vi.spyOn(globalThis, 'setInterval');
+    const chat = chatFalso();
+    const entrantes = new Subject<{ idEnvio: number; mensaje: MensajeChat }>();
+    const { el, estable, c } = await montar(ChatEnvioComponent, {
+      usuario: CLIENTE,
+      inputs: { idEnvio: 3 },
+      providers: [
+        { provide: ChatPort, useValue: chat },
+        {
+          provide: EventosPort,
+          useValue: {
+            conectado: signal(true),
+            iniciar: vi.fn(),
+            detener: vi.fn(),
+            notificaciones: () => EMPTY,
+            mensajes: () => entrantes,
+            cambiosEnvio: () => EMPTY,
+          },
+        },
+      ],
+    });
+    await vaciarPromesas();
+    await estable();
+    const consultas = chat.mensajes.mock.calls.length;
+    (intervalos.mock.calls.find((x) => x[1] === 10_000)?.[0] as () => void)();
+    expect(chat.mensajes.mock.calls.length).toBe(consultas);
+    const m: MensajeChat = {
+      id: 50,
+      autor: 'Pedro',
+      texto: 'Voy',
+      fecha: new Date(),
+      mio: false,
+      leido: false,
+    };
+    entrantes.next({ idEnvio: 9, mensaje: m });
+    entrantes.next({ idEnvio: 3, mensaje: m });
+    entrantes.next({ idEnvio: 3, mensaje: m });
+    await vaciarPromesas();
+    await estable();
+    expect(el.querySelectorAll('[role="log"] p').length).toBeGreaterThan(0);
+    await c.enviar('   ');
+    let responder!: (x: MensajeChat) => void;
+    chat.enviar.mockImplementation(() => new Promise((ok) => (responder = ok)));
+    void c.enviar('Hola');
+    await estable();
+    expect(el.querySelector('form ti-icono.animate-spin')).toBeTruthy();
+    await c.enviar('Otra');
+    expect(chat.enviar).toHaveBeenCalledTimes(1);
+    responder({ ...m, id: 51, texto: 'Hola', mio: true });
+    await estable();
+    vi.restoreAllMocks();
+  });
+
   it('sin canal en vivo revisa el chat periódicamente', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const chat = chatFalso();
@@ -728,6 +928,66 @@ describe('EventosSseAdapter', () => {
     const sin = TestBed.inject(EventosSseAdapter);
     sin.iniciar();
     expect(sin.conectado()).toBe(false);
+  });
+});
+
+describe('EventosSseAdapter: casos de borde', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('detenido mientras pide el ticket no abre; un error de una fuente vieja no reconecta; ticket fallido ya detenido', async () => {
+    configurar({ usuario: CLIENTE, providers: [canalFalso] });
+    const rt = TestBed.inject(RealtimePort) as FakeRealtime;
+    let dar!: (t: string) => void;
+    vi.spyOn(rt, 'ticket').mockImplementationOnce(() => new Promise((ok) => (dar = ok)));
+    const s = TestBed.inject(EventosSseAdapter);
+    const antes = FuenteFalsa.instancias.length;
+    s.iniciar();
+    s.detener();
+    dar('t');
+    await vaciarPromesas(10);
+    expect(FuenteFalsa.instancias.length).toBe(antes);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    s.iniciar();
+    await vi.advanceTimersByTimeAsync(0);
+    const vieja = FuenteFalsa.ultima!;
+    vieja.emitir('envio', '{mal formado');
+    vieja.onerror?.();
+    await vi.advanceTimersByTimeAsync(2000);
+    const nueva = FuenteFalsa.ultima!;
+    expect(nueva).not.toBe(vieja);
+    vieja.onerror?.();
+    expect(nueva.cerrada).toBe(false);
+
+    let fallar!: (e: unknown) => void;
+    vi.spyOn(rt, 'ticket').mockImplementationOnce(() => new Promise((_ok, mal) => (fallar = mal)));
+    nueva.onerror?.();
+    await vi.advanceTimersByTimeAsync(4000);
+    s.detener();
+    fallar(new ApiError(0, 'x'));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FuenteFalsa.ultima).toBe(nueva);
+  });
+
+  it('la fábrica por defecto usa EventSource si existe', () => {
+    TestBed.resetTestingModule();
+    expect(TestBed.inject(FUENTE_EVENTOS)).toBeNull();
+    TestBed.resetTestingModule();
+    const creadas: string[] = [];
+    vi.stubGlobal(
+      'EventSource',
+      class {
+        constructor(url: string) {
+          creadas.push(url);
+        }
+      },
+    );
+    const fabrica = TestBed.inject(FUENTE_EVENTOS);
+    fabrica?.('https://x/eventos');
+    expect(creadas).toEqual(['https://x/eventos']);
   });
 });
 
@@ -850,7 +1110,7 @@ describe('PushHibridoAdapter', () => {
     const cap: CapacitorGlobal = {
       isNativePlatform: () => true,
       getPlatform: () => 'android',
-      Plugins: { PushNotifications: plugin as never },
+      Plugins: { PushNotifications: plugin },
     };
     configurar({ usuario: CLIENTE, providers: [{ provide: CAPACITOR, useValue: cap }] });
     const s = TestBed.inject(PushHibridoAdapter);
@@ -869,6 +1129,73 @@ describe('PushHibridoAdapter', () => {
     plugin.requestPermissions.mockImplementation(async () => ({ receive: 'denied' }));
     await s.activar();
     expect(s.estado()).toBe('bloqueado');
+  });
+
+  it('casos de borde: ya suscrito, error sin Notification, bajas que fallan, iOS y avisos sin URL', async () => {
+    const { sw, clics } = swFalso();
+    sw.subscription = of({ endpoint: 'https://push/9' } as PushSubscription);
+    vi.stubGlobal('Notification', { permission: 'default' });
+    configurar({ usuario: CLIENTE, providers: [{ provide: SwPush, useValue: sw }] });
+    const s = TestBed.inject(PushHibridoAdapter);
+    expect(await s.comprobar()).toBe('activo');
+    const { Router } = await import('@angular/router');
+    const navegar = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    clics.next({ notification: {} });
+    expect(navegar).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+    vi.stubGlobal('Notification', undefined);
+    sw.requestSubscription.mockImplementation(rechaza(new Error('x')));
+    await s.activar();
+    expect(s.estado()).toBe('inactivo');
+    const rt = TestBed.inject(RealtimePort) as FakeRealtime;
+    vi.spyOn(rt, 'desuscribirPush').mockImplementation(rechaza(new Error('x')));
+    sw.unsubscribe.mockImplementation(rechaza(new Error('x')));
+    await s.desactivar();
+    expect(s.estado()).toBe('inactivo');
+    vi.unstubAllGlobals();
+    TestBed.resetTestingModule();
+
+    const oyentes: Record<string, (x: never) => void> = {};
+    const plugin = {
+      requestPermissions: vi.fn(async () => ({ receive: 'granted' })),
+      register: vi.fn(async () => oyentes['registration']({ value: 'apns' } as never)),
+      addListener: vi.fn(async (ev: string, fn: (x: never) => void) => {
+        oyentes[ev] = fn;
+      }),
+    };
+    configurar({
+      usuario: CLIENTE,
+      providers: [
+        {
+          provide: CAPACITOR,
+          useValue: {
+            isNativePlatform: () => true,
+            getPlatform: () => 'ios',
+            Plugins: { PushNotifications: plugin as never },
+          },
+        },
+      ],
+    });
+    const nativo = TestBed.inject(PushHibridoAdapter);
+    await nativo.activar();
+    await vaciarPromesas();
+    const rt2 = TestBed.inject(RealtimePort) as FakeRealtime;
+    expect(rt2.suscripciones).toEqual([{ plataforma: 'ios', token: 'apns' }]);
+    vi.spyOn(rt2, 'desuscribirPush').mockImplementation(rechaza(new Error('x')));
+    const navegar2 = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    oyentes['pushNotificationActionPerformed']({ notification: {} } as never);
+    expect(navegar2).not.toHaveBeenCalled();
+    await nativo.desactivar();
+  });
+
+  it('CAPACITOR solo existe dentro de la app empaquetada', () => {
+    TestBed.resetTestingModule();
+    expect(TestBed.inject(CAPACITOR)).toBeNull();
+    TestBed.resetTestingModule();
+    const cap = { isNativePlatform: () => true, getPlatform: () => 'android', Plugins: {} };
+    vi.stubGlobal('Capacitor', cap);
+    expect(TestBed.inject(CAPACITOR)).toBe(cap);
+    vi.unstubAllGlobals();
   });
 
   it('app móvil sin el plugin no es soportado', async () => {
@@ -984,6 +1311,15 @@ describe('obtenerUbicacion', () => {
       permissions: { query: vi.fn(rechaza(new Error('x'))) },
     });
     expect(await entornoNavegador().permiso()).toBeNull();
+    // Con GPS, en Windows, sin https y sin la API de permisos
+    const geolocation = { getCurrentPosition: vi.fn() };
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Windows NT 10.0)', geolocation });
+    vi.stubGlobal('isSecureContext', false);
+    const windows = entornoNavegador();
+    expect(windows).toMatchObject({ geolocation, seguro: false, esWindows: true });
+    expect(await windows.permiso()).toBeNull();
+    vi.stubGlobal('isSecureContext', true);
+    expect(entornoNavegador().seguro).toBe(true);
     vi.unstubAllGlobals();
   });
 });
@@ -1051,7 +1387,7 @@ describe('GananciasPage: liquidación semanal', () => {
     });
     await vaciarPromesas();
     await estable();
-    const texto = el.textContent?.replace(/\s+/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
     expect(texto).toContain('Liquidación de esta semana');
     expect(texto).toContain('Te pagaremos');
     expect(texto).toContain('Saldada');
@@ -1108,7 +1444,7 @@ describe('TableroPage: insignias y aviso al instante', () => {
     await TestBed.inject(DriverProfileStore).cargar(true);
     await r.c.inicializar();
     await r.estable();
-    const texto = r.el.textContent?.replace(/\s+/g, ' ') ?? '';
+    const texto = r.el.textContent?.replaceAll(/\s+/g, ' ') ?? '';
     expect(texto).toContain('Pagado');
     expect(texto).toContain('Efectivo');
     expect(texto).toContain('1 parada');

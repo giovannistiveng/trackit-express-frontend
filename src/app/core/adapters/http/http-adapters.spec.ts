@@ -229,18 +229,10 @@ describe('Adaptadores HTTP', () => {
       expect(await p2).toBeNull();
     });
 
-    it('debería iniciar la ruta con POST /envios/:id/iniciar-ruta', async () => {
-      const p = TestBed.inject(http.HttpDriverServiceAdapter).iniciarRuta(1);
-      (await esperar(ctrl, 'POST', `${API_BASE}/envios/1/iniciar-ruta`)).flush({
-        envio: apiEnvio({ estado: 'En Ruta' }),
-      });
-      expect((await p).estado).toBe('En Ruta');
-    });
-
     it('debería rechazar ids inválidos sin llamar a la API', async () => {
       const a = TestBed.inject(http.HttpDriverServiceAdapter);
       await expect(a.aceptar(0)).rejects.toMatchObject({ status: 400 });
-      await expect(a.iniciarRuta(-1)).rejects.toMatchObject({ status: 400 });
+      await expect(a.llegadaRecogida(-1)).rejects.toMatchObject({ status: 400 });
     });
   });
 

@@ -1,3 +1,4 @@
+import { Provider } from '@angular/core';
 import { ApiError } from '../../core/http/api-error';
 import { AuthPort, DriverProfilePort } from '../../core/ports';
 import { SessionService } from '../../core/auth/session.service';
@@ -8,6 +9,7 @@ import { montar } from '../../../testing/pantallas';
 import { LoginPage, MENSAJE_CREDENCIALES } from './login.page';
 import { MENSAJE_CORREO_DUPLICADO, RegistroPage } from './registro.page';
 import { ToastService } from '../../shared/ui/toast.service';
+import { AuthLayoutComponent } from './auth-layout.component';
 
 function diferido<T>() {
   let resolver!: (v: T) => void;
@@ -125,6 +127,28 @@ describe('CU-001 RegistroPage', () => {
     expect(opciones).toEqual(['Cliente', 'Conductor']);
     q<HTMLButtonElement>(el, 'button[aria-pressed]').click();
   });
+
+  it('apellidos y correo inválidos, mostrar la contraseña y llegar como conductor', async () => {
+    const { el, estable } = await montar(RegistroPage, {
+      inputs: { rol: 'conductor' },
+      providers: [{ provide: AuthPort, useValue: auth }],
+    });
+    expect(el.querySelectorAll<HTMLInputElement>('input[type=radio]')[1].checked).toBe(true);
+    escribir(q(el, '#apellidos'), 'G0mez');
+    escribir(q(el, '#correo'), 'no-es-correo');
+    q(el, '#apellidos').dispatchEvent(new Event('blur'));
+    q(el, '#correo').dispatchEvent(new Event('blur'));
+    await estable();
+    expect(q(el, '#apellidos-error').textContent).toContain('Solo letras');
+    expect(q(el, '#correo-error')).toBeTruthy();
+    botonPorTexto(el, 'Mostrar').click();
+    await estable();
+    expect(q<HTMLInputElement>(el, '#password').type).toBe('text');
+    expect(q<HTMLInputElement>(el, '#confirmar').type).toBe('text');
+    botonPorTexto(el, 'Ocultar').click();
+    await estable();
+    expect(q<HTMLInputElement>(el, '#password').type).toBe('password');
+  });
 });
 
 describe('CU-002 LoginPage', () => {
@@ -138,6 +162,22 @@ describe('CU-002 LoginPage', () => {
       { provide: AuthPort, useValue: auth },
       { provide: DriverProfilePort, useValue: perfil },
     ];
+  });
+
+  it('mientras entra lo indica', async () => {
+    auth.iniciarSesion.mockImplementation(() => new Promise(() => undefined));
+    const { el, estable } = await montar(LoginPage, { providers: providers as Provider[] });
+    escribir(q(el, '#correo'), 'a@t.co');
+    escribir(q(el, '#password'), 'Clave1234');
+    botonPorTexto(el, 'Iniciar sesión').click();
+    await estable();
+    expect(el.textContent).toContain('Entrando…');
+  });
+
+  it('el marco de autenticación sin subtítulo', async () => {
+    const { el } = await montar(AuthLayoutComponent, { inputs: { titulo: 'Hola' } });
+    expect(el.querySelector('h1')?.textContent).toContain('Hola');
+    expect(el.querySelector('h1 + p')).toBeNull();
   });
 
   async function entrar(el: HTMLElement, estable: () => Promise<void>) {

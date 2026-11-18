@@ -123,11 +123,14 @@ export class CargaArchivoComponent implements OnDestroy {
    * el tamaño, así una foto de 8 MB tomada con el celular no se rechaza.
    */
   async procesar(original: File | null | undefined): Promise<void> {
-    const archivo = original ? await comprimirImagen(original) : original;
+    if (!original) {
+      this.rechazar('vacio');
+      return;
+    }
+    const archivo = await comprimirImagen(original);
     const problema = validarArchivo(archivo, this.tipos(), this.maxBytes());
-    if (problema || !archivo) {
-      this.error.set(MENSAJES_ARCHIVO[problema ?? 'vacio']);
-      this.rechazado.emit(problema ?? 'vacio');
+    if (problema) {
+      this.rechazar(problema);
       return;
     }
     this.error.set('');
@@ -137,6 +140,11 @@ export class CargaArchivoComponent implements OnDestroy {
       this.urlPrevia.set(URL.createObjectURL(archivo));
     }
     this.archivo.emit(archivo);
+  }
+
+  private rechazar(problema: ErrorArchivo): void {
+    this.error.set(MENSAJES_ARCHIVO[problema]);
+    this.rechazado.emit(problema);
   }
 
   reiniciar(): void {

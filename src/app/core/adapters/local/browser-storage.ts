@@ -29,10 +29,11 @@ export class LocalStorageSessionAdapter implements SessionStoragePort {
 
 @Injectable({ providedIn: 'root' })
 export class LocalForageAdapter implements KeyValueStorePort {
-  private db: Pick<LocalForage, 'getItem' | 'setItem' | 'removeItem'> = localforage.createInstance({
-    name: 'trackit',
-    storeName: 'trackit',
-  });
+  private readonly db: Pick<LocalForage, 'getItem' | 'setItem' | 'removeItem'> =
+    localforage.createInstance({
+      name: 'trackit',
+      storeName: 'trackit',
+    });
 
   get<T>(clave: string): Promise<T | null> {
     return this.db.getItem<T>(clave);

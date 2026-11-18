@@ -27,15 +27,15 @@ npm start            # http://localhost:4200
 
 Scripts:
 
-| Script                  | Qué hace                                                                                       |
-| ----------------------- | ---------------------------------------------------------------------------------------------- |
-| `npm start`             | Servidor de desarrollo                                                                         |
-| `npm run build`         | Compilación de producción en `dist/` (con Service Worker)                                      |
-| `npm test`              | Pruebas unitarias                                                                              |
-| `npm run test:coverage` | Pruebas con cobertura y umbrales (80 % global, 75 % ramas, 90 % en dominio y adaptadores HTTP) |
-| `npm run lint`          | ESLint (reglas de SonarJS) + verificación de la arquitectura hexagonal                         |
-| `npm run lint:sonar`    | Reporte de ESLint en `reports/eslint.json` para SonarQube                                      |
-| `npm run sonar`         | Análisis de SonarQube (ver abajo)                                                              |
+| Script                  | Qué hace                                                                            |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| `npm start`             | Servidor de desarrollo                                                              |
+| `npm run build`         | Compilación de producción en `dist/` (con Service Worker)                           |
+| `npm test`              | Pruebas unitarias                                                                   |
+| `npm run test:coverage` | Pruebas con cobertura obligatoria del 100 % (líneas, ramas, funciones y sentencias) |
+| `npm run lint`          | ESLint (reglas de SonarJS) + verificación de la arquitectura hexagonal              |
+| `npm run lint:sonar`    | Reporte de ESLint en `reports/eslint.json` para SonarQube                           |
+| `npm run sonar`         | Análisis de SonarQube (ver abajo)                                                   |
 
 ## Configuración
 
