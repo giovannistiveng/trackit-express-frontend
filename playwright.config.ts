@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { parseEnv } from 'node:util';
 
 /**
  * Pruebas de punta a punta (E2E) de TrackIt Express.
@@ -19,6 +21,16 @@ const BACKEND = path.resolve(
   process.env['E2E_BACKEND_DIR'] ?? path.join(__dirname, '..', 'trackit-express-backend'),
 );
 const ENV_BACKEND = path.join(__dirname, 'e2e', 'backend.env');
+
+// Conexión a PostgreSQL: si no viene en el entorno, se toma del .env del backend (usuario, clave,
+// servidor y puerto). La base sigue siendo trackit_e2e (e2e/backend.env), separada de la de desarrollo.
+const envDesarrollo = path.join(BACKEND, '.env');
+if (existsSync(envDesarrollo)) {
+  const valores = parseEnv(readFileSync(envDesarrollo, 'utf8'));
+  for (const clave of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_SSL']) {
+    if (process.env[clave] === undefined && valores[clave]) process.env[clave] = valores[clave];
+  }
+}
 const nodeConEnv = (script: string) => `node --env-file="${ENV_BACKEND}" ${script}`;
 
 export default defineConfig({

@@ -180,7 +180,8 @@ Las pruebas E2E (`e2e/*.e2e.ts`) recorren la aplicación en un navegador real co
 | `conductor.movil.e2e.ts`   | Tablero, ganancias y perfil del conductor en la pantalla de un celular.                                    |
 
 **Requisitos:** el backend clonado al lado (`../trackit-express-backend`, o la variable `E2E_BACKEND_DIR`) y
-PostgreSQL encendido. La base `trackit_e2e` se crea sola la primera vez.
+PostgreSQL encendido. La base `trackit_e2e` se crea sola la primera vez, con el usuario y la clave del `.env` del
+backend.
 
 ```powershell
 npx playwright install chromium      # solo la primera vez
