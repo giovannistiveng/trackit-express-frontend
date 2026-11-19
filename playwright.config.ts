@@ -52,7 +52,13 @@ export default defineConfig({
     {
       name: 'backend',
       cwd: BACKEND,
-      command: `npm run build && ${nodeConEnv('dist/infrastructure/database/cli.js preparar')} && ${nodeConEnv('dist/infrastructure/http/server.js')}`,
+      // Crea la base si falta, compila, aplica el esquema y levanta la API
+      command: [
+        nodeConEnv(`"${path.join(__dirname, 'e2e', 'apoyo', 'crear-base.mjs')}" "${BACKEND}"`),
+        'npm run build',
+        nodeConEnv('dist/infrastructure/database/cli.js preparar'),
+        nodeConEnv('dist/infrastructure/http/server.js'),
+      ].join(' && '),
       url: 'http://localhost:3300/health',
       reuseExistingServer: !CI,
       timeout: 180_000,

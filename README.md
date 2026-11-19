@@ -179,11 +179,10 @@ Las pruebas E2E (`e2e/*.e2e.ts`) recorren la aplicación en un navegador real co
 | `administrador.e2e.ts`     | Métricas del panel y revisión de documentos hasta aprobar a un conductor.                                  |
 | `conductor.movil.e2e.ts`   | Tablero, ganancias y perfil del conductor en la pantalla de un celular.                                    |
 
-**Requisitos:** el backend clonado al lado (`../trackit-express-backend`, o la variable `E2E_BACKEND_DIR`) y una base
-de datos vacía para E2E:
+**Requisitos:** el backend clonado al lado (`../trackit-express-backend`, o la variable `E2E_BACKEND_DIR`) y
+PostgreSQL encendido. La base `trackit_e2e` se crea sola la primera vez.
 
 ```powershell
-psql -U postgres -c "CREATE DATABASE trackit_e2e"
 npx playwright install chromium      # solo la primera vez
 npm run e2e                          # levanta backend (3300) y frontend (4300) y corre todo
 npm run e2e:ui                       # modo interactivo para ver cada paso
