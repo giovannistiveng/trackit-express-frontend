@@ -49,12 +49,12 @@ jobs:
 
     steps:
       - name: Descargar el frontend
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           path: trackit-express-frontend
 
       - name: Descargar el backend
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/trackit-express-backend
           ref: ${{ inputs.rama_backend || ((github.base_ref || github.ref_name) == 'main' && 'main' || 'desarrollo') }}
