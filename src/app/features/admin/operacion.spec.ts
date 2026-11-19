@@ -581,7 +581,7 @@ describe('DashboardPage: sin envíos y con un conductor por aprobar', () => {
     });
     await r.estable();
     expect(q(r.el, 'svg[role="img"]').getAttribute('aria-label')).toBe('Tasa de entrega 0 %');
-    expect(r.el.querySelectorAll('svg circle[stroke-dasharray]').length).toBe(0);
+    expect(r.el.querySelectorAll('svg circle[stroke-dasharray]')).toHaveLength(0);
     expect(r.el.textContent).toContain('1 conductor espera aprobación');
     puerto.metricas.mockImplementation(async () => ({ ...base, conductoresPendientes: 0 }));
     botonPorTexto(r.el, /Actualizar/).click();

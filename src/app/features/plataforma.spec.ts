@@ -838,7 +838,7 @@ describe('ChatEnvioComponent', () => {
     await estable();
     const consultas = chat.mensajes.mock.calls.length;
     (intervalos.mock.calls.find((x) => x[1] === 10_000)?.[0] as () => void)();
-    expect(chat.mensajes.mock.calls.length).toBe(consultas);
+    expect(chat.mensajes.mock.calls).toHaveLength(consultas);
     const m: MensajeChat = {
       id: 50,
       autor: 'Pedro',
@@ -948,7 +948,7 @@ describe('EventosSseAdapter: casos de borde', () => {
     s.detener();
     dar('t');
     await vaciarPromesas(10);
-    expect(FuenteFalsa.instancias.length).toBe(antes);
+    expect(FuenteFalsa.instancias).toHaveLength(antes);
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     s.iniciar();
@@ -1466,7 +1466,7 @@ describe('TableroPage: insignias y aviso al instante', () => {
       id_envio: null,
     });
     await r.estable();
-    expect(tablero.disponibles.mock.calls.length).toBe(antes + 1);
+    expect(tablero.disponibles.mock.calls).toHaveLength(antes + 1);
     r.c.ngOnDestroy();
   });
 });

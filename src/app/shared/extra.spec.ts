@@ -164,7 +164,7 @@ describe('GlobalErrorHandler', () => {
     h.handleError('texto suelto', 0);
     expect(log.de('ERROR')).toHaveLength(3);
     for (let i = 0; i < 60; i++) h.handleError(new Error('e' + i), 0);
-    expect(log.de('ERROR').length).toBe(63);
+    expect(log.de('ERROR')).toHaveLength(63);
   });
 });
 

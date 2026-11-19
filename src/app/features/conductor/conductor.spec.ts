@@ -526,7 +526,7 @@ describe('CU-007 TableroPage', () => {
     await vi.advanceTimersByTimeAsync(0);
     const llamadas = p.tablero.disponibles.mock.calls.length;
     await vi.advanceTimersByTimeAsync(INTERVALO_TABLERO_MS);
-    expect(p.tablero.disponibles.mock.calls.length).toBe(llamadas + 1);
+    expect(p.tablero.disponibles.mock.calls).toHaveLength(llamadas + 1);
     fixture.detectChanges();
     expect(el.textContent).toContain('No hay servicios disponibles');
     p.tablero.disponibles.mockImplementation(rechaza(new ApiError(500, 'x')));

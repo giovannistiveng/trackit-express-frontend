@@ -195,7 +195,7 @@ describe('TableroPage: casos de borde', () => {
     await r.estable();
     a.notificaciones.next(notificacion('mensaje_chat'));
     await r.estable();
-    expect(a.tablero.disponibles.mock.calls.length).toBe(antes + 2);
+    expect(a.tablero.disponibles.mock.calls).toHaveLength(antes + 2);
     r.fixture.destroy();
     TestBed.resetTestingModule();
     const b = armar([], { ...APROBADO, estadoAprobacion: 'Pendiente' });

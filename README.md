@@ -166,6 +166,35 @@ Nunca se registran contraseñas, PIN, tokens ni cuerpos de peticiones.
    npm run sonar -- -Dsonar.host.url=http://localhost:9000 -Dsonar.token=TU_TOKEN
    ```
 
+## Pruebas de punta a punta (Playwright)
+
+Las pruebas E2E (`e2e/*.e2e.ts`) recorren la aplicación en un navegador real contra el backend real:
+
+| Archivo                    | Qué prueba                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `publico.e2e.ts`           | Página de inicio, página no encontrada, seguimiento inválido y rutas privadas sin sesión.                  |
+| `autenticacion.e2e.ts`     | Registro, cierre y regreso de sesión, contraseña incorrecta y permisos por rol.                            |
+| `pedido-cliente.e2e.ts`    | Cotizar y crear un pedido desde el formulario, cancelarlo y verlo en el historial.                         |
+| `servicio-completo.e2e.ts` | Cliente y conductor en dos navegadores: aceptar, recoger con código, entregar con PIN, cobrar y calificar. |
+| `administrador.e2e.ts`     | Métricas del panel y revisión de documentos hasta aprobar a un conductor.                                  |
+| `conductor.movil.e2e.ts`   | Tablero, ganancias y perfil del conductor en la pantalla de un celular.                                    |
+
+**Requisitos:** el backend clonado al lado (`../trackit-express-backend`, o la variable `E2E_BACKEND_DIR`) y una base
+de datos vacía para E2E:
+
+```powershell
+psql -U postgres -c "CREATE DATABASE trackit_e2e"
+npx playwright install chromium      # solo la primera vez
+npm run e2e                          # levanta backend (3300) y frontend (4300) y corre todo
+npm run e2e:ui                       # modo interactivo para ver cada paso
+npm run e2e:reporte                  # abre el último reporte HTML
+```
+
+Playwright levanta solo los dos servidores. El backend usa `e2e/backend.env`: base `trackit_e2e`, sin límite de
+peticiones, mapas sin red (`GEO_MODO=sin-red`), Nequi simulado y sin correos reales. Si tu PostgreSQL usa otro
+usuario o contraseña, defínelos antes de correr (`$env:DB_USER="..."; $env:DB_PASSWORD="..."`). Cada prueba crea
+sus propios usuarios, así que no hace falta limpiar la base entre ejecuciones.
+
 ## Integración continua (GitHub Actions)
 
 El flujo `.github/workflows/ci.yml` corre en cada push y pull request a `main`, `desarrollo` y `pre-produccion`:
@@ -178,6 +207,10 @@ El flujo `.github/workflows/ci.yml` corre en cada push y pull request a `main`, 
   (Settings → Secrets and variables → Actions), analiza el código y espera el quality gate. El servidor debe ser
   accesible desde internet (p. ej. SonarQube Cloud, con la variable `SONAR_ORGANIZATION`); un SonarQube en
   `localhost` se sigue analizando a mano como se explica arriba.
+
+El flujo `.github/workflows/e2e.yml` corre las pruebas de Playwright con PostgreSQL y el backend clonado
+(rama `main` para `main`, `desarrollo` para lo demás); el reporte queda como artefacto. Si el backend es privado,
+crea el secreto `BACKEND_REPO_TOKEN` con un token de solo lectura.
 
 Dependabot (`.github/dependabot.yml`) abre cada lunes un PR agrupado hacia `desarrollo` con las actualizaciones.
 
