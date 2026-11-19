@@ -25,7 +25,7 @@ export const INTERVALO_PAGO_MS = 4_000;
 export const VIGENCIA_COBRO_MIN = 10;
 
 export function celularValido(t: string): boolean {
-  return /^3\d{9}$/.test(t.replace(/[\s-]/g, '').replace(/^\+?57/, ''));
+  return /^3\d{9}$/.test(t.replaceAll(/[\s-]/g, '').replace(/^\+?57/, ''));
 }
 
 /**
@@ -271,6 +271,6 @@ export class PagoPanelComponent implements OnDestroy {
   private aplicar(p: PagoResumen): void {
     const antes = this.pago();
     this.pago.set(p);
-    if (!antes || antes.estado !== p.estado || antes.metodo !== p.metodo) this.cambio.emit(p);
+    if (antes?.estado !== p.estado || antes.metodo !== p.metodo) this.cambio.emit(p);
   }
 }

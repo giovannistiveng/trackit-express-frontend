@@ -9,13 +9,15 @@ import {
   input,
   signal,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import {
   Envio,
+  SERVICIOS,
+  TEXTO_ETAPA,
   esIdValido,
   puedeCompartirUbicacion,
-  puedeEntregar,
-  puedeIniciarRuta,
+  resumenDetalle,
 } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
@@ -33,14 +35,94 @@ import { ChatEnvioComponent } from '../../shared/ui/chat-envio.component';
 import { CompartirUbicacionService } from './state/compartir-ubicacion.service';
 import { DriverProfileStore } from './state/driver-profile.store';
 import { desplazarA } from '../../shared/util/desplazar';
+import { EtapasServicioComponent } from '../../shared/ui/etapas-servicio.component';
 
-/** Servicio en curso del conductor: iniciar ruta, compartir ubicación y finalizar entrega. Nunca muestra el PIN. */
+export interface AccionServicio {
+  tipo: 'llegue_recoger' | 'recoger' | 'llegue_destino' | 'finalizar';
+  texto: string;
+  icono: NombreIcono;
+  ayuda: string;
+  clase: string;
+  /** Si hay algo pendiente antes (paradas), el botón se bloquea con este texto. */
+  bloqueo?: string;
+}
+
+function ayudaRecogida(pideCodigo: boolean, conCompra: boolean): string {
+  if (pideCodigo) return 'Pide el código de recogida, cuenta los bultos y toma la foto.';
+  if (conCompra) return 'Registra el valor de la factura y tómale foto.';
+  return 'Cuenta los bultos y toma la foto de la carga.';
+}
+
+function bloqueoParadas(n: number): string | undefined {
+  if (n <= 0) return undefined;
+  if (n === 1) return 'Primero marca la parada como hecha.';
+  return `Primero marca las ${n} paradas como hechas.`;
+}
+
+/** Acción principal del conductor según la etapa del servicio. */
+export function accionDe(
+  e: Envio,
+  faltaParaEntregar: string,
+  paradasPendientes: number,
+): AccionServicio | null {
+  const conCompra = SERVICIOS[e.tipoServicio].conCompra;
+  switch (e.etapa) {
+    case 'yendo_a_recoger':
+      return {
+        tipo: 'llegue_recoger',
+        texto: conCompra ? 'Llegué al lugar' : 'Llegué a recoger',
+        icono: 'flag',
+        ayuda: 'Avisamos al cliente para que tenga lista la carga.',
+        clase: 'btn-primario',
+      };
+    case 'en_recogida':
+      return {
+        tipo: 'recoger',
+        texto: conCompra ? 'Ya compré, salir a entregar' : 'Recoger la carga',
+        icono: 'camera',
+        ayuda: ayudaRecogida(e.pideCodigoRecogida, conCompra),
+        clase: 'btn-primario',
+      };
+    case 'en_camino':
+      return {
+        tipo: 'llegue_destino',
+        texto: e.idaYVuelta ? 'Llegué al destino, regreso' : 'Llegué a entregar',
+        icono: 'flag',
+        ayuda: 'Avisamos a quien recibe para que tenga listo el PIN.',
+        clase: 'btn-primario',
+        bloqueo: bloqueoParadas(paradasPendientes),
+      };
+    case 'regresando':
+      return {
+        tipo: 'llegue_destino',
+        texto: 'Llegué al punto de entrega',
+        icono: 'flag',
+        ayuda: 'Avisamos al cliente que regresaste.',
+        clase: 'btn-primario',
+      };
+    case 'en_destino':
+      return {
+        tipo: 'finalizar',
+        texto: 'Finalizar entrega',
+        icono: 'package-check',
+        ayuda: 'Pide el PIN a quien recibe y toma la foto de la entrega.',
+        clase: 'btn-acento',
+        bloqueo: faltaParaEntregar || undefined,
+      };
+    default:
+      return null;
+  }
+}
+
+/** Servicio en curso del conductor: una acción por etapa, mapa, ubicación y chat. Nunca muestra el PIN. */
 @Component({
   selector: 'ti-servicio',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    NgTemplateOutlet,
     RouterLink,
     CopPipe,
+    EtapasServicioComponent,
     EstadoBadgeComponent,
     EstadoCargaComponent,
     EntregaModalComponent,
@@ -65,22 +147,22 @@ import { desplazarA } from '../../shared/util/desplazar';
             class="mt-2 flex flex-wrap items-end justify-between gap-4 animate-[var(--animate-aparecer)]"
           >
             <div>
-              <p class="text-sm font-semibold text-piedra">
-                Servicio #{{ e.id }} · {{ e.tipoCarga }}
+              <p class="flex items-center gap-2 text-sm font-semibold text-piedra">
+                <ti-icono [nombre]="servicioDe(e).icono" class="size-4 text-marca" />
+                {{ servicioDe(e).nombre }} #{{ e.id }}
               </p>
-              <h1 class="mt-1">
-                {{ e.estado === 'Entregado' ? 'Entrega completada' : 'Servicio en curso' }}
-              </h1>
+              <h1 class="mt-1">{{ titulo(e) }}</h1>
               <div class="mt-3 flex flex-wrap items-center gap-2 text-sm">
                 <ti-estado-badge [estado]="e.estado" />
-                @if (e.metodoPago === 'efectivo' && e.estado !== 'Cancelado') {
+                @if (cobroEnEfectivo(e); as cobro) {
                   <span class="insignia bg-aviso-suave"
-                    ><ti-icono nombre="banknote" class="size-4" /> Cobra {{ e.tarifa | cop }} en
+                    ><ti-icono nombre="banknote" class="size-4" /> Cobra {{ cobro | cop }} en
                     efectivo</span
                   >
-                } @else if (e.metodoPago === 'nequi') {
+                }
+                @if (e.metodoPago === 'nequi') {
                   <span class="insignia bg-exito-suave text-exito"
-                    ><ti-icono nombre="smartphone" class="size-4" /> Pagado con Nequi</span
+                    ><ti-icono nombre="smartphone" class="size-4" /> Servicio pagado con Nequi</span
                   >
                 }
                 @if (e.idaYVuelta) {
@@ -102,47 +184,64 @@ import { desplazarA } from '../../shared/util/desplazar';
             }
           </header>
 
-          <!-- Pasos del servicio -->
-          <ol class="mt-6 grid grid-cols-3 gap-2" aria-label="Pasos del servicio">
-            @for (p of pasos(); track p.texto) {
-              <li
-                class="flex flex-col items-center gap-2 text-center text-xs font-semibold sm:text-sm"
-                [attr.aria-current]="p.actual ? 'step' : null"
-              >
-                <span
-                  class="grid size-10 place-items-center rounded-full border-2 transition-colors"
-                  [class]="
-                    p.hecho
-                      ? 'border-marca bg-marca text-white'
-                      : p.actual
-                        ? 'border-marca bg-marca-suave text-marca'
-                        : 'border-linea bg-papel text-piedra'
-                  "
-                >
-                  <ti-icono [nombre]="p.hecho ? 'check' : p.icono" class="size-5" />
-                </span>
-                <span [class.text-piedra]="!p.hecho && !p.actual">{{ p.texto }}</span>
-              </li>
-            }
-          </ol>
-
           <div class="mt-6 grid gap-6 lg:grid-cols-[1fr_22rem]">
             <div class="min-w-0 space-y-4">
               @if (e.estado !== 'Entregado' && e.estado !== 'Cancelado') {
                 <ti-mapa-envio
+                  alto="alto"
                   [seguimiento]="seguimiento()"
                   [posicionPropia]="ubicacion.ultimaPosicion()"
+                  [paradas]="coordsParadas()"
                 />
               }
+
+              @if (accion(e); as a) {
+                <section
+                  class="hoja -mx-4 space-y-3 p-5 sm:mx-0 sm:rounded-3xl lg:hidden"
+                  aria-label="Siguiente paso"
+                >
+                  <ng-container
+                    *ngTemplateOutlet="siguientePaso; context: { $implicit: a, e: e }"
+                  />
+                </section>
+              }
+
               <ol class="space-y-3">
                 <li class="tarjeta flex items-start gap-4 p-4">
                   <span
-                    class="grid size-10 shrink-0 place-items-center rounded-full bg-tinta text-white"
-                    ><ti-icono [nombre]="e.urlFotoRecogida ? 'check' : 'package'"
-                  /></span>
+                    class="grid size-10 shrink-0 place-items-center rounded-full bg-tinta font-extrabold text-white"
+                  >
+                    @if (e.urlFotoRecogida) {
+                      <ti-icono nombre="check" />
+                    } @else {
+                      A
+                    }
+                  </span>
                   <div class="min-w-0 flex-1">
-                    <p class="text-sm text-piedra">Recoge en</p>
+                    <p class="text-sm text-piedra">
+                      {{ servicioDe(e).conCompra ? 'Compra o vuelta en' : 'Recoge en' }}
+                    </p>
                     <p class="text-lg font-semibold">{{ e.origen }}</p>
+                    @if (e.detalle?.contactoOrigenNombre || e.detalle?.contactoOrigenTelefono) {
+                      <p class="mt-1 text-sm">
+                        Entrega:
+                        <strong>{{ e.detalle?.contactoOrigenNombre ?? 'Sin nombre' }}</strong>
+                      </p>
+                      @if (e.detalle?.contactoOrigenTelefono; as tel) {
+                        <div class="mt-2 flex flex-wrap gap-2">
+                          <a class="btn-secundario !py-1.5 text-sm" [href]="'tel:' + tel"
+                            ><ti-icono nombre="phone" class="size-4" /> Llamar</a
+                          >
+                          <a
+                            class="btn-secundario !py-1.5 text-sm"
+                            [href]="whatsapp(tel)"
+                            target="_blank"
+                            rel="noopener"
+                            ><ti-icono nombre="message-circle" class="size-4" /> WhatsApp</a
+                          >
+                        </div>
+                      }
+                    }
                   </div>
                   @if (e.estado === 'Asignado') {
                     <a
@@ -204,9 +303,14 @@ import { desplazarA } from '../../shared/util/desplazar';
                 }
                 <li class="tarjeta flex items-start gap-4 p-4">
                   <span
-                    class="grid size-10 shrink-0 place-items-center rounded-full bg-marca text-white"
-                    ><ti-icono [nombre]="e.destinoVisitadoEn ? 'check' : 'map-pin'"
-                  /></span>
+                    class="grid size-10 shrink-0 place-items-center rounded-full bg-placa font-extrabold text-tinta ring-2 ring-tinta"
+                  >
+                    @if (e.destinoVisitadoEn || e.estado === 'Entregado') {
+                      <ti-icono nombre="check" />
+                    } @else {
+                      B
+                    }
+                  </span>
                   <div class="min-w-0 flex-1">
                     <p class="text-sm text-piedra">{{ e.idaYVuelta ? 'Lleva a' : 'Entrega en' }}</p>
                     <p class="text-lg font-semibold">{{ e.destino }}</p>
@@ -229,19 +333,9 @@ import { desplazarA } from '../../shared/util/desplazar';
                         </div>
                       }
                     }
-                    @if (e.idaYVuelta && e.estado === 'En Ruta' && !e.destinoVisitadoEn) {
-                      <button
-                        type="button"
-                        class="btn-primario mt-3 !py-2 text-sm"
-                        [disabled]="ocupado() || paradasPendientes() > 0"
-                        (click)="llegadaDestino(e)"
-                      >
-                        <ti-icono nombre="flag" class="size-4" /> Llegué al destino, regreso
-                      </button>
-                    }
                   </div>
                   @if (
-                    e.estado === 'En Ruta' && !e.destinoVisitadoEn && paradasPendientes() === 0
+                    e.estado === 'En Ruta' && !e.destinoVisitadoEn && paradasPendientes(e) === 0
                   ) {
                     <a
                       class="btn-secundario shrink-0 !px-3"
@@ -278,40 +372,65 @@ import { desplazarA } from '../../shared/util/desplazar';
                   </li>
                 }
               </ol>
-              @if (e.notas) {
-                <p class="flex gap-3 rounded-2xl border border-placa/60 bg-aviso-suave p-4">
-                  <ti-icono nombre="message" class="mt-0.5 text-placa-oscuro" />
-                  <span
-                    ><span class="font-semibold">Indicaciones del cliente:</span>
-                    {{ e.notas }}</span
-                  >
-                </p>
-              }
-              <p class="numeros text-right text-sm text-piedra">
-                Tarifa del servicio:
-                <strong class="text-lg text-tinta">{{ e.tarifa | cop }}</strong>
-                @if (e.distanciaKm) {
-                  · {{ e.distanciaKm }} km
+
+              <section class="tarjeta p-5" aria-labelledby="titulo-pedido">
+                <h2 id="titulo-pedido" class="text-base">Qué llevas</h2>
+                @if (textoPedido(e); as t) {
+                  <p class="mt-2 whitespace-pre-line">{{ t }}</p>
                 }
-              </p>
+                @if (lineasDetalle(e).length) {
+                  <ul class="mt-3 flex flex-wrap gap-1.5">
+                    @for (l of lineasDetalle(e); track l) {
+                      <li class="insignia bg-niebla">{{ l }}</li>
+                    }
+                  </ul>
+                }
+                @if (e.bultosRecogidos) {
+                  <p class="mt-3 text-sm text-piedra">
+                    Contaste {{ e.bultosRecogidos }} bultos al recoger.
+                  </p>
+                }
+                @if (e.valorCompra) {
+                  <p class="mt-2 text-sm">
+                    Compra registrada: <strong class="numeros">{{ e.valorCompra | cop }}</strong>
+                  </p>
+                }
+                @if (e.notas) {
+                  <p class="mt-4 flex gap-3 rounded-2xl border border-placa/60 bg-aviso-suave p-4">
+                    <ti-icono nombre="message" class="mt-0.5 text-placa-oscuro" />
+                    <span
+                      ><span class="font-semibold">Indicaciones del cliente:</span>
+                      {{ e.notas }}</span
+                    >
+                  </p>
+                }
+                <p class="numeros mt-4 text-right text-sm text-piedra">
+                  Tarifa del servicio:
+                  <strong class="text-lg text-tinta">{{ e.tarifa | cop }}</strong>
+                  @if (e.distanciaKm) {
+                    ({{ e.distanciaKm }} km)
+                  }
+                </p>
+              </section>
             </div>
 
             <aside class="space-y-4">
               @if (e.estado !== 'Entregado') {
                 <section class="space-y-4" aria-label="Acciones del servicio">
-                  @if (puedeIniciar()) {
-                    <button
-                      type="button"
-                      class="btn-primario btn-grande w-full"
-                      (click)="recogida.set(true)"
-                    >
-                      <ti-icono nombre="camera" /> Recogí el paquete
-                    </button>
-                    <p class="text-sm text-piedra">
-                      Toma la foto del paquete: con eso inicia la ruta y compartimos tu ubicación
-                      con el cliente.
-                    </p>
+                  @if (accion(e); as a) {
+                    <div class="hidden space-y-3 lg:block">
+                      <ng-container
+                        *ngTemplateOutlet="siguientePaso; context: { $implicit: a, e: e }"
+                      />
+                    </div>
                   }
+                  <section class="tarjeta p-5" aria-label="Avance del servicio">
+                    <ti-etapas-servicio
+                      [etapa]="e.etapa"
+                      rol="conductor"
+                      [idaYVuelta]="!!e.idaYVuelta"
+                    />
+                  </section>
                   <div class="tarjeta flex items-center justify-between gap-4 p-4">
                     <div class="flex items-start gap-3">
                       <span
@@ -325,7 +444,7 @@ import { desplazarA } from '../../shared/util/desplazar';
                       /></span>
                       <div>
                         <p id="ubicacion-titulo" class="font-semibold">Compartir mi ubicación</p>
-                        <p class="text-sm text-piedra">{{ textoUbicacion() }}</p>
+                        <p class="text-sm text-piedra">{{ textoUbicacion(e) }}</p>
                       </div>
                     </div>
                     <button
@@ -333,10 +452,10 @@ import { desplazarA } from '../../shared/util/desplazar';
                       role="switch"
                       aria-labelledby="ubicacion-titulo"
                       [attr.aria-checked]="ubicacion.estado() === 'activo'"
-                      [disabled]="!puedeCompartir()"
+                      [disabled]="!puedeCompartir(e)"
                       class="relative h-8 w-14 shrink-0 rounded-full transition-colors disabled:opacity-40"
                       [class]="ubicacion.estado() === 'activo' ? 'bg-exito' : 'bg-linea'"
-                      (click)="alternarUbicacion()"
+                      (click)="alternarUbicacion(e)"
                     >
                       <span
                         class="absolute top-1 size-6 rounded-full bg-papel shadow transition-[left]"
@@ -344,26 +463,6 @@ import { desplazarA } from '../../shared/util/desplazar';
                       ></span>
                     </button>
                   </div>
-                  @if (puedeFinalizar()) {
-                    <button
-                      type="button"
-                      class="btn-acento btn-grande w-full text-lg"
-                      [disabled]="!!faltaParaEntregar()"
-                      (click)="modal.set(true)"
-                    >
-                      <ti-icono nombre="package-check" /> Finalizar entrega
-                    </button>
-                    <p class="text-sm text-piedra">
-                      {{
-                        faltaParaEntregar() ||
-                          'Pídele el PIN al cliente y toma una foto del paquete entregado.'
-                      }}
-                    </p>
-                  } @else if (e.estado !== 'Cancelado') {
-                    <p class="text-sm text-piedra">
-                      Recoge el paquete para poder finalizar la entrega.
-                    </p>
-                  }
                   @if (e.estado === 'Asignado' || e.estado === 'En Ruta') {
                     <div id="chat">
                       <ti-chat-envio [idEnvio]="e.id" rol="conductor" otro="el cliente" />
@@ -378,7 +477,7 @@ import { desplazarA } from '../../shared/util/desplazar';
                     class="mx-auto grid size-16 place-items-center rounded-full bg-exito text-white"
                     ><ti-icono nombre="circle-check" class="size-9"
                   /></span>
-                  <p class="mt-4 font-semibold text-exito">El cliente recibió su paquete.</p>
+                  <p class="mt-4 font-semibold text-exito">El cliente recibió su pedido.</p>
                   <a routerLink="/conductor/tablero" class="btn-primario mt-4"
                     >Buscar otro servicio</a
                   >
@@ -390,9 +489,24 @@ import { desplazarA } from '../../shared/util/desplazar';
       </ti-estado-carga>
     </div>
 
+    <ng-template #siguientePaso let-a let-e="e">
+      <p class="text-sm font-semibold text-marca">Siguiente paso</p>
+      <button
+        type="button"
+        class="btn-grande w-full"
+        [class]="a.clase"
+        [disabled]="ocupado() || !!a.bloqueo"
+        (click)="ejecutar(a.tipo, e)"
+      >
+        <ti-icono [nombre]="ocupado() ? 'loader' : a.icono" [class.animate-spin]="ocupado()" />
+        {{ a.texto }}
+      </button>
+      <p class="text-sm text-piedra">{{ a.bloqueo || a.ayuda }}</p>
+    </ng-template>
+
     @if (recogida() && envio(); as e) {
       <ti-recogida-modal
-        [idEnvio]="e.id"
+        [envio]="e"
         (cerrar)="recogida.set(false)"
         (recogido)="alRecoger($event)"
       />
@@ -401,7 +515,8 @@ import { desplazarA } from '../../shared/util/desplazar';
     @if (modal() && envio(); as e) {
       <ti-entrega-modal
         [idEnvio]="e.id"
-        [cobroEfectivo]="e.metodoPago === 'efectivo' ? e.tarifa : null"
+        [cobroEfectivo]="cobroEnEfectivo(e)"
+        [incluyeCompra]="!!e.valorCompra"
         (cerrar)="modal.set(false)"
         (entregado)="alEntregar()"
         (yaEntregado)="alEntregar()"
@@ -424,7 +539,7 @@ export class ServicioPage implements OnInit, OnDestroy {
 
   protected readonly envio = signal<Envio | null>(null);
   protected readonly seguimiento = signal<Seguimiento | null>(null);
-  private temporizadorMapa: ReturnType<typeof setInterval> | null = null;
+  private temporizadorMapa?: ReturnType<typeof setInterval>;
   protected readonly error = signal('');
   protected readonly modal = signal(false);
   protected readonly recogida = signal(false);
@@ -432,14 +547,13 @@ export class ServicioPage implements OnInit, OnDestroy {
   protected readonly ocupado = signal(false);
   private readonly eventos = inject(EventosPort);
 
-  protected readonly paradasPendientes = computed(
-    () => (this.envio()?.paradas ?? []).filter((p) => !p.completadaEn).length,
-  );
+  protected paradasPendientes(e: Envio): number {
+    return (e.paradas ?? []).filter((p) => !p.completadaEn).length;
+  }
+
   /** Qué falta antes de poder entregar (paradas, regreso), o '' si nada. */
-  protected readonly faltaParaEntregar = computed(() => {
-    const e = this.envio();
-    if (!e) return '';
-    const n = this.paradasPendientes();
+  protected faltaParaEntregar(e: Envio): string {
+    const n = this.paradasPendientes(e);
     if (n > 0)
       return n === 1
         ? 'Te falta 1 parada por marcar como hecha.'
@@ -447,21 +561,24 @@ export class ServicioPage implements OnInit, OnDestroy {
     if (e.idaYVuelta && !e.destinoVisitadoEn)
       return 'Marca la llegada al destino; la entrega se cierra al regresar al origen.';
     return '';
-  });
+  }
 
   protected readonly fase = computed<FaseCarga>(() =>
     faseDe({ cargando: !this.envio() && !this.error(), error: !this.envio() && this.error() }),
   );
-  protected readonly puedeIniciar = computed(
-    () => !!this.envio() && puedeIniciarRuta(this.envio() as Envio),
+  protected readonly coordsParadas = computed(() =>
+    (this.envio()?.paradas ?? []).map((p) => p.coords),
   );
-  protected readonly puedeFinalizar = computed(
-    () => !!this.envio() && puedeEntregar(this.envio() as Envio),
-  );
-  protected readonly puedeCompartir = computed(
-    () => !!this.envio() && puedeCompartirUbicacion(this.envio() as Envio),
-  );
-  protected readonly textoUbicacion = computed(() => {
+
+  /** Una sola acción principal según la etapa: así el conductor nunca duda qué sigue. */
+  protected accion(e: Envio): AccionServicio | null {
+    return accionDe(e, this.faltaParaEntregar(e), this.paradasPendientes(e));
+  }
+  protected puedeCompartir(e: Envio): boolean {
+    return puedeCompartirUbicacion(e);
+  }
+
+  protected textoUbicacion(e: Envio): string {
     switch (this.ubicacion.estado()) {
       case 'activo':
         return 'El cliente puede ver por dónde vas.';
@@ -473,25 +590,9 @@ export class ServicioPage implements OnInit, OnDestroy {
       case 'no-disponible':
         return 'Tu dispositivo no puede obtener la ubicación ahora.';
       default:
-        return this.puedeCompartir() ? 'Apagado.' : 'Disponible cuando el servicio esté en ruta.';
+        return this.puedeCompartir(e) ? 'Apagado.' : 'Disponible cuando el servicio esté en ruta.';
     }
-  });
-
-  protected readonly pasos = computed(() => {
-    const estado = this.envio()?.estado;
-    const orden = ['Asignado', 'En Ruta', 'Entregado'];
-    const i = estado ? orden.indexOf(estado) : -1;
-    const lista: { texto: string; icono: NombreIcono }[] = [
-      { texto: 'Recoger', icono: 'package' },
-      { texto: 'En camino', icono: 'navigation' },
-      { texto: 'Entregado', icono: 'package-check' },
-    ];
-    return lista.map((p, n) => ({
-      ...p,
-      hecho: n < i || estado === 'Entregado',
-      actual: n === i && estado !== 'Entregado',
-    }));
-  });
+  }
 
   constructor() {
     // Cancelaciones o cambios del cliente llegan al instante
@@ -499,6 +600,51 @@ export class ServicioPage implements OnInit, OnDestroy {
       if (esDelEnvio(n.idEnvio, this.envio()) && n.tipo !== 'mensaje_chat') void this.cargar();
     });
     inject(DestroyRef).onDestroy(() => sub.unsubscribe());
+  }
+
+  protected servicioDe(e: Envio) {
+    return SERVICIOS[e.tipoServicio];
+  }
+
+  protected titulo(e: Envio): string {
+    return e.estado === 'Entregado' ? 'Entrega completada' : TEXTO_ETAPA[e.etapa].titulo;
+  }
+
+  protected lineasDetalle(e: Envio): string[] {
+    return resumenDetalle(e.tipoServicio, e.detalle);
+  }
+
+  protected textoPedido(e: Envio): string {
+    const d = e.detalle;
+    return d?.lista ?? d?.objetos ?? d?.insumo ?? (e.tipoServicio === 'paquete' ? e.tipoCarga : '');
+  }
+
+  /** Lo que el conductor cobra en efectivo: el servicio (si no se pagó con Nequi) y la compra. */
+  protected cobroEnEfectivo(e: Envio): number | null {
+    if (e.estado === 'Cancelado' || e.estado === 'Entregado') return null;
+    const total = (e.metodoPago === 'nequi' ? 0 : e.tarifa) + (e.valorCompra ?? 0);
+    return total > 0 ? total : null;
+  }
+
+  async ejecutar(tipo: AccionServicio['tipo'], e: Envio): Promise<void> {
+    if (tipo === 'recoger') this.recogida.set(true);
+    else if (tipo === 'finalizar') this.modal.set(true);
+    else if (tipo === 'llegue_recoger') await this.llegadaRecogida(e);
+    else await this.llegadaDestino(e);
+  }
+
+  async llegadaRecogida(e: Envio): Promise<void> {
+    if (this.ocupado()) return;
+    this.ocupado.set(true);
+    try {
+      const r = await this.servicios.llegadaRecogida(e.id);
+      this.envio.set({ ...e, ...r, paradas: r.paradas ?? e.paradas, pago: r.pago ?? e.pago });
+      this.toast.exito('Avisamos al cliente que llegaste.');
+    } catch (err) {
+      this.toast.error(this.mapper.traducir(err));
+    } finally {
+      this.ocupado.set(false);
+    }
   }
 
   protected whatsapp(tel: string): string {
@@ -513,7 +659,7 @@ export class ServicioPage implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.ubicacion.detener();
-    if (this.temporizadorMapa) clearInterval(this.temporizadorMapa);
+    clearInterval(this.temporizadorMapa);
   }
 
   /** Enlace de navegación (abre la app de mapas del celular) hacia una dirección o coordenadas. */
@@ -558,7 +704,7 @@ export class ServicioPage implements OnInit, OnDestroy {
     const antes = this.envio();
     // La respuesta de la recogida no trae las paradas: se conservan las que ya se tenían
     this.envio.set({ ...e, paradas: e.paradas ?? antes?.paradas, pago: e.pago ?? antes?.pago });
-    this.toast.exito('Paquete recogido. ¡Buen viaje!');
+    this.toast.exito('Carga recogida. ¡Buen viaje!');
     if (!this.ubicacion.compartiendo(e.id)) this.ubicacion.iniciar(e.id);
     void this.actualizarMapa();
   }
@@ -590,9 +736,7 @@ export class ServicioPage implements OnInit, OnDestroy {
     }
   }
 
-  protected alternarUbicacion(): void {
-    const e = this.envio();
-    if (!e) return;
+  protected alternarUbicacion(e: Envio): void {
     if (this.ubicacion.estado() === 'activo') this.ubicacion.detener();
     else this.ubicacion.iniciar(e.id);
   }

@@ -28,9 +28,13 @@ export const MENSAJE_PIN_INCORRECTO =
   template: `
     <ti-modal titulo="Finalizar entrega" [cerrable]="!enviando()" (cerrar)="cerrar.emit()">
       <section aria-labelledby="paso-pin">
-        <h3 id="paso-pin">PIN del cliente</h3>
-        <p class="mb-4 text-sm text-piedra">Pídele al cliente los 4 dígitos de su PIN.</p>
-        <ti-teclado-pin [(valor)]="pin" [deshabilitado]="enviando()" />
+        <h3 id="paso-pin">PIN de entrega</h3>
+        <p class="mb-4 text-sm text-piedra">Pídele a quien recibe los 4 dígitos del PIN.</p>
+        <ti-teclado-pin
+          [valor]="pin()"
+          (valorChange)="pin.set($event)"
+          [deshabilitado]="enviando()"
+        />
       </section>
       <section class="mt-6" aria-labelledby="paso-foto">
         <h3 id="paso-foto" class="mb-2">Foto de la entrega</h3>
@@ -63,7 +67,8 @@ export const MENSAJE_PIN_INCORRECTO =
           <span>
             <span class="block font-semibold">Recibí {{ monto | cop }} en efectivo</span>
             <span class="text-sm text-piedra"
-              >Confírmalo solo cuando tengas el dinero en la mano.</span
+              >{{ incluyeCompra() ? 'Incluye la compra según la factura. ' : '' }}Confírmalo solo
+              cuando tengas el dinero en la mano.</span
             >
           </span>
         </label>
@@ -89,8 +94,10 @@ export const MENSAJE_PIN_INCORRECTO =
 })
 export class EntregaModalComponent {
   readonly idEnvio = input.required<number>();
-  /** Valor a cobrar en efectivo; null si el cliente pagó en línea. */
+  /** Valor a cobrar en efectivo (servicio y compra); null si no hay nada que cobrar. */
   readonly cobroEfectivo = input<number | null>(null);
+  /** El monto incluye una compra (mandado o mercado). */
+  readonly incluyeCompra = input(false);
   readonly cerrar = output<void>();
   readonly entregado = output<void>();
   /** Se emite si el backend dice que el envío ya estaba entregado. */

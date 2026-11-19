@@ -32,12 +32,12 @@ export class CompartirUbicacionService implements OnDestroy {
   private readonly alConectar = () => void this.cola.sincronizar();
 
   constructor() {
-    window.addEventListener('online', this.alConectar);
+    globalThis.addEventListener('online', this.alConectar);
   }
 
   ngOnDestroy(): void {
     this.detener();
-    window.removeEventListener('online', this.alConectar);
+    globalThis.removeEventListener('online', this.alConectar);
   }
 
   iniciar(idEnvio: number): void {
@@ -87,20 +87,24 @@ export class CompartirUbicacionService implements OnDestroy {
   }
 
   private async alPosicion(pos: GeolocationPosition): Promise<void> {
+    // Una posición que llega después de detener se descarta
     if (this.idEnvio === null) return;
     this.estado.set('activo');
     const punto = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-    await this.enviar(punto, new Date(pos.timestamp));
+    await this.enviar(this.idEnvio, punto, new Date(pos.timestamp));
   }
 
   private async reenviar(): Promise<void> {
     const p = this.ultimaPosicion();
-    if (p && this.idEnvio !== null) await this.enviar(p, new Date());
+    if (p && this.idEnvio !== null) await this.enviar(this.idEnvio, p, new Date());
   }
 
-  private async enviar(punto: { lat: number; lon: number }, cuando: Date): Promise<void> {
-    if (this.idEnvio === null) return;
-    const ok = await this.cola.registrar(this.idEnvio, {
+  private async enviar(
+    idEnvio: number,
+    punto: { lat: number; lon: number },
+    cuando: Date,
+  ): Promise<void> {
+    const ok = await this.cola.registrar(idEnvio, {
       ...punto,
       capturadoEn: cuando.toISOString(),
     });

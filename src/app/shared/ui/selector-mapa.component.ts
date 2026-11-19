@@ -1,4 +1,4 @@
-import { cargarLeaflet } from '../util/leaflet';
+import { agregarCapaBase, cargarLeaflet } from '../util/leaflet';
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
@@ -6,16 +6,16 @@ import {
   ElementRef,
   OnDestroy,
   effect,
+  inject,
   input,
   output,
-  viewChild,
 } from '@angular/core';
 import type { LayerGroup, Map as LeafletMap, Marker } from 'leaflet';
 import { Coordenadas, Zona } from '../../core/domain';
 import { CENTRO_FUSAGASUGA } from './mapa-envio.component';
 
 const PIN_ELEGIDO =
-  '<span class="marcador-punto" style="background:#c2410c"><span style="display:block;width:10px;height:10px;border-radius:9999px;background:#f5c518;border:2px solid #1f1a17"></span></span>';
+  '<span class="marcador-punto" style="background:#0b5d45"><span style="display:block;width:10px;height:10px;border-radius:9999px;background:#f5c518;border:2px solid #142019"></span></span>';
 
 /**
  * Mapa para elegir un punto: clic o arrastrar el marcador. Opcionalmente dibuja las zonas de
@@ -26,7 +26,6 @@ const PIN_ELEGIDO =
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'relative isolate z-0 block' },
   template: `<div
-    #mapa
     class="w-full overflow-hidden rounded-2xl border border-linea bg-[#eef2ec]"
     [class]="alto()"
     role="application"
@@ -45,17 +44,25 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
   readonly etiqueta = input('Mapa: haz clic para elegir el punto');
   readonly elegir = output<Coordenadas>();
 
-  private readonly contenedor = viewChild.required<ElementRef<HTMLDivElement>>('mapa');
+  /** El mapa se dibuja en el único hijo del componente. */
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private L: typeof import('leaflet') | null = null;
   private mapa: LeafletMap | null = null;
   private capaZonas: LayerGroup | null = null;
   private capaPunto: LayerGroup | null = null;
   private marcador: Marker | null = null;
   private encuadrado = false;
+  private ultimaZonaActiva: number | null = null;
 
   constructor() {
     effect(() => this.pintarZonas(this.zonas(), this.idZonaActiva()));
-    effect(() => this.pintarPunto(this.punto(), this.radioKm()));
+    effect(() => {
+      // Al cambiar de zona en edición se vuelve a encuadrar el mapa sobre la nueva
+      const activa = this.idZonaActiva();
+      if (activa !== this.ultimaZonaActiva) this.encuadrado = false;
+      this.ultimaZonaActiva = activa;
+      this.pintarPunto(this.punto(), this.radioKm());
+    });
   }
 
   ngAfterViewInit(): void {
@@ -66,15 +73,10 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
   async inicializar(): Promise<void> {
     this.L = await cargarLeaflet();
     const inicio = this.punto() ?? CENTRO_FUSAGASUGA;
-    this.mapa = this.L.map(this.contenedor().nativeElement, { scrollWheelZoom: true }).setView(
-      [inicio.lat, inicio.lon],
-      this.punto() ? 16 : 13,
-    );
-    this.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution:
-        '&copy; colaboradores de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(this.mapa);
+    this.mapa = this.L.map(this.host.nativeElement.firstElementChild as HTMLElement, {
+      scrollWheelZoom: true,
+    }).setView([inicio.lat, inicio.lon], this.punto() ? 16 : 13);
+    agregarCapaBase(this.L, this.mapa);
     this.capaZonas = this.L.layerGroup().addTo(this.mapa);
     this.capaPunto = this.L.layerGroup().addTo(this.mapa);
     this.mapa.on('click', (e) => this.elegir.emit(redondear(e.latlng.lat, e.latlng.lng)));
@@ -95,6 +97,35 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
     this.mapa?.setView([p.lat, p.lon], zoom);
   }
 
+  /** Encuadra todas las zonas ubicadas (o vuelve al centro por defecto si no hay). */
+  verTodas(): void {
+    // L y mapa se crean juntos al cargar
+    if (!this.mapa) return;
+    const L = this.L as typeof import('leaflet');
+    const circulos = this.zonas()
+      .filter((z) => z.centro && z.radioKm)
+      .map((z) => L.circle([z.centro!.lat, z.centro!.lon], { radius: z.radioKm! * 1000 }));
+    if (circulos.length === 0) {
+      this.mapa.setView([CENTRO_FUSAGASUGA.lat, CENTRO_FUSAGASUGA.lon], 13);
+      return;
+    }
+    const grupo = L.featureGroup(circulos);
+    // Hay que añadirlo para medir sus límites; se retira enseguida
+    grupo.addTo(this.mapa);
+    this.mapa.fitBounds(grupo.getBounds(), { padding: [24, 24] });
+    grupo.remove();
+  }
+
+  /** Encuadra una zona concreta. */
+  enfocarZona(z: Zona): void {
+    if (!this.mapa || !z.centro || !z.radioKm) return;
+    const c = (this.L as typeof import('leaflet'))
+      .circle([z.centro.lat, z.centro.lon], { radius: z.radioKm * 1000 })
+      .addTo(this.mapa);
+    this.mapa.fitBounds(c.getBounds(), { padding: [24, 24] });
+    c.remove();
+  }
+
   private pintarZonas(zonas: Zona[], activa: number | null): void {
     if (!this.L || !this.capaZonas) return;
     const L = this.L;
@@ -104,18 +135,23 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
       const apagada = z.activa === false;
       L.circle([z.centro.lat, z.centro.lon], {
         radius: z.radioKm * 1000,
-        color: apagada ? '#8a817c' : '#1f6f4a',
+        color: apagada ? '#7d8a83' : '#1f6f4a',
         weight: 1.5,
         dashArray: apagada ? '4 6' : undefined,
         fillOpacity: apagada ? 0.03 : 0.07,
         interactive: false,
-      })
-        .bindTooltip(z.nombre, {
-          permanent: zonas.length <= 12,
-          direction: 'center',
-          className: 'etiqueta-zona',
-        })
-        .addTo(this.capaZonas);
+      }).addTo(this.capaZonas);
+      // El nombre va en el borde norte: así no se tapan las zonas con el mismo centro
+      if (zonas.length <= 12)
+        L.tooltip({ permanent: true, direction: 'top', className: 'etiqueta-zona' })
+          .setLatLng([z.centro.lat + z.radioKm / 111.32, z.centro.lon])
+          .setContent(z.nombre)
+          .addTo(this.capaZonas);
+    }
+    // Sin punto elegido, la primera vez se muestran todas las zonas
+    if (!this.punto() && !this.encuadrado && zonas.some((z) => z.centro && z.radioKm)) {
+      this.encuadrado = true;
+      this.verTodas();
     }
   }
 
@@ -128,7 +164,7 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
     if (radioKm && radioKm > 0) {
       const circulo = L.circle([p.lat, p.lon], {
         radius: radioKm * 1000,
-        color: '#c2410c',
+        color: '#0b5d45',
         weight: 2.5,
         fillOpacity: 0.12,
         interactive: false,
@@ -140,7 +176,7 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
       this.mapa.setView([p.lat, p.lon], Math.max(this.mapa.getZoom(), 15), { animate: false });
     }
     this.encuadrado = true;
-    this.marcador = L.marker([p.lat, p.lon], {
+    const marcador = L.marker([p.lat, p.lon], {
       draggable: true,
       title: 'Punto elegido (puedes arrastrarlo)',
       icon: L.divIcon({
@@ -150,10 +186,11 @@ export class SelectorMapaComponent implements AfterViewInit, OnDestroy {
         iconAnchor: [16, 32],
       }),
     }).addTo(this.capaPunto);
-    this.marcador.on('dragend', () => {
-      const ll = this.marcador?.getLatLng();
-      if (ll) this.elegir.emit(redondear(ll.lat, ll.lng));
+    marcador.on('dragend', () => {
+      const ll = marcador.getLatLng();
+      this.elegir.emit(redondear(ll.lat, ll.lng));
     });
+    this.marcador = marcador;
   }
 }
 

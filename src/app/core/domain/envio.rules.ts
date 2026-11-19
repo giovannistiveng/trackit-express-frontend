@@ -87,7 +87,7 @@ export function fechaCreacion(envio: Pick<Envio, 'historial' | 'fechaCreacion'>)
 
 /** Número para wa.me: celular colombiano de 10 dígitos → 57XXXXXXXXXX; sin número, vacío. */
 export function telefonoWhatsapp(tel: string | null | undefined): string {
-  const t = (tel ?? '').replace(/[^\d+]/g, '');
+  const t = (tel ?? '').replaceAll(/[^\d+]/g, '');
   if (/^3\d{9}$/.test(t)) return `57${t}`;
   if (/^\+\d{8,15}$/.test(t)) return t.slice(1);
   if (/^57\d{10}$/.test(t)) return t;

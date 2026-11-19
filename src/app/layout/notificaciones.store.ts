@@ -54,8 +54,7 @@ export class NotificacionesStore implements OnDestroy {
     this.eventos.iniciar();
     this.suscripcion = this.eventos.notificaciones().subscribe((n) => this.recibir(n));
     this.temporizador = setInterval(() => {
-      const visible = typeof document === 'undefined' || document.visibilityState !== 'hidden';
-      if (visible && !this.eventos.conectado()) void this.revisar();
+      if (document.visibilityState !== 'hidden' && !this.eventos.conectado()) void this.revisar();
     }, INTERVALO_NOTIFICACIONES_MS);
     document.addEventListener('visibilitychange', this.alVolver);
   }
@@ -120,13 +119,10 @@ export class NotificacionesStore implements OnDestroy {
 
   async marcarLeida(n: Notificacion): Promise<void> {
     if (n.leida) return;
-    if (n.id < 0) {
-      this.items.update((l) => l.map((x) => (x.id === n.id ? { ...x, leida: true } : x)));
-      this.noLeidas.update((c) => Math.max(0, c - 1));
-      return;
-    }
     this.items.update((l) => l.map((x) => (x.id === n.id ? { ...x, leida: true } : x)));
     this.noLeidas.update((c) => Math.max(0, c - 1));
+    // Las de id negativo solo existen en este dispositivo
+    if (n.id < 0) return;
     try {
       await this.puerto.leer(n.id);
     } catch (e) {

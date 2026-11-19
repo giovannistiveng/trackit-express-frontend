@@ -46,7 +46,7 @@ export class EstrellasComponent {
   }
 
   protected alTeclear(ev: KeyboardEvent): void {
-    const actual = this.valor() || 0;
+    const actual = this.valor();
     let siguiente: number | null = null;
     if (ev.key === 'ArrowRight' || ev.key === 'ArrowUp') siguiente = Math.min(5, actual + 1);
     else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowDown') siguiente = Math.max(1, actual - 1);

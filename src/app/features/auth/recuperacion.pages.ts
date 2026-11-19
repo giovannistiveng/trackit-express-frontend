@@ -211,7 +211,8 @@ export class RestablecerContrasenaPage {
     this.enviando.set(true);
     this.error.set('');
     try {
-      await this.auth.restablecerPassword(this.token() ?? '', this.form.getRawValue().nueva);
+      // El formulario solo se muestra con token
+      await this.auth.restablecerPassword(this.token() as string, this.form.getRawValue().nueva);
       this.listo.set(true);
     } catch (e) {
       const texto = this.mapper.traducir(e);
@@ -230,38 +231,34 @@ export class RestablecerContrasenaPage {
   imports: [RouterLink, AuthLayoutComponent, IconoComponent],
   template: `
     <ti-auth-layout titulo="Verificación de correo" subtitulo="Confirmamos que el correo es tuyo.">
-      @switch (estado()) {
-        @case ('verificando') {
-          <p class="flex items-center gap-2 text-piedra" role="status">
-            <ti-icono nombre="loader" class="animate-spin" /> Verificando…
+      @if (estado() === 'verificando') {
+        <p class="flex items-center gap-2 text-piedra" role="status">
+          <ti-icono nombre="loader" class="animate-spin" /> Verificando…
+        </p>
+      } @else if (estado() === 'ok') {
+        <div class="rounded-2xl bg-exito-suave p-5" role="status">
+          <p class="flex items-center gap-2 font-semibold text-exito">
+            <ti-icono nombre="badge-check" /> ¡Correo verificado!
           </p>
-        }
-        @case ('ok') {
-          <div class="rounded-2xl bg-exito-suave p-5" role="status">
-            <p class="flex items-center gap-2 font-semibold text-exito">
-              <ti-icono nombre="badge-check" /> ¡Correo verificado!
-            </p>
-            <p class="mt-2 text-sm">Gracias. Tu cuenta quedó protegida.</p>
-          </div>
-          <a [routerLink]="destino()" class="btn-primario mt-6 w-full">Continuar</a>
-        }
-        @case ('error') {
-          <p
-            class="rounded-lg bg-alerta-suave px-4 py-3 text-sm font-semibold text-alerta"
-            role="alert"
-          >
-            {{ error() }}
-          </p>
-          <p class="mt-4 text-sm text-piedra">
-            Puedes pedir un enlace nuevo desde <strong>Mi cuenta</strong>.
-          </p>
-          <a
-            [routerLink]="session.estaAutenticado() ? '/cuenta' : '/login'"
-            class="btn-primario mt-6 w-full"
-          >
-            {{ session.estaAutenticado() ? 'Ir a Mi cuenta' : 'Iniciar sesión' }}
-          </a>
-        }
+          <p class="mt-2 text-sm">Gracias. Tu cuenta quedó protegida.</p>
+        </div>
+        <a [routerLink]="destino()" class="btn-primario mt-6 w-full">Continuar</a>
+      } @else {
+        <p
+          class="rounded-lg bg-alerta-suave px-4 py-3 text-sm font-semibold text-alerta"
+          role="alert"
+        >
+          {{ error() }}
+        </p>
+        <p class="mt-4 text-sm text-piedra">
+          Puedes pedir un enlace nuevo desde <strong>Mi cuenta</strong>.
+        </p>
+        <a
+          [routerLink]="session.estaAutenticado() ? '/cuenta' : '/login'"
+          class="btn-primario mt-6 w-full"
+        >
+          {{ session.estaAutenticado() ? 'Ir a Mi cuenta' : 'Iniciar sesión' }}
+        </a>
       }
     </ti-auth-layout>
   `,

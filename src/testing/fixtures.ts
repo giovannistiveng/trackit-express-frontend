@@ -1,4 +1,4 @@
-import { CambioEstado, Envio, EstadoEnvio, Usuario } from '../app/core/domain';
+import { CambioEstado, Envio, EstadoEnvio, Usuario, etapaPorEstado } from '../app/core/domain';
 import { ApiEnvio } from '../app/core/adapters/http/backend.types';
 
 /** Respuestas reales del backend (Apéndice A del prompt maestro). */
@@ -122,6 +122,10 @@ export function buildEnvio(parcial: Partial<Envio> & { estado?: EstadoEnvio } = 
     pin: '6647',
     historial,
     fechaUltimoCambio: historial.at(-1)?.fecha,
+    tipoServicio: 'paquete',
+    detalle: null,
+    etapa: etapaPorEstado(estado),
+    pideCodigoRecogida: false,
     ...parcial,
     estado,
   };

@@ -1,0 +1,103 @@
+# Pruebas de punta a punta (Playwright) con el backend real y PostgreSQL.
+# Clona también el backend (rama main para main; desarrollo para lo demás). Si el repositorio
+# del backend es privado, crea el secreto BACKEND_REPO_TOKEN con un token de solo lectura.
+name: E2E
+
+on:
+  push:
+    branches: [main, desarrollo, pre-produccion]
+  pull_request:
+    branches: [main, desarrollo, pre-produccion]
+  workflow_dispatch:
+    inputs:
+      rama_backend:
+        description: Rama del backend
+        default: desarrollo
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: trackit_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      CI: 'true'
+      TZ: America/Bogota
+      E2E_BACKEND_DIR: ${{ github.workspace }}/trackit-express-backend
+
+    steps:
+      - name: Descargar el frontend
+        uses: actions/checkout@v5
+        with:
+          path: trackit-express-frontend
+
+      - name: Descargar el backend
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/trackit-express-backend
+          ref: ${{ inputs.rama_backend || ((github.base_ref || github.ref_name) == 'main' && 'main' || 'desarrollo') }}
+          token: ${{ secrets.BACKEND_REPO_TOKEN || github.token }}
+          path: trackit-express-backend
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            trackit-express-frontend/package-lock.json
+            trackit-express-backend/package-lock.json
+
+      - name: Instalar dependencias del backend
+        working-directory: trackit-express-backend
+        run: npm ci
+
+      - name: Instalar dependencias del frontend
+        working-directory: trackit-express-frontend
+        run: npm ci
+
+      - name: Revisar tipos de las pruebas E2E
+        working-directory: trackit-express-frontend
+        run: npx tsc -p e2e/tsconfig.json
+
+      - name: Instalar Chromium para Playwright
+        working-directory: trackit-express-frontend
+        run: npx playwright install --with-deps chromium
+
+      # Playwright compila y levanta el backend (puerto 3300) y el frontend (puerto 4300)
+      - name: Pruebas E2E
+        working-directory: trackit-express-frontend
+        run: npm run e2e
+
+      - name: Guardar el reporte
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reporte-e2e
+          path: |
+            trackit-express-frontend/e2e/reporte/
+            trackit-express-frontend/e2e/resultados/
+          if-no-files-found: ignore
+          retention-days: 14

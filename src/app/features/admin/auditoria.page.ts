@@ -107,7 +107,7 @@ const ACCIONES = [
                   }}
                   de
                   {{
-                    totalPaginas()
+                    totalPaginas(p)
                   }}
                 </caption>
                 <thead class="border-b border-linea bg-niebla/60 text-piedra">
@@ -139,7 +139,7 @@ const ACCIONES = [
               aria-label="Paginación"
             >
               <span class="numeros text-piedra"
-                >{{ p.total }} registros · página {{ p.pagina }} de {{ totalPaginas() }}</span
+                >{{ p.total }} registros · página {{ p.pagina }} de {{ totalPaginas(p) }}</span
               >
               <div class="flex gap-2">
                 <button
@@ -153,7 +153,7 @@ const ACCIONES = [
                 <button
                   type="button"
                   class="btn-secundario"
-                  [disabled]="p.pagina >= totalPaginas()"
+                  [disabled]="p.pagina >= totalPaginas(p)"
                   (click)="ir(p.pagina + 1)"
                 >
                   Siguiente
@@ -180,9 +180,9 @@ export class AuditoriaPage implements OnInit {
   protected readonly error = signal('');
   protected readonly exportando = signal(false);
 
-  protected readonly totalPaginas = computed(() =>
-    Math.max(1, Math.ceil((this.pagina()?.total ?? 0) / TAMANO_PAGINA)),
-  );
+  protected totalPaginas(p: Pagina<RegistroAuditoria>): number {
+    return Math.max(1, Math.ceil(p.total / TAMANO_PAGINA));
+  }
   protected readonly fase = computed<FaseCarga>(() =>
     faseDe({ cargando: this.cargando(), error: this.error(), vacio: !this.pagina()?.items.length }),
   );
@@ -217,8 +217,9 @@ export class AuditoriaPage implements OnInit {
   async exportar(): Promise<void> {
     this.exportando.set(true);
     try {
-      const total = this.pagina()?.total ?? 0;
-      const todo = await this.puerto.auditoria(this.filtro(1, Math.max(total, 1)));
+      // El botón solo se habilita con registros cargados
+      const total = (this.pagina() as Pagina<RegistroAuditoria>).total;
+      const todo = await this.puerto.auditoria(this.filtro(1, total));
       const csv = aCsv(
         ['Fecha', 'Usuario', 'Acción', 'Entidad', 'Detalle'],
         todo.items.map((r) => [

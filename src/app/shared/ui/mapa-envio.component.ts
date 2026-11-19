@@ -1,4 +1,4 @@
-import { cargarLeaflet } from '../util/leaflet';
+import { agregarCapaBase, cargarLeaflet, htmlPinLetra } from '../util/leaflet';
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
@@ -6,27 +6,38 @@ import {
   ElementRef,
   OnDestroy,
   effect,
+  inject,
   input,
   signal,
-  viewChild,
 } from '@angular/core';
-import type { LayerGroup, Map as LeafletMap, Marker, Polyline } from 'leaflet';
-import { Coordenadas, Seguimiento } from '../../core/domain';
+import type { LayerGroup, Map as LeafletMap, Marker } from 'leaflet';
+import { Coordenadas, RutaMapa, Seguimiento } from '../../core/domain';
+import { GeoPort } from '../../core/ports';
 import { IconoComponent } from './icono.component';
 
 /** Centro por defecto: parque principal de Fusagasugá. */
 export const CENTRO_FUSAGASUGA: Coordenadas = { lat: 4.3369, lon: -74.3638 };
+/** Duración de la animación del conductor entre dos posiciones. */
+export const DURACION_MOVIMIENTO_MS = 900;
 
 const SVG_MOTO =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-3 11.5V14l-3-3 4-3 2 3h2"/></svg>';
 
-function htmlPin(color: string, interior: string): string {
-  return `<span class="marcador-punto" style="background:${color}"><span style="display:block;width:10px;height:10px;border-radius:9999px;background:${interior};border:2px solid #1f1a17"></span></span>`;
+/** Clave estable de una lista de puntos (para no pedir la misma ruta dos veces). */
+export function claveRuta(puntos: Coordenadas[]): string {
+  return puntos.map((p) => `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join(';');
+}
+
+/** Punto intermedio entre a y b (t de 0 a 1). */
+export function interpolar(a: Coordenadas, b: Coordenadas, t: number): Coordenadas {
+  const k = Math.min(1, Math.max(0, t));
+  return { lat: a.lat + (b.lat - a.lat) * k, lon: a.lon + (b.lon - a.lon) * k };
 }
 
 /**
- * Mapa Leaflet con teselas de OpenStreetMap: origen, destino, recorrido del conductor y su
- * posición actual (con pulso si la señal está en vivo). Leaflet se carga de forma perezosa.
+ * Mapa del servicio: la ruta por calles (A recoger → paradas → B entregar), el recorrido real del
+ * conductor y su posición, que se mueve suave entre una actualización y la siguiente.
+ * Leaflet se carga de forma perezosa.
  */
 @Component({
   selector: 'ti-mapa-envio',
@@ -37,10 +48,18 @@ function htmlPin(color: string, interior: string): string {
   template: `
     <div
       #mapa
-      class="h-72 w-full overflow-hidden rounded-2xl border border-linea bg-[#eef2ec] sm:h-96"
+      class="w-full overflow-hidden border border-linea bg-[#e6ece8]"
+      [class]="clasesAlto()"
       role="img"
       [attr.aria-label]="descripcion()"
     ></div>
+    @if (rutaInfo(); as r) {
+      <p
+        class="absolute right-3 top-3 z-[500] rounded-full bg-papel/95 px-3 py-1 text-xs font-semibold shadow-[var(--shadow-suave)]"
+      >
+        {{ r.km }} km por {{ r.exacta ? 'carretera' : 'línea recta' }}
+      </p>
+    }
     <button
       type="button"
       class="absolute bottom-3 right-3 z-[500] grid size-11 place-items-center rounded-full bg-papel text-tinta shadow-[var(--shadow-elevada)] hover:text-marca"
@@ -55,18 +74,40 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
   readonly seguimiento = input<Seguimiento | null>(null);
   /** Posición propia (vista del conductor), si se conoce antes de que llegue al servidor. */
   readonly posicionPropia = input<Coordenadas | null>(null);
+  /** Paradas intermedias, en orden. */
+  readonly paradas = input<Coordenadas[]>([]);
+  /** Dibuja la ruta por calles entre origen, paradas y destino. */
+  readonly conRuta = input(true);
+  /** normal: tarjeta; alto: ocupa más pantalla (vista del conductor). */
+  readonly alto = input<'normal' | 'alto'>('normal');
 
-  private readonly contenedor = viewChild.required<ElementRef<HTMLDivElement>>('mapa');
+  private readonly geo = inject(GeoPort);
+  /** El mapa se dibuja en el primer hijo del componente (el div #mapa). */
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly descripcion = signal('Mapa del envío');
+  protected readonly rutaInfo = signal<RutaMapa | null>(null);
   private L: typeof import('leaflet') | null = null;
   private mapa: LeafletMap | null = null;
   private capa: LayerGroup | null = null;
-  private recorrido: Polyline | null = null;
   private conductor: Marker | null = null;
+  private posicionMostrada: Coordenadas | null = null;
+  private animacion = 0;
   private encuadrado = false;
+  private claveRutaPedida = '';
+
+  protected clasesAlto(): string {
+    return this.alto() === 'alto' ? 'h-[52vh] min-h-72 rounded-3xl' : 'h-72 rounded-2xl sm:h-96';
+  }
 
   constructor() {
-    effect(() => this.pintar(this.seguimiento(), this.posicionPropia()));
+    effect(() => this.pintar(this.seguimiento(), this.posicionPropia(), this.paradas()));
+    effect(() => {
+      const s = this.seguimiento();
+      const puntos = [s?.origen.coords, ...this.paradas(), s?.destino.coords].filter(
+        (p): p is Coordenadas => !!p,
+      );
+      if (this.conRuta() && puntos.length >= 2) void this.pedirRuta(puntos);
+    });
   }
 
   ngAfterViewInit(): void {
@@ -78,43 +119,119 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
     this.L = await cargarLeaflet();
     const s = this.seguimiento();
     const centro = s?.ultima ?? s?.origen.coords ?? CENTRO_FUSAGASUGA;
-    this.mapa = this.L.map(this.contenedor().nativeElement, {
+    this.mapa = this.L.map(this.host.nativeElement.firstElementChild as HTMLElement, {
       zoomControl: true,
       scrollWheelZoom: false,
     }).setView([centro.lat, centro.lon], 14);
-    this.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution:
-        '&copy; colaboradores de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(this.mapa);
+    agregarCapaBase(this.L, this.mapa);
     this.capa = this.L.layerGroup().addTo(this.mapa);
-    this.pintar(this.seguimiento(), this.posicionPropia());
+    this.pintar(this.seguimiento(), this.posicionPropia(), this.paradas());
   }
 
   ngOnDestroy(): void {
+    cancelAnimationFrame(this.animacion);
     this.mapa?.stop();
     this.mapa?.remove();
     this.mapa = null;
   }
 
-  /** Encaja en pantalla origen, destino y conductor. */
+  /** Encaja en pantalla la ruta, las paradas y el conductor. */
   centrar(): void {
     if (!this.L || !this.mapa) return;
     const puntos = this.puntosVisibles(this.seguimiento(), this.posicionPropia());
     if (puntos.length === 1) this.mapa.setView([puntos[0].lat, puntos[0].lon], 15);
     else if (puntos.length > 1)
       this.mapa.fitBounds(this.L.latLngBounds(puntos.map((p) => [p.lat, p.lon])), {
-        padding: [40, 40],
+        padding: [48, 48],
         maxZoom: 16,
       });
   }
 
-  private puntosVisibles(s: Seguimiento | null, propia: Coordenadas | null): Coordenadas[] {
-    const conductor = propia ?? s?.ultima ?? null;
-    return [s?.origen.coords, s?.destino.coords, conductor].filter((p): p is Coordenadas => !!p);
+  /** Pide la ruta por calles una sola vez por combinación de puntos; si falla, no se dibuja. */
+  private async pedirRuta(puntos: Coordenadas[]): Promise<void> {
+    const clave = claveRuta(puntos);
+    if (clave === this.claveRutaPedida) return;
+    this.claveRutaPedida = clave;
+    try {
+      const r = await this.geo.ruta(puntos);
+      if (clave !== this.claveRutaPedida) return;
+      this.rutaInfo.set(r);
+      this.pintar(this.seguimiento(), this.posicionPropia(), this.paradas());
+    } catch {
+      this.rutaInfo.set(null);
+    }
   }
 
-  /** Marcador del conductor y la línea punteada hacia su próxima meta. */
+  private puntosVisibles(s: Seguimiento | null, propia: Coordenadas | null): Coordenadas[] {
+    const conductor = propia ?? s?.ultima ?? null;
+    return [s?.origen.coords, ...this.paradas(), s?.destino.coords, conductor].filter(
+      (p): p is Coordenadas => !!p,
+    );
+  }
+
+  private pintar(s: Seguimiento | null, propia: Coordenadas | null, paradas: Coordenadas[]): void {
+    if (!this.L || !this.mapa || !this.capa) return;
+    const L = this.L;
+    const capa = this.capa;
+    capa.clearLayers();
+
+    const ruta = this.rutaInfo();
+    if (ruta && ruta.puntos.length > 1) {
+      const linea = ruta.puntos.map((p) => [p.lat, p.lon] as [number, number]);
+      // Borde blanco y trazo verde: la ruta se lee sobre cualquier fondo
+      L.polyline(linea, { color: '#ffffff', weight: 9, opacity: 0.9, lineCap: 'round' }).addTo(
+        capa,
+      );
+      L.polyline(linea, {
+        color: '#0b5d45',
+        weight: 5,
+        opacity: 0.55,
+        lineCap: 'round',
+        dashArray: ruta.exacta ? undefined : '8 10',
+      }).addTo(capa);
+    }
+    if (s && s.recorrido.length > 1) {
+      L.polyline(
+        s.recorrido.map((p) => [p.lat, p.lon] as [number, number]),
+        { color: '#0b5d45', weight: 6, opacity: 0.95, lineCap: 'round' },
+      ).addTo(capa);
+    }
+
+    const pin = (c: Coordenadas, fondo: string, texto: string, titulo: string, letra?: string) =>
+      L.marker([c.lat, c.lon], {
+        title: titulo,
+        icon: L.divIcon({
+          className: '',
+          html: htmlPinLetra(fondo, texto, letra),
+          iconSize: [34, 34],
+          iconAnchor: [17, 34],
+        }),
+      })
+        .bindTooltip(titulo, { direction: 'top', offset: [0, -32] })
+        .addTo(capa);
+
+    if (s?.origen.coords) pin(s.origen.coords, '#142019', 'A', `Recoger: ${s.origen.direccion}`);
+    paradas.forEach((p, i) => pin(p, '#56635c', String(i + 1), `Parada ${i + 1}`));
+    if (s?.destino.coords)
+      pin(s.destino.coords, '#f5c518', 'B', `Entregar: ${s.destino.direccion}`, '#142019');
+
+    const posicion = propia ?? s?.ultima ?? null;
+    if (posicion) this.pintarConductor(L, s, posicion, !!propia || !!s?.enVivo);
+    else {
+      this.conductor = null;
+      this.posicionMostrada = null;
+    }
+    this.descripcion.set(describirMapa(s, posicion));
+
+    if (!this.encuadrado && this.puntosVisibles(s, propia).length > 0) {
+      this.encuadrado = true;
+      this.centrar();
+    } else if (posicion && !this.mapa.getBounds().contains([posicion.lat, posicion.lon])) {
+      this.mapa.panTo([posicion.lat, posicion.lon]);
+    }
+  }
+
+  /** Marcador del conductor (con pulso si está en vivo) y la línea hacia su próxima meta. */
   private pintarConductor(
     L: typeof import('leaflet'),
     s: Seguimiento | null,
@@ -129,7 +246,7 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
           [posicion.lat, posicion.lon],
           [meta.lat, meta.lon],
         ],
-        { color: '#1f1a17', weight: 2, opacity: 0.55, dashArray: '6 8' },
+        { color: '#142019', weight: 2, opacity: 0.5, dashArray: '4 8' },
       ).addTo(capa);
     }
     const icono = L.divIcon({
@@ -138,58 +255,34 @@ export class MapaEnvioComponent implements AfterViewInit, OnDestroy {
       iconSize: [36, 36],
       iconAnchor: [18, 18],
     });
-    if (this.conductor) this.conductor.setLatLng([posicion.lat, posicion.lon]).setIcon(icono);
-    else
-      this.conductor = L.marker([posicion.lat, posicion.lon], {
-        icon: icono,
-        title: 'Conductor',
-        zIndexOffset: 1000,
-      });
-    this.conductor.addTo(capa);
+    const desde = this.posicionMostrada;
+    this.conductor ??= L.marker([posicion.lat, posicion.lon], {
+      icon: icono,
+      title: 'Conductor',
+      zIndexOffset: 1000,
+    });
+    this.conductor.setIcon(icono).addTo(capa);
+    this.moverConductor(desde, posicion);
   }
 
-  private pintar(s: Seguimiento | null, propia: Coordenadas | null): void {
-    if (!this.L || !this.mapa || !this.capa) return;
-    const L = this.L;
-    this.capa.clearLayers();
-    this.recorrido = null;
-
-    const marcadorFijo = (c: Coordenadas, color: string, interior: string, titulo: string) =>
-      L.marker([c.lat, c.lon], {
-        title: titulo,
-        icon: L.divIcon({
-          className: '',
-          html: htmlPin(color, interior),
-          iconSize: [32, 32],
-          iconAnchor: [16, 32],
-        }),
-      })
-        .bindTooltip(titulo, { direction: 'top', offset: [0, -30] })
-        .addTo(this.capa as LayerGroup);
-
-    if (s?.origen.coords)
-      marcadorFijo(s.origen.coords, '#1f1a17', '#fff', `Recoger: ${s.origen.direccion}`);
-    if (s?.destino.coords)
-      marcadorFijo(s.destino.coords, '#c2410c', '#f5c518', `Entregar: ${s.destino.direccion}`);
-
-    if (s && s.recorrido.length > 1) {
-      this.recorrido = L.polyline(
-        s.recorrido.map((p) => [p.lat, p.lon] as [number, number]),
-        { color: '#c2410c', weight: 5, opacity: 0.85, lineCap: 'round' },
-      ).addTo(this.capa);
+  /** Desliza el marcador desde donde estaba hasta la posición nueva. */
+  private moverConductor(desde: Coordenadas | null, hasta: Coordenadas): void {
+    cancelAnimationFrame(this.animacion);
+    const marcador = this.conductor as Marker;
+    const reducido = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!desde || reducido || typeof requestAnimationFrame !== 'function') {
+      marcador.setLatLng([hasta.lat, hasta.lon]);
+      this.posicionMostrada = hasta;
+      return;
     }
-
-    const posicion = propia ?? s?.ultima ?? null;
-    if (posicion) this.pintarConductor(L, s, posicion, !!propia || !!s?.enVivo);
-    else this.conductor = null;
-    this.descripcion.set(describirMapa(s, posicion));
-
-    if (!this.encuadrado && this.puntosVisibles(s, propia).length > 0) {
-      this.encuadrado = true;
-      this.centrar();
-    } else if (posicion && !this.mapa.getBounds().contains([posicion.lat, posicion.lon])) {
-      this.mapa.panTo([posicion.lat, posicion.lon]);
-    }
+    const inicio = performance.now();
+    const paso = (ahora: number) => {
+      const p = interpolar(desde, hasta, (ahora - inicio) / DURACION_MOVIMIENTO_MS);
+      marcador.setLatLng([p.lat, p.lon]);
+      this.posicionMostrada = p;
+      if (ahora - inicio < DURACION_MOVIMIENTO_MS) this.animacion = requestAnimationFrame(paso);
+    };
+    this.animacion = requestAnimationFrame(paso);
   }
 }
 

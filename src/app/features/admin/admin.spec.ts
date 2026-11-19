@@ -3,13 +3,23 @@ import { botonPorTexto, elegir, escribir, q, rechaza } from '../../../testing/fa
 import { ADMIN } from '../../../testing/fixtures';
 import { montar } from '../../../testing/pantallas';
 import { ApiError } from '../../core/http/api-error';
-import { ConductorPostulante } from '../../core/domain';
+import { ConductorPostulante, Requisito } from '../../core/domain';
 import { AdminMetricsPort, ApprovalPort, DriverApplicantsPort } from '../../core/ports';
 import { FakeAdminMetrics } from '../../../testing/admin-fake';
 import { ToastService } from '../../shared/ui/toast.service';
 import { AuditoriaPage, TAMANO_PAGINA } from './auditoria.page';
 import { ConductoresPage, esPdf } from './conductores.page';
 import { DashboardPage } from './dashboard.page';
+
+const REQ = (r: Partial<Requisito> & Pick<Requisito, 'tipo' | 'estado'>): Requisito => ({
+  nombre: r.tipo,
+  ayuda: '',
+  obligatorio: true,
+  vence: false,
+  verificar: null,
+  documento: null,
+  ...r,
+});
 
 function postulantes(): ConductorPostulante[] {
   return [
@@ -18,17 +28,71 @@ function postulantes(): ConductorPostulante[] {
       nombre: 'Camilo Rojas',
       correo: 'c@t.co',
       estadoAprobacion: 'Pendiente',
+      vehiculo: { placa: 'ABC12D', categoria: 'Moto Express' },
       documentos: [
-        { tipo: 'Cédula', urlArchivo: 'https://x/c.jpg' },
-        { tipo: 'SOAT', urlArchivo: 'https://x/s.pdf' },
+        { id: 11, tipo: 'Cédula', urlArchivo: 'https://x/c.jpg' },
+        { id: 12, tipo: 'SOAT', urlArchivo: 'https://x/s.pdf' },
       ],
+      requisitos: {
+        completo: true,
+        pendientes: [],
+        items: [
+          REQ({
+            tipo: 'Cédula',
+            estado: 'aprobado',
+            documento: {
+              id: 11,
+              tipo: 'Cédula',
+              urlArchivo: 'https://x/c.jpg',
+              estado: 'Aprobado',
+            },
+          }),
+          REQ({
+            tipo: 'SOAT',
+            estado: 'aprobado',
+            vence: true,
+            verificar: { fuente: 'RUNT', url: 'https://www.runt.gov.co' },
+            documento: {
+              id: 12,
+              tipo: 'SOAT',
+              urlArchivo: 'https://x/s.pdf',
+              estado: 'Aprobado',
+              fechaVencimiento: '2027-03-01',
+              diasParaVencer: 200,
+            },
+          }),
+        ],
+      },
+      consultas: [{ fuente: 'Procuraduría', url: 'https://apps.procuraduria.gov.co' }],
     },
     {
       idConductor: 2,
       nombre: 'Luz Quintero',
       correo: 'l@t.co',
       estadoAprobacion: 'Pendiente',
-      documentos: [],
+      vehiculo: null,
+      documentos: [{ id: 21, tipo: 'Licencia', urlArchivo: 'https://x/l.jpg' }],
+      requisitos: {
+        completo: false,
+        pendientes: ['Licencia en revisión', 'Falta Cédula'],
+        items: [
+          REQ({ tipo: 'Cédula', estado: 'falta' }),
+          REQ({
+            tipo: 'Licencia',
+            estado: 'pendiente',
+            vence: true,
+            documento: {
+              id: 21,
+              tipo: 'Licencia',
+              urlArchivo: 'https://x/l.jpg',
+              estado: 'Pendiente',
+              fechaVencimiento: '2026-12-01',
+              diasParaVencer: 10,
+            },
+          }),
+          REQ({ tipo: 'Tecnomecánica', estado: 'falta', obligatorio: false }),
+        ],
+      },
     },
   ];
 }
@@ -43,6 +107,7 @@ describe('CU-011 ConductoresPage', () => {
           idConductor: id,
           estadoAprobacion: aprobado ? 'Aprobado' : 'Rechazado',
         })),
+        revisarDocumento: vi.fn(async () => undefined),
       },
     };
   }
@@ -59,38 +124,86 @@ describe('CU-011 ConductoresPage', () => {
     return { ...r, p };
   }
 
-  const fila = (el: HTMLElement, nombre: string) =>
-    Array.from(el.querySelectorAll('tbody tr')).find((t) =>
+  const tarjeta = (el: HTMLElement, nombre: string) =>
+    Array.from(el.querySelectorAll('ul.space-y-5 > li')).find((t) =>
       t.textContent?.includes(nombre),
     ) as HTMLElement;
+  const texto = (n: Element) => n.textContent?.replaceAll(/\s+/g, ' ') ?? '';
 
-  it('debería listar postulantes con miniaturas y abrir el visor de imagen o PDF', async () => {
-    const { el, estable } = await montarPagina();
-    expect(el.querySelectorAll('tbody tr')).toHaveLength(2);
-    expect(fila(el, 'Luz').textContent).toContain('Sin documentos');
-    q<HTMLButtonElement>(el, '[aria-label="Ver Cédula de Camilo Rojas"]').click();
-    await estable();
-    expect(q<HTMLImageElement>(el, '[role="dialog"] img').alt).toBe('Cédula de Camilo Rojas');
-    botonPorTexto(q(el, '[role="dialog"]'), '✕').click();
-    await estable();
-    q<HTMLButtonElement>(el, '[aria-label="Ver SOAT de Camilo Rojas"]').click();
-    await estable();
-    expect(q<HTMLAnchorElement>(el, '[role="dialog"] a').href).toBe('https://x/s.pdf');
+  it('lista cada conductor con su vehículo, avance y requisitos con la fuente oficial', async () => {
+    const { el } = await montarPagina();
+    expect(el.querySelectorAll('ul.space-y-5 > li')).toHaveLength(2);
+    const camilo = texto(tarjeta(el, 'Camilo'));
+    expect(camilo).toContain('ABC12D');
+    expect(camilo).toContain('2/2');
+    expect(camilo).toContain('RUNT');
+    expect(camilo).toContain('Procuraduría');
+    const luz = texto(tarjeta(el, 'Luz'));
+    expect(luz).toContain('Sin vehículo registrado');
+    expect(luz).toContain('0/2');
+    expect(luz).toContain('No lo ha subido.');
+    expect(luz).toContain('No aplica o no lo ha subido.');
+    expect(luz).toContain('Vence el 2026-12-01 (en 10 días)');
+    expect(luz).toContain('Falta: Licencia en revisión; Falta Cédula');
+    expect(botonPorTexto(tarjeta(el, 'Luz'), 'Aprobar conductor')).toHaveProperty('disabled', true);
   });
 
-  it('Dado que apruebo, entonces el estado pasa a Aprobado y la fila sale de pendientes', async () => {
+  it('revisa un documento: exige motivo para rechazar y aprueba con la fecha corregida', async () => {
     const { el, p, estable } = await montarPagina();
-    botonPorTexto(fila(el, 'Camilo'), 'Aprobar').click();
+    botonPorTexto(tarjeta(el, 'Luz'), 'Revisar').click();
+    await estable();
+    const dialogo = q(el, '[role="dialog"]');
+    expect(q<HTMLImageElement>(dialogo, 'img').alt).toBe('Licencia de Luz Quintero');
+    botonPorTexto(dialogo, 'Rechazar documento').click();
+    await estable();
+    expect(q(dialogo, '[role="alert"]').textContent).toContain('Escribe el motivo');
+    expect(p.aprobacion.revisarDocumento).not.toHaveBeenCalled();
+    escribir(q(el, '#rev-vence'), '2027-01-15');
+    await estable();
+    botonPorTexto(q(el, '[role="dialog"]'), 'Aprobar documento').click();
+    await estable();
+    expect(p.aprobacion.revisarDocumento).toHaveBeenCalledWith(21, true, {
+      motivo: '',
+      fechaVencimiento: '2027-01-15',
+    });
+    expect(p.lista.listarPendientes).toHaveBeenCalledTimes(2);
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('rechaza un documento con motivo y muestra el error del backend', async () => {
+    const p = puertos();
+    p.aprobacion.revisarDocumento.mockImplementationOnce(rechaza(new ApiError(500, 'x')));
+    const { el, estable } = await montarPagina(p);
+    q<HTMLButtonElement>(el, '[aria-label="Revisar SOAT de Camilo Rojas"]').click();
+    await estable();
+    expect(q<HTMLAnchorElement>(el, '[role="dialog"] a').href).toBe('https://x/s.pdf');
+    expect(texto(q(el, '[role="dialog"]'))).toContain('Compara los datos con RUNT');
+    escribir(q(el, '#rev-motivo'), 'Póliza de otra placa');
+    await estable();
+    botonPorTexto(q(el, '[role="dialog"]'), 'Rechazar documento').click();
+    await estable();
+    expect(q(el, '[role="dialog"] [role="alert"]').textContent).toContain('Algo salió mal');
+    botonPorTexto(q(el, '[role="dialog"]'), 'Rechazar documento').click();
+    await estable();
+    expect(p.aprobacion.revisarDocumento).toHaveBeenLastCalledWith(12, false, {
+      motivo: 'Póliza de otra placa',
+      fechaVencimiento: '2027-03-01',
+    });
+  });
+
+  it('Dado que apruebo, entonces el estado pasa a Aprobado y sale de la lista', async () => {
+    const { el, p, estable } = await montarPagina();
+    botonPorTexto(tarjeta(el, 'Camilo'), 'Aprobar conductor').click();
     await estable();
     botonPorTexto(q(el, '[role="dialog"]'), 'Aprobar').click();
     await estable();
     expect(p.aprobacion.decidir).toHaveBeenCalledWith(1, true, undefined);
-    expect(fila(el, 'Camilo')).toBeUndefined();
+    expect(tarjeta(el, 'Camilo')).toBeUndefined();
   });
 
   it('Dado que rechazo, entonces exige un motivo que verá el conductor y pasa a Rechazado', async () => {
     const { el, p, estable } = await montarPagina();
-    botonPorTexto(fila(el, 'Luz'), 'Rechazar').click();
+    botonPorTexto(tarjeta(el, 'Luz'), 'Rechazar').click();
     await estable();
     const dialogo = q(el, '[role="dialog"]');
     expect(dialogo.textContent).toContain('El conductor lo verá en su perfil');
@@ -103,7 +216,7 @@ describe('CU-011 ConductoresPage', () => {
     botonPorTexto(q(el, '[role="dialog"]'), 'Rechazar').click();
     await estable();
     expect(p.aprobacion.decidir).toHaveBeenCalledWith(2, false, 'SOAT vencido');
-    expect(fila(el, 'Luz').textContent).toContain('Rechazado');
+    expect(tarjeta(el, 'Luz').textContent).toContain('Rechazado');
   });
 
   it('Dado que ya estaba aprobado, entonces informa y refresca', async () => {
@@ -114,13 +227,13 @@ describe('CU-011 ConductoresPage', () => {
     const { el, estable } = await montarPagina(p);
     p.lista.listarPendientes.mockImplementation(async () => [postulantes()[1]]);
     const toast = vi.spyOn(TestBed.inject(ToastService), 'mostrar');
-    botonPorTexto(fila(el, 'Camilo'), 'Aprobar').click();
+    botonPorTexto(tarjeta(el, 'Camilo'), 'Aprobar conductor').click();
     await estable();
     botonPorTexto(q(el, '[role="dialog"]'), 'Aprobar').click();
     await estable();
     expect(toast).toHaveBeenCalledWith('Este conductor ya estaba aprobado.');
     expect(p.lista.listarPendientes).toHaveBeenCalledTimes(2);
-    expect(fila(el, 'Camilo')).toBeUndefined();
+    expect(tarjeta(el, 'Camilo')).toBeUndefined();
   });
 
   it('debería explicar un 404 al decidir', async () => {
@@ -129,27 +242,34 @@ describe('CU-011 ConductoresPage', () => {
       rechaza(new ApiError(404, 'No existe el conductor con id 1')),
     );
     const { el, estable } = await montarPagina(p);
-    botonPorTexto(fila(el, 'Camilo'), 'Aprobar').click();
+    botonPorTexto(tarjeta(el, 'Camilo'), 'Aprobar conductor').click();
     await estable();
     botonPorTexto(q(el, '[role="dialog"]'), 'Aprobar').click();
     await estable();
     expect(q(el, '[role="dialog"] [role="alert"]').textContent).toContain('ya no existe');
   });
 
-  it('debería mostrar el motivo de un rechazo previo', async () => {
+  it('con un backend anterior arma los requisitos con los documentos y muestra el motivo previo', async () => {
     const p = puertos();
     p.lista.listarPendientes.mockImplementation(async () => [
-      { ...postulantes()[1], estadoAprobacion: 'Rechazado', motivoRechazo: 'SOAT vencido' },
+      {
+        ...postulantes()[1],
+        requisitos: undefined,
+        estadoAprobacion: 'Rechazado',
+        motivoRechazo: 'SOAT vencido',
+      },
     ]);
     const { el } = await montarPagina(p);
-    expect(fila(el, 'Luz').textContent).toContain('Motivo: SOAT vencido');
+    const luz = texto(tarjeta(el, 'Luz'));
+    expect(luz).toContain('Motivo: SOAT vencido');
+    expect(luz).toContain('Por revisar');
   });
 
   it('debería mostrar otros errores, vacío y error de carga', async () => {
     const p = puertos();
     p.aprobacion.decidir.mockImplementation(rechaza(new ApiError(500, 'x')));
     const { el, estable } = await montarPagina(p);
-    botonPorTexto(fila(el, 'Camilo'), 'Aprobar').click();
+    botonPorTexto(tarjeta(el, 'Camilo'), 'Aprobar conductor').click();
     await estable();
     botonPorTexto(q(el, '[role="dialog"]'), 'Aprobar').click();
     await estable();
@@ -162,7 +282,146 @@ describe('CU-011 ConductoresPage', () => {
     p.lista.listarPendientes.mockImplementation(async () => []);
     botonPorTexto(el, 'Reintentar').click();
     await estable();
-    expect(el.textContent).toContain('No hay conductores esperando aprobación.');
+    expect(el.textContent).toContain('No hay conductores ni documentos esperando revisión.');
+  });
+
+  it('estados de cada requisito, conductores ya aprobados y modales que se cierran con la X', async () => {
+    const p = puertos();
+    const base = postulantes()[1];
+    p.lista.listarPendientes.mockImplementation(async () => [
+      {
+        ...base,
+        idConductor: 3,
+        nombre: 'Ana Activa',
+        estadoAprobacion: 'Aprobado' as const,
+        requisitos: {
+          completo: false,
+          pendientes: ['SOAT vencido'],
+          items: [
+            REQ({
+              tipo: 'Cédula',
+              estado: 'rechazado',
+              documento: {
+                id: 31,
+                tipo: 'Cédula',
+                urlArchivo: 'https://x/c.jpg',
+                estado: 'Rechazado',
+                motivoRechazo: 'Borrosa',
+              },
+            }),
+            REQ({
+              tipo: 'Licencia',
+              estado: 'rechazado',
+              documento: {
+                id: 32,
+                tipo: 'Licencia',
+                urlArchivo: 'https://x/l.jpg',
+                estado: 'Rechazado',
+                fechaSubida: new Date('2026-11-01T12:00:00'),
+              },
+            }),
+            REQ({
+              tipo: 'SOAT',
+              estado: 'vencido',
+              vence: true,
+              documento: {
+                id: 33,
+                tipo: 'SOAT',
+                urlArchivo: 'https://x/s.jpg',
+                estado: 'Aprobado',
+                fechaVencimiento: '2026-10-01',
+                diasParaVencer: -48,
+              },
+            }),
+            REQ({
+              tipo: 'Tecnomecánica',
+              estado: 'pendiente',
+              vence: true,
+              documento: {
+                id: 34,
+                tipo: 'Tecnomecánica',
+                urlArchivo: 'https://x/t.jpg',
+                estado: 'Pendiente',
+                fechaVencimiento: '2027-06-01',
+              },
+            }),
+            REQ({
+              tipo: 'Antecedentes',
+              estado: 'pendiente',
+              documento: {
+                id: 35,
+                tipo: 'Antecedentes',
+                urlArchivo: 'https://x/a.jpg',
+                estado: 'Pendiente',
+              },
+            }),
+          ],
+        },
+      },
+      postulantes()[0],
+    ]);
+    const { el, estable, p: puertosUsados } = await montarPagina(p);
+    const ana = texto(tarjeta(el, 'Ana'));
+    expect(ana).toContain('Rechazado: Borrosa');
+    expect(ana).toContain('Subido el');
+    expect(ana).toContain('Venció el 2026-10-01');
+    expect(ana).toContain('Vence el 2027-06-01');
+    expect(ana).toContain('Subido');
+    expect(ana).not.toContain('Aprobar conductor');
+    // Revisión: la X la cierra; aprobar con vencimiento vacío no envía fecha
+    botonPorTexto(tarjeta(el, 'Ana'), 'Revisar').click();
+    await estable();
+    q<HTMLButtonElement>(el, '[role="dialog"] button[aria-label="Cerrar"]').click();
+    await estable();
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+    botonPorTexto(tarjeta(el, 'Ana'), 'Revisar').click();
+    await estable();
+    escribir(q(el, '#rev-vence'), '');
+    await estable();
+    botonPorTexto(el, 'Aprobar documento').click();
+    await estable();
+    expect(puertosUsados.aprobacion.revisarDocumento).toHaveBeenCalledWith(34, true, {
+      motivo: '',
+      fechaVencimiento: undefined,
+    });
+    q<HTMLButtonElement>(el, '[aria-label="Revisar Antecedentes de Ana Activa"]').click();
+    await estable();
+    expect(el.querySelector('#rev-vence')).toBeNull();
+    botonPorTexto(el, 'Aprobar documento').click();
+    await estable();
+    expect(puertosUsados.aprobacion.revisarDocumento).toHaveBeenLastCalledWith(35, true, {
+      motivo: '',
+      fechaVencimiento: undefined,
+    });
+    // Decisión: la X la cierra
+    botonPorTexto(tarjeta(el, 'Camilo'), 'Rechazar').click();
+    await estable();
+    q<HTMLButtonElement>(el, '[role="dialog"] button[aria-label="Cerrar"]').click();
+    await estable();
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('no envía dos revisiones ni dos decisiones a la vez', async () => {
+    const p = puertos();
+    let revisar!: () => void;
+    p.aprobacion.revisarDocumento.mockImplementation(
+      () => new Promise<undefined>((ok) => (revisar = () => ok(undefined))),
+    );
+    const r = await montarPagina(p);
+    botonPorTexto(tarjeta(r.el, 'Luz'), 'Revisar').click();
+    await r.estable();
+    botonPorTexto(r.el, 'Aprobar documento').click();
+    const interna = r.c as unknown as {
+      revisar(v: unknown, a: boolean): Promise<void>;
+      revision(): unknown;
+      confirmar(d: unknown): Promise<void>;
+    };
+    await interna.revisar(interna.revision(), true);
+    expect(p.aprobacion.revisarDocumento).toHaveBeenCalledTimes(1);
+    await interna.confirmar({ conductor: postulantes()[0], aprobar: true });
+    expect(p.aprobacion.decidir).not.toHaveBeenCalled();
+    revisar();
+    await r.estable();
   });
 
   it('esPdf reconoce PDF con query o hash', () => {
@@ -186,7 +445,7 @@ describe('E7-HU2 DashboardPage', () => {
     botonPorTexto(el, 'Reintentar').click();
     await new Promise((r) => setTimeout(r, 200));
     await estable();
-    const texto = el.textContent?.replace(/\s/g, ' ') ?? '';
+    const texto = el.textContent?.replaceAll(/\s/g, ' ') ?? '';
     expect(texto).toContain('Envíos totales');
     expect(texto).toContain('248');
     expect(texto).toContain('$ 4.862.000');
@@ -261,5 +520,25 @@ describe('E7-HU2 AuditoriaPage', () => {
     await esperar();
     expect(q(el, '[role="alert"]')).toBeTruthy();
     botonPorTexto(el, 'Exportar CSV');
+  });
+
+  it('Anterior, error al cargar con Reintentar, exportando y error al exportar', async () => {
+    const { el, auditoria, esperar } = await montarAuditoria();
+    botonPorTexto(el, 'Siguiente').click();
+    await esperar();
+    botonPorTexto(el, 'Anterior').click();
+    await esperar();
+    expect(auditoria).toHaveBeenLastCalledWith(expect.objectContaining({ pagina: 1 }));
+    let exportar!: (e: unknown) => void;
+    auditoria.mockImplementationOnce(() => new Promise((_ok, mal) => (exportar = mal)));
+    botonPorTexto(el, /Exportar CSV/).click();
+    await esperar();
+    expect(el.textContent).toContain('Exportando…');
+    exportar(new ApiError(500, 'x'));
+    await esperar();
+    expect(el.textContent).toContain('Exportar CSV');
+    botonPorTexto(el, 'Reintentar').click();
+    await esperar();
+    expect(el.textContent).toContain('registros');
   });
 });

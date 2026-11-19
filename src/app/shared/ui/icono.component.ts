@@ -104,6 +104,24 @@ import {
   Banknote,
   CheckCheck,
   BellOff,
+  ShoppingBasket,
+  Sofa,
+  Tractor,
+  Sprout,
+  KeyRound,
+  Boxes,
+  Receipt,
+  ClipboardCheck,
+  ShoppingBag,
+  Weight,
+  IdCard,
+  FileCheck,
+  ExternalLink,
+  ScanFace,
+  Minus,
+  Signpost,
+  Hourglass,
+  Maximize,
 } from 'lucide-static';
 
 /** Íconos de Lucide (licencia ISC) disponibles en la app. */
@@ -205,6 +223,24 @@ const ICONOS = {
   banknote: Banknote,
   'check-check': CheckCheck,
   'bell-off': BellOff,
+  basket: ShoppingBasket,
+  sofa: Sofa,
+  tractor: Tractor,
+  sprout: Sprout,
+  key: KeyRound,
+  boxes: Boxes,
+  receipt: Receipt,
+  'clipboard-check': ClipboardCheck,
+  bag: ShoppingBag,
+  weight: Weight,
+  'id-card': IdCard,
+  'file-check': FileCheck,
+  'external-link': ExternalLink,
+  'scan-face': ScanFace,
+  minus: Minus,
+  signpost: Signpost,
+  hourglass: Hourglass,
+  maximize: Maximize,
 } as const;
 
 export type NombreIcono = keyof typeof ICONOS;
@@ -249,7 +285,7 @@ export class IconoComponent {
     effect(() => {
       const n = this.nombre();
       cache[n] ??= nodoIcono(n);
-      this.host.nativeElement.replaceChildren(document.importNode(cache[n] as SVGElement, true));
+      this.host.nativeElement.replaceChildren(document.importNode(cache[n], true));
     });
   }
 }

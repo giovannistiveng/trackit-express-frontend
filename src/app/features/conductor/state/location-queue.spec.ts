@@ -38,7 +38,7 @@ describe('LocationQueue', () => {
   it('debería encolar sin conexión y sincronizar en orden al volver la red', async () => {
     await cola.registrar(1, u(1), false);
     await cola.registrar(1, u(2), false);
-    expect((await cola.pendientes()).length).toBe(2);
+    expect(await cola.pendientes()).toHaveLength(2);
     expect(await cola.sincronizar()).toBe(2);
     expect(enviar.mock.calls.map((c) => c[1].capturadoEn)).toEqual([
       u(1).capturadoEn,
@@ -50,7 +50,7 @@ describe('LocationQueue', () => {
   it('no debería duplicar la misma coordenada', async () => {
     await cola.registrar(1, u(1), false);
     await cola.registrar(1, u(1), false);
-    expect((await cola.pendientes()).length).toBe(1);
+    expect(await cola.pendientes()).toHaveLength(1);
   });
 
   it('debería respetar el tope de 500 descartando las más antiguas', async () => {
@@ -93,7 +93,7 @@ describe('LocationQueue', () => {
     });
     await cola.registrar(1, u(1), true);
     await vaciarPromesas(10);
-    expect((await cola.pendientes()).length).toBe(1);
+    expect(await cola.pendientes()).toHaveLength(1);
     enviar.mockImplementation(async () => undefined);
     expect(await cola.sincronizar()).toBe(1);
     expect(await cola.pendientes()).toEqual([]);

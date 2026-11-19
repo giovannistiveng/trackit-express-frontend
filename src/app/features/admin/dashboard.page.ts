@@ -7,7 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { MetricasAdmin } from '../../core/domain';
+import { EstadoEnvio, MetricasAdmin } from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { AdminMetricsPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
@@ -15,12 +15,12 @@ import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-
 import { IconoComponent, NombreIcono } from '../../shared/ui/icono.component';
 import { RouterLink } from '@angular/router';
 
-const COLOR_ESTADO: Record<string, string> = {
+const COLOR_ESTADO: Record<EstadoEnvio, string> = {
   Pendiente: '#f5c518',
-  Asignado: '#fb923c',
-  'En Ruta': '#c2410c',
+  Asignado: '#3f8f6c',
+  'En Ruta': '#0b5d45',
   Entregado: '#1e7a46',
-  Cancelado: '#a8a29e',
+  Cancelado: '#9aa59f',
 };
 const CIRCUNFERENCIA = 2 * Math.PI * 48;
 
@@ -44,7 +44,7 @@ const CIRCUNFERENCIA = 2 * Math.PI * 48;
         <ti-estado-carga [fase]="fase()" [textoError]="error()" (reintentar)="cargar()">
           @if (m(); as m) {
             <dl class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              @for (k of kpis(); track k.etiqueta; let i = $index) {
+              @for (k of kpis(m); track k.etiqueta; let i = $index) {
                 <div
                   class="tarjeta p-4 animate-[var(--animate-aparecer)] sm:p-5"
                   [style.animation-delay.ms]="i * 40"
@@ -88,10 +88,10 @@ const CIRCUNFERENCIA = 2 * Math.PI * 48;
                     viewBox="0 0 120 120"
                     class="size-40 shrink-0 -rotate-90"
                     role="img"
-                    [attr.aria-label]="'Tasa de entrega ' + tasaEntrega() + ' %'"
+                    [attr.aria-label]="'Tasa de entrega ' + tasaEntrega(m) + ' %'"
                   >
-                    <circle cx="60" cy="60" r="48" fill="none" stroke="#f1ebe4" stroke-width="16" />
-                    @for (s of segmentos(); track s.estado) {
+                    <circle cx="60" cy="60" r="48" fill="none" stroke="#e8eee9" stroke-width="16" />
+                    @for (s of segmentos(m); track s.estado) {
                       <circle
                         cx="60"
                         cy="60"
@@ -111,7 +111,7 @@ const CIRCUNFERENCIA = 2 * Math.PI * 48;
                       transform="rotate(90 60 60)"
                       class="fill-tinta text-[22px] font-extrabold"
                     >
-                      {{ tasaEntrega() }}%
+                      {{ tasaEntrega(m) }}%
                     </text>
                     <text
                       x="60"
@@ -161,8 +161,8 @@ const CIRCUNFERENCIA = 2 * Math.PI * 48;
                         aria-hidden="true"
                       >
                         <div
-                          class="h-full rounded-full bg-gradient-to-r from-marca to-[#ea580c] transition-[width] duration-700"
-                          [style.width.%]="(z.envios / maxZona()) * 100"
+                          class="h-full rounded-full bg-gradient-to-r from-marca to-[#0b5d45] transition-[width] duration-700"
+                          [style.width.%]="(z.envios / maxZona(m)) * 100"
                         ></div>
                       </div>
                     </li>
@@ -186,34 +186,27 @@ export class DashboardPage implements OnInit {
   protected readonly fase = computed<FaseCarga>(() =>
     faseDe({ cargando: !this.m() && !this.error(), error: !this.m() && this.error() }),
   );
-  protected readonly maxZona = computed(() =>
-    Math.max(1, ...(this.m()?.porZona.map((z) => z.envios) ?? [1])),
-  );
-  protected readonly maxEstado = computed(() =>
-    Math.max(1, ...(this.m()?.porEstado.map((z) => z.envios) ?? [1])),
-  );
+  protected maxZona(m: MetricasAdmin): number {
+    return Math.max(1, ...m.porZona.map((z) => z.envios));
+  }
   protected readonly circunferencia = CIRCUNFERENCIA;
-  protected readonly tasaEntrega = computed(() => {
-    const m = this.m();
-    return m && m.enviosTotales ? Math.round((m.entregados / m.enviosTotales) * 100) : 0;
-  });
+  protected tasaEntrega(m: MetricasAdmin): number {
+    return m.enviosTotales ? Math.round((m.entregados / m.enviosTotales) * 100) : 0;
+  }
   /** Arcos de la dona: largo y desplazamiento de cada estado sobre la circunferencia. */
-  protected readonly segmentos = computed(() => {
-    const m = this.m();
-    if (!m || m.enviosTotales === 0) return [];
+  protected segmentos(m: MetricasAdmin) {
+    if (m.enviosTotales === 0) return [];
     let inicio = 0;
     return m.porEstado
       .filter((e) => e.envios > 0)
       .map((e) => {
         const largo = (e.envios / m.enviosTotales) * CIRCUNFERENCIA;
-        const s = { estado: e.estado, color: COLOR_ESTADO[e.estado] ?? '#a8a29e', largo, inicio };
+        const s = { estado: e.estado, color: COLOR_ESTADO[e.estado], largo, inicio };
         inicio += largo;
         return s;
       });
-  });
-  protected readonly kpis = computed(() => {
-    const m = this.m();
-    if (!m) return [];
+  }
+  protected kpis(m: MetricasAdmin) {
     const k = (etiqueta: string, valor: string, icono: NombreIcono, color: string) => ({
       etiqueta,
       valor,
@@ -231,7 +224,7 @@ export class DashboardPage implements OnInit {
         'bg-aviso-suave text-placa-oscuro',
       ),
       k('Entregados', String(m.entregados), 'package-check', 'bg-exito-suave text-exito'),
-      k('Cancelados', String(m.cancelados ?? 0), 'ban', 'bg-niebla text-piedra'),
+      k('Cancelados', String(m.cancelados), 'ban', 'bg-niebla text-piedra'),
       k(
         'Conductores aprobados',
         String(m.conductoresAprobados),
@@ -245,10 +238,10 @@ export class DashboardPage implements OnInit {
         'bg-aviso-suave text-placa-oscuro',
       ),
     ];
-  });
+  }
 
-  protected colorEstado(estado: string): string {
-    return COLOR_ESTADO[estado] ?? '#a8a29e';
+  protected colorEstado(estado: EstadoEnvio): string {
+    return COLOR_ESTADO[estado];
   }
 
   ngOnInit(): void {

@@ -100,12 +100,13 @@ export class EventosSseAdapter extends EventosPort implements OnDestroy {
     this.detener();
   }
 
+  /** Solo se llama con el canal activo y con fábrica (iniciar y reintentar lo comprueban). */
   private async abrir(): Promise<void> {
-    if (!this.activo || !this.fabrica) return;
     try {
       const ticket = await this.puerto.ticket();
+      // Pudo detenerse mientras se pedía el ticket
       if (!this.activo) return;
-      const fuente = this.fabrica(this.puerto.urlEventos(ticket));
+      const fuente = (this.fabrica as FabricaEventSource)(this.puerto.urlEventos(ticket));
       this.fuente = fuente;
       fuente.addEventListener('conectado', () => {
         this.intentos = 0;
@@ -120,11 +121,11 @@ export class EventosSseAdapter extends EventosPort implements OnDestroy {
           }
         });
       }
-      fuente.onerror = () => {
+      fuente.addEventListener('error', () => {
         // El ticket ya se usó: EventSource no puede reconectar solo
         fuente.close();
         if (this.fuente === fuente) this.reintentar();
-      };
+      });
     } catch (e) {
       this.log.debug('Eventos', 'No se pudo abrir el canal de eventos', e);
       this.reintentar();

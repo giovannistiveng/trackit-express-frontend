@@ -1,0 +1,113 @@
+# Integración continua del frontend de TrackIt Express.
+# En cada push y pull request: formato, lint (con reglas Sonar way y arquitectura hexagonal),
+# pruebas con cobertura del 100 %, build de producción, imagen Docker y, si está configurado,
+# análisis de SonarQube.
+name: CI frontend
+
+on:
+  push:
+    branches: [main, desarrollo, pre-produccion]
+  pull_request:
+    branches: [main, desarrollo, pre-produccion]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Un nuevo push a la misma rama cancela la ejecución anterior
+concurrency:
+  group: ci-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  verificar:
+    name: Lint, pruebas y build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TZ: America/Bogota
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v5
+        with:
+          # SonarQube necesita el historial completo para atribuir los cambios
+          fetch-depth: 0
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Revisar formato (Prettier)
+        run: npx prettier --check "src/**/*.{ts,html,css}"
+
+      - name: Lint (ESLint + SonarJS + Sonar way + arquitectura)
+        run: npm run lint
+
+      - name: Pruebas con cobertura (umbral 100 %)
+        run: npm run test:coverage
+
+      - name: Build de producción
+        run: npm run build
+
+      - name: Reporte de ESLint para SonarQube
+        if: always()
+        run: npm run lint:sonar || true
+
+      - name: Guardar reportes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-frontend
+          path: |
+            coverage/trackit-express-frontend/lcov.info
+            reports/eslint.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Solo corre si el repositorio tiene la variable SONAR_HOST_URL y el secreto SONAR_TOKEN.
+      # SONAR_HOST_URL debe ser un servidor accesible desde internet (p. ej. https://sonarcloud.io);
+      # un SonarQube en localhost solo se analiza a mano (ver README).
+      - name: Análisis de SonarQube (con quality gate)
+        if: ${{ vars.SONAR_HOST_URL != '' && github.event_name != 'pull_request' }}
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+        run: >-
+          npm run sonar --
+          -Dsonar.host.url="$SONAR_HOST_URL"
+          -Dsonar.token="$SONAR_TOKEN"
+          ${SONAR_ORGANIZATION:+-Dsonar.organization="$SONAR_ORGANIZATION"}
+          -Dsonar.projectVersion="$(node -p "require('./package.json').version")"
+          -Dsonar.qualitygate.wait=true
+
+  docker:
+    name: Imagen Docker
+    runs-on: ubuntu-latest
+    needs: verificar
+    timeout-minutes: 15
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v5
+
+      - name: Preparar Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Se construye para comprobar que el Dockerfile funciona; no se publica en ningún registro
+      - name: Construir la imagen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: trackit-express-frontend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

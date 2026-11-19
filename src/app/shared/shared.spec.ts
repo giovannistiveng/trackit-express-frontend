@@ -4,6 +4,8 @@ import { botonPorTexto, provideFakesBase, q } from '../../testing/fakes';
 import { CopPipe, formatearCop } from './pipes/cop.pipe';
 import { FechaLocalPipe, formatearFechaLocal } from './pipes/fecha-local.pipe';
 import { CargaArchivoComponent } from './ui/carga-archivo.component';
+import { CAMARAS, CamaraComponent } from './ui/camara.component';
+import { By } from '@angular/platform-browser';
 import { EstadoBadgeComponent } from './ui/estado-badge.component';
 import { EstadoCargaComponent, FaseCarga } from './ui/estado-carga.component';
 import { EstrellasComponent } from './ui/estrellas.component';
@@ -15,7 +17,7 @@ import { aCsv, descargarArchivo } from './util/csv';
 import { mostrarError } from './ui/campo-error';
 import { FormControl, Validators } from '@angular/forms';
 
-const nbsp = (s: string) => s.replace(/\s/g, ' ');
+const nbsp = (s: string) => s.replaceAll(/\s/g, ' ');
 
 describe('pipes', () => {
   it('cop formatea pesos sin decimales', () => {
@@ -72,20 +74,20 @@ class HostModal {
 describe('ModalComponent', () => {
   it('debería enfocar el primer elemento, atrapar el foco y cerrar con Escape', async () => {
     const f = TestBed.createComponent(HostModal);
-    document.body.appendChild(f.nativeElement);
+    document.body.append(f.nativeElement);
     await f.whenStable();
     const dialog = q(f.nativeElement, '[role="dialog"]');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(q(f.nativeElement, `#${dialog.getAttribute('aria-labelledby')}`).textContent).toBe(
       'Prueba',
     );
-    const botones = dialog.querySelectorAll('button');
+    const botones = [...dialog.querySelectorAll('button')];
     expect(document.activeElement).toBe(botones[0]);
-    (botones[botones.length - 1] as HTMLElement).focus();
+    (botones.at(-1) as HTMLElement).focus();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
     expect(document.activeElement).toBe(botones[0]);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true }));
-    expect(document.activeElement).toBe(botones[botones.length - 1]);
+    expect(document.activeElement).toBe(botones.at(-1));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(f.componentInstance.cerrados()).toBe(1);
     q(f.nativeElement, 'ti-modal').click();
@@ -306,5 +308,36 @@ describe('proveedores base', () => {
   it('se pueden instanciar', () => {
     TestBed.configureTestingModule({ providers: [provideFakesBase()] });
     expect(TestBed.inject(ToastService)).toBeTruthy();
+  });
+});
+
+describe('CargaArchivoComponent: cámara y soltar deshabilitado', () => {
+  it('una foto de la cámara se procesa; soltar estando deshabilitado no hace nada', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:previa');
+    URL.revokeObjectURL = vi.fn();
+    TestBed.configureTestingModule({
+      providers: [provideFakesBase(), { provide: CAMARAS, useValue: null }],
+    });
+    const f = TestBed.createComponent(CargaArchivoComponent);
+    f.componentRef.setInput('conCamara', true);
+    await f.whenStable();
+    const archivos: File[] = [];
+    f.componentInstance.archivo.subscribe((a) => archivos.push(a));
+    botonPorTexto(f.nativeElement, /Tomar foto/).click();
+    await f.whenStable();
+    const camara = f.debugElement.query(By.directive(CamaraComponent))
+      .componentInstance as CamaraComponent;
+    camara.foto.emit(new File(['x'], 'foto.jpg', { type: 'image/jpeg' }));
+    await vi.waitFor(() => expect(archivos).toHaveLength(1));
+    f.componentRef.setInput('deshabilitado', true);
+    await f.whenStable();
+    const zona = (f.nativeElement as HTMLElement).querySelector('label') as HTMLElement;
+    const soltar = new Event('drop', { bubbles: true, cancelable: true });
+    Object.assign(soltar, {
+      dataTransfer: { files: [new File(['x'], 'b.jpg', { type: 'image/jpeg' })] },
+    });
+    zona.dispatchEvent(soltar);
+    await f.whenStable();
+    expect(archivos).toHaveLength(1);
   });
 });

@@ -49,6 +49,8 @@ import {
   Vehiculo,
   Zona,
   esIdValido,
+  RutaMapa,
+  DocumentoConductor,
 } from '../../domain';
 import {
   AccountPort,
@@ -82,6 +84,7 @@ import {
   TrackingPort,
   VehiclesPort,
   ZonesPort,
+  DatosRecogida,
 } from '../../ports';
 import { ApiError } from '../../http/api-error';
 import { apiUrl } from './api-url';
@@ -102,6 +105,8 @@ import {
   ApiTarifaVehiculo,
   ApiUsuarioLogin,
   ApiZona,
+  ApiDocumento,
+  ApiRequisitos,
 } from './backend.types';
 import {
   aCategoria,
@@ -122,6 +127,9 @@ import {
   aTarifaVehiculo,
   aUsuario,
   aZona,
+  aDetalleApi,
+  aDocumento,
+  aRequisitos,
 } from './mappers';
 
 function validarId(id: number): void {
@@ -129,7 +137,7 @@ function validarId(id: number): void {
 }
 
 interface RespuestaDocumento {
-  documento: { id: number; url_archivo: string; tipo_documento: TipoDocumento };
+  documento: ApiDocumento;
 }
 
 // ---------------------------------------------------------------- Autenticación y catálogo
@@ -219,6 +227,8 @@ function cuerpoRuta(s: SolicitudCotizacion): Record<string, unknown> {
   }
   if (s.idaYVuelta) cuerpo['ida_y_vuelta'] = true;
   if (s.fechaProgramada) cuerpo['fecha_programada'] = s.fechaProgramada.toISOString();
+  if (s.tipoServicio) cuerpo['tipo_servicio'] = s.tipoServicio;
+  if (s.detalle) cuerpo['detalle_servicio'] = aDetalleApi(s.detalle);
   return cuerpo;
 }
 
@@ -246,6 +256,13 @@ export class HttpGeoAdapter implements GeoPort {
     );
     return r.resultado;
   }
+
+  async ruta(puntos: Coordenadas[]): Promise<RutaMapa> {
+    const valor = puntos.map((p) => `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join(';');
+    return firstValueFrom(
+      this.http.get<RutaMapa>(this.url('/geo/ruta'), { params: { puntos: valor } }),
+    );
+  }
 }
 
 // ---------------------------------------------------------------- Cliente
@@ -270,7 +287,8 @@ export class HttpShipmentsAdapter implements ShipmentsPort {
   }
 
   async crear(e: NuevoEnvio): Promise<Envio> {
-    const cuerpo: Record<string, unknown> = { ...cuerpoRuta(e), tipo_carga: e.tipoCarga };
+    const cuerpo: Record<string, unknown> = { ...cuerpoRuta(e) };
+    if (e.tipoCarga) cuerpo['tipo_carga'] = e.tipoCarga;
     if (e.notas?.trim()) cuerpo['notas'] = e.notas.trim();
     if (e.metodoPago) cuerpo['metodo_pago'] = e.metodoPago;
     if (e.metodoPago === 'nequi') cuerpo['telefono_nequi'] = e.telefonoNequi;
@@ -359,10 +377,11 @@ export class HttpDriverProfileAdapter implements DriverProfilePort {
         estado_aprobacion: string;
         motivo_rechazo?: string | null;
         vehiculo?: { id: number; placa: string; categoria: string } | null;
+        requisitos?: ApiRequisitos;
       }>(this.url('/conductores/me')),
     );
     const categoria = aCategoria(r.vehiculo?.categoria);
-    return {
+    const perfil: PerfilConductor = {
       idConductor: r.id_conductor,
       estadoAprobacion: aEstadoAprobacion(r.estado_aprobacion),
       motivoRechazo: r.motivo_rechazo ?? null,
@@ -371,6 +390,8 @@ export class HttpDriverProfileAdapter implements DriverProfilePort {
           ? { id: r.vehiculo.id, placa: r.vehiculo.placa, categoria }
           : undefined,
     };
+    if (r.requisitos) perfil.requisitos = aRequisitos(r.requisitos);
+    return perfil;
   }
 }
 
@@ -395,9 +416,10 @@ export class HttpDocumentsAdapter implements DocumentsPort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
 
-  subir(archivo: File, tipo: TipoDocumento): Observable<EventoCarga> {
+  subir(archivo: File, tipo: TipoDocumento, fechaVencimiento?: string): Observable<EventoCarga> {
     const form = new FormData();
     form.append('tipo_documento', tipo);
+    if (fechaVencimiento) form.append('fecha_vencimiento', fechaVencimiento);
     form.append('archivo', archivo);
     return this.http
       .post<RespuestaDocumento>(this.url('/documentos/upload'), form, {
@@ -416,10 +438,9 @@ export class HttpDocumentsAdapter implements DocumentsPort {
               porcentaje: ev.total ? Math.round((100 * ev.loaded) / ev.total) : 0,
             };
           }
-          const doc = (ev.body as RespuestaDocumento).documento;
           return {
             tipo: 'completo',
-            documento: { id: doc.id, tipo: doc.tipo_documento, urlArchivo: doc.url_archivo },
+            documento: aDocumento((ev.body as RespuestaDocumento).documento),
           };
         }),
       );
@@ -445,9 +466,20 @@ export class HttpDriverServiceAdapter implements DriverServicePort {
   private readonly http = inject(HttpClient);
   private readonly url = apiUrl();
 
-  async recoger(idEnvio: number, foto: File): Promise<Envio> {
+  async llegadaRecogida(idEnvio: number): Promise<Envio> {
+    validarId(idEnvio);
+    const r = await firstValueFrom(
+      this.http.post<{ envio: ApiEnvio }>(this.url(`/envios/${idEnvio}/llegada-recogida`), {}),
+    );
+    return aEnvio(r.envio, false);
+  }
+
+  async recoger(idEnvio: number, foto: File, extra: DatosRecogida = {}): Promise<Envio> {
     validarId(idEnvio);
     const datos = new FormData();
+    if (extra.codigo) datos.append('codigo_recogida', extra.codigo);
+    if (extra.bultos !== undefined) datos.append('bultos', String(extra.bultos));
+    if (extra.valorCompra !== undefined) datos.append('valor_compra', String(extra.valorCompra));
     datos.append('archivo', foto, foto.name);
     const r = await firstValueFrom(
       this.http.post<{ envio: ApiEnvio }>(this.url(`/envios/${idEnvio}/recogida`), datos),
@@ -495,14 +527,6 @@ export class HttpDriverServiceAdapter implements DriverServicePort {
       this.http.get<{ envio: ApiEnvio | null }>(this.url('/conductores/envios/activo')),
     );
     return r.envio ? aEnvio(r.envio, false) : null;
-  }
-
-  async iniciarRuta(idEnvio: number): Promise<Envio> {
-    validarId(idEnvio);
-    const r = await firstValueFrom(
-      this.http.post<{ envio: ApiEnvio }>(this.url(`/envios/${idEnvio}/iniciar-ruta`), {}),
-    );
-    return aEnvio(r.envio, false);
   }
 }
 
@@ -597,6 +621,23 @@ export class HttpApprovalAdapter implements ApprovalPort {
       this.http.post<{ driver: ApiConductor }>(this.url('/conductores/aprobar'), cuerpo),
     );
     return aPostulante(r.driver);
+  }
+
+  async revisarDocumento(
+    idDocumento: number,
+    aprobado: boolean,
+    datos: { motivo?: string; fechaVencimiento?: string } = {},
+  ): Promise<DocumentoConductor> {
+    const cuerpo: Record<string, unknown> = { aprobado };
+    if (!aprobado && datos.motivo) cuerpo['motivo'] = datos.motivo.trim();
+    if (datos.fechaVencimiento) cuerpo['fecha_vencimiento'] = datos.fechaVencimiento;
+    const r = await firstValueFrom(
+      this.http.patch<{ documento: ApiDocumento }>(
+        this.url(`/admin/documentos/${idDocumento}`),
+        cuerpo,
+      ),
+    );
+    return aDocumento(r.documento);
   }
 }
 
@@ -1098,14 +1139,14 @@ export class HttpLogTransportAdapter implements LogTransportPort {
     try {
       await firstValueFrom(this.http.post(this.url('/logs/frontend'), { eventos }));
     } catch (e) {
-      const status = (e as { status?: number }).status ?? 0;
+      // El interceptor convierte todo fallo HTTP en ApiError (siempre con status)
+      const status = (e as ApiError).status;
       throw new ApiError(status, 'No se pudieron enviar los logs');
     }
   }
 
   enviarAlSalir(eventos: EventoLog[]): boolean {
-    if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function')
-      return false;
+    if (typeof navigator.sendBeacon !== 'function') return false;
     const blob = new Blob([JSON.stringify({ eventos })], { type: 'application/json' });
     return navigator.sendBeacon(this.url('/logs/frontend'), blob);
   }

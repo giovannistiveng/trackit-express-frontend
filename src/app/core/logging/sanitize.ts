@@ -1,9 +1,9 @@
-const EXACTAS = ['pin', 'pin_seguridad', 'pinseguridad', 'apikey', 'api_key'];
+const EXACTAS = new Set(['pin', 'pin_seguridad', 'pinseguridad', 'apikey', 'api_key']);
 const FRAGMENTOS = ['password', 'contrasena', 'contraseña', 'token', 'secret', 'authorization'];
 
 export function esClaveSensible(clave: string): boolean {
   const k = clave.toLowerCase();
-  return EXACTAS.includes(k) || FRAGMENTOS.some((f) => k.includes(f));
+  return EXACTAS.has(k) || FRAGMENTOS.some((f) => k.includes(f));
 }
 
 /** Copia del valor con las claves sensibles reemplazadas por [OCULTO]. */

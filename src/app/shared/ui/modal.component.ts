@@ -57,8 +57,7 @@ export class ModalComponent implements AfterViewInit, OnDestroy {
   readonly cerrar = output<void>();
   protected readonly idTitulo = `modal-titulo-${++contador}`;
   private readonly panel = viewChild.required<ElementRef<HTMLElement>>('panel');
-  private readonly focoPrevio =
-    typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null;
+  private readonly focoPrevio = document.activeElement as HTMLElement | null;
 
   ngAfterViewInit(): void {
     const primero = this.enfocables()[0];
@@ -79,7 +78,7 @@ export class ModalComponent implements AfterViewInit, OnDestroy {
     const lista = this.enfocables();
     if (lista.length === 0) return;
     const primero = lista[0];
-    const ultimo = lista[lista.length - 1];
+    const ultimo = lista.at(-1) as HTMLElement;
     if (ev.shiftKey && document.activeElement === primero) {
       ev.preventDefault();
       ultimo.focus();

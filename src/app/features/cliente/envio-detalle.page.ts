@@ -23,6 +23,9 @@ import {
   puedeCancelarCliente,
   esDelEnvio,
   telefonoWhatsapp,
+  SERVICIOS,
+  TEXTO_ETAPA,
+  resumenDetalle,
 } from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
@@ -44,16 +47,9 @@ import { PinEnvioComponent } from './components/pin-envio.component';
 import { PagoPanelComponent } from './components/pago-panel.component';
 import { ChatEnvioComponent } from '../../shared/ui/chat-envio.component';
 import { desplazarA } from '../../shared/util/desplazar';
+import { EtapasServicioComponent } from '../../shared/ui/etapas-servicio.component';
 
 export const INTERVALO_TRAZABILIDAD_MS = 10_000;
-
-const TITULARES: Record<Envio['estado'], string> = {
-  Pendiente: 'Buscando un conductor para tu envío',
-  Asignado: 'Un conductor tomó tu envío',
-  'En Ruta': 'Tu envío va en camino',
-  Entregado: 'Tu envío fue entregado',
-  Cancelado: 'Este envío fue cancelado',
-};
 
 /** CU-008 Seguimiento (lado cliente), cancelación y CU-010 Calificación. */
 @Component({
@@ -76,11 +72,12 @@ const TITULARES: Record<Envio['estado'], string> = {
     DesgloseTarifaComponent,
     PagoPanelComponent,
     ChatEnvioComponent,
+    EtapasServicioComponent,
   ],
   template: `
     <div class="contenedor-ancho max-w-5xl">
       <a routerLink="/cliente/envios" class="btn-texto -ml-1"
-        ><ti-icono nombre="arrow-left" class="size-4" /> Mis envíos</a
+        ><ti-icono nombre="arrow-left" class="size-4" /> Mis pedidos</a
       >
       <ti-estado-carga
         [fase]="fase()"
@@ -90,8 +87,12 @@ const TITULARES: Record<Envio['estado'], string> = {
       >
         @if (envio(); as e) {
           <header class="mt-2 animate-[var(--animate-aparecer)]">
-            <p class="text-sm font-semibold text-piedra">Envío #{{ e.id }} · {{ e.tipoCarga }}</p>
-            <h1 class="mt-1">{{ titular() }}</h1>
+            <p class="flex items-center gap-2 text-sm font-semibold text-piedra">
+              <ti-icono [nombre]="servicioDe(e).icono" class="size-4 text-marca" />
+              {{ servicioDe(e).nombre }} #{{ e.id }}
+            </p>
+            <h1 class="mt-1">{{ titular(e) }}</h1>
+            <p class="mt-1 text-piedra">{{ textoEtapa(e) }}</p>
             <div class="mt-3 flex flex-wrap items-center gap-3 text-sm">
               <ti-estado-badge [estado]="e.estado" />
               @if (e.fechaProgramada && e.estado === 'Pendiente') {
@@ -155,7 +156,35 @@ const TITULARES: Record<Envio['estado'], string> = {
                   </div>
                   <ti-mapa-envio
                     [seguimiento]="seguimiento()"
+                    [paradas]="coordsParadas()"
                     class="[&>div]:rounded-none [&>div]:border-0"
+                  />
+                </section>
+              }
+
+              @if (e.codigoRecogida && antesDeRecoger(e)) {
+                <section
+                  class="tarjeta flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
+                  [class.ring-4]="e.etapa === 'en_recogida'"
+                  [class.ring-placa]="e.etapa === 'en_recogida'"
+                  aria-labelledby="titulo-codigo"
+                >
+                  <div>
+                    <h2 id="titulo-codigo" class="flex items-center gap-2 text-base">
+                      <ti-icono nombre="key" class="text-marca" /> Código de recogida
+                    </h2>
+                    <p class="mt-1 text-sm text-piedra">
+                      {{
+                        e.etapa === 'en_recogida'
+                          ? 'El conductor ya llegó: quien entrega la carga debe decirle este código.'
+                          : 'Compártelo con quien entregue la carga. Sin este código el conductor no la recibe.'
+                      }}
+                    </p>
+                  </div>
+                  <ti-placa
+                    [valor]="e.codigoRecogida"
+                    etiqueta="Código de recogida"
+                    pie="RECOGIDA"
                   />
                 </section>
               }
@@ -170,7 +199,11 @@ const TITULARES: Record<Envio['estado'], string> = {
                       <ti-icono nombre="lock" class="text-marca" /> PIN de entrega
                     </h2>
                     <p class="mt-1 text-sm text-piedra">
-                      Dáselo al conductor solo cuando tengas el paquete en tus manos.
+                      {{
+                        e.etapa === 'en_destino'
+                          ? 'El conductor llegó: quien recibe le da este PIN al tener el pedido en la mano.'
+                          : 'Quien recibe se lo da al conductor solo al tener el pedido en la mano.'
+                      }}
                     </p>
                   </div>
                   <ti-pin-envio [pin]="e.pin" [ocultable]="true" />
@@ -203,18 +236,18 @@ const TITULARES: Record<Envio['estado'], string> = {
                   <div class="mt-4 flex flex-wrap gap-2">
                     <a
                       class="btn-primario"
-                      [href]="enlaceWhatsapp()"
+                      [href]="enlaceWhatsapp(e)"
                       target="_blank"
                       rel="noopener"
                     >
                       <ti-icono nombre="message-circle" /> Enviar por WhatsApp
                     </a>
-                    <button type="button" class="btn-secundario" (click)="copiarEnlace()">
+                    <button type="button" class="btn-secundario" (click)="copiarEnlace(e)">
                       <ti-icono [nombre]="copiado() ? 'check' : 'copy'" />
                       {{ copiado() ? 'Copiado' : 'Copiar enlace' }}
                     </button>
                     @if (puedeCompartirNativo) {
-                      <button type="button" class="btn-secundario" (click)="compartirNativo()">
+                      <button type="button" class="btn-secundario" (click)="compartirNativo(e)">
                         <ti-icono nombre="share" /> Más opciones
                       </button>
                     }
@@ -225,10 +258,31 @@ const TITULARES: Record<Envio['estado'], string> = {
               @if (e.urlFotoRecogida) {
                 <section class="tarjeta p-5" aria-labelledby="titulo-recogida">
                   <h2 id="titulo-recogida" class="flex items-center gap-2 text-base">
-                    <ti-icono nombre="camera" class="text-marca" /> Foto al recoger
+                    <ti-icono nombre="camera" class="text-marca" />
+                    {{ servicioDe(e).conCompra ? 'Factura y compra' : 'Foto al recoger' }}
                   </h2>
                   @if (e.fechaRecogida) {
                     <p class="text-sm text-piedra">Recogido {{ e.fechaRecogida | fechaLocal }}</p>
+                  }
+                  @if (e.bultosRecogidos) {
+                    <p
+                      class="mt-2 text-sm font-semibold"
+                      [class.text-alerta]="
+                        e.detalle?.bultos && e.detalle?.bultos !== e.bultosRecogidos
+                      "
+                    >
+                      El conductor contó {{ e.bultosRecogidos }} bultos{{
+                        e.detalle?.bultos && e.detalle?.bultos !== e.bultosRecogidos
+                          ? ' (declaraste ' + e.detalle?.bultos + ')'
+                          : ''
+                      }}.
+                    </p>
+                  }
+                  @if (e.valorCompra) {
+                    <p class="mt-2 rounded-xl bg-aviso-suave px-3 py-2 text-sm">
+                      Compra: <strong class="numeros">{{ e.valorCompra | cop }}</strong
+                      >. Se paga en efectivo al recibir, aparte del servicio.
+                    </p>
                   }
                   <a [href]="e.urlFotoRecogida" target="_blank" rel="noopener" class="mt-3 block">
                     <img
@@ -251,15 +305,37 @@ const TITULARES: Record<Envio['estado'], string> = {
                 </div>
               }
 
-              <section class="tarjeta p-5 sm:p-6" aria-labelledby="titulo-recorrido">
-                <h2 id="titulo-recorrido" class="mb-5">Recorrido</h2>
-                <ti-linea-tiempo [historial]="e.historial" [estadoActual]="e.estado" />
+              <section class="tarjeta p-5 sm:p-6" aria-labelledby="titulo-avance">
+                <h2 id="titulo-avance" class="mb-4">Avance</h2>
+                <ti-etapas-servicio [etapa]="e.etapa" rol="cliente" [idaYVuelta]="!!e.idaYVuelta" />
+                <details class="mt-2 border-t border-linea pt-3">
+                  <summary class="cursor-pointer text-sm font-semibold text-marca">
+                    Historial con fecha y hora
+                  </summary>
+                  <div class="mt-4">
+                    <ti-linea-tiempo [historial]="e.historial" [estadoActual]="e.estado" />
+                  </div>
+                </details>
               </section>
             </div>
 
             <aside aria-labelledby="titulo-detalle" class="space-y-4">
               <section class="tarjeta p-5">
-                <h2 id="titulo-detalle" class="text-base">Detalle del envío</h2>
+                <h2 id="titulo-detalle" class="text-base">Detalle del pedido</h2>
+                @if (lineasDetalle(e).length || textoPedido(e)) {
+                  <div class="mt-3 rounded-xl bg-crema p-3 text-sm">
+                    @if (textoPedido(e); as t) {
+                      <p class="whitespace-pre-line">{{ t }}</p>
+                    }
+                    @if (lineasDetalle(e).length) {
+                      <ul class="mt-2 flex flex-wrap gap-1.5">
+                        @for (l of lineasDetalle(e); track l) {
+                          <li class="insignia bg-papel">{{ l }}</li>
+                        }
+                      </ul>
+                    }
+                  </div>
+                }
                 <ol
                   class="relative mt-4 space-y-4 border-l-2 border-dashed border-linea pl-5 text-sm"
                 >
@@ -345,7 +421,7 @@ const TITULARES: Record<Envio['estado'], string> = {
                   [idEnvio]="e.id"
                   [pagoInicial]="e.pago"
                   [editable]="e.estado === 'Pendiente'"
-                  (cambio)="alCambiarPago($event)"
+                  (cambio)="alCambiarPago(e, $event)"
                 />
               }
 
@@ -556,6 +632,32 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
   private autoAbierto = false;
   private sondeo: Sondeo<Envio> | null = null;
   protected readonly esActivo = esActivo;
+  protected readonly coordsParadas = computed(() =>
+    (this.envio()?.paradas ?? []).map((p) => p.coords),
+  );
+
+  protected servicioDe(e: Envio) {
+    return SERVICIOS[e.tipoServicio];
+  }
+
+  protected textoEtapa(e: Envio): string {
+    return TEXTO_ETAPA[e.etapa].cliente;
+  }
+
+  /** El código de recogida solo sirve hasta que el conductor recoge la carga. */
+  protected antesDeRecoger(e: Envio): boolean {
+    return ['buscando_conductor', 'yendo_a_recoger', 'en_recogida'].includes(e.etapa);
+  }
+
+  protected lineasDetalle(e: Envio): string[] {
+    return resumenDetalle(e.tipoServicio, e.detalle);
+  }
+
+  /** Lo que el cliente escribió: lista del mercado, objetos del trasteo o qué envía. */
+  protected textoPedido(e: Envio): string {
+    const d = e.detalle;
+    return d?.lista ?? d?.objetos ?? (e.tipoServicio === 'paquete' ? e.tipoCarga : '');
+  }
   protected readonly copiado = signal(false);
   protected readonly puedeCompartirNativo = typeof navigator !== 'undefined' && !!navigator.share;
   protected readonly edicion = signal(false);
@@ -571,18 +673,17 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     const e = this.envio()?.estado;
     return e === 'Asignado' || e === 'En Ruta';
   });
-  protected readonly enlaceSeguimiento = computed(() => {
-    const t = this.envio()?.tokenSeguimiento;
-    return t ? `${location.origin}/seguimiento/${t}` : '';
-  });
-  protected readonly enlaceWhatsapp = computed(() => {
-    const e = this.envio();
-    if (!e) return '';
+  /** Solo se ofrece con token (la sección de compartir exige tokenSeguimiento). */
+  protected enlaceSeguimiento(e: Envio): string {
+    return `${location.origin}/seguimiento/${e.tokenSeguimiento}`;
+  }
+
+  protected enlaceWhatsapp(e: Envio): string {
     const nombre = e.destinatarioNombre ? ` ${e.destinatarioNombre.split(' ')[0]}` : '';
-    const texto = `Hola${nombre}, te envié un paquete con TrackIt Express. Puedes seguirlo aquí: ${this.enlaceSeguimiento()}`;
+    const texto = `Hola${nombre}, te envié un paquete con TrackIt Express. Puedes seguirlo aquí: ${this.enlaceSeguimiento(e)}`;
     const tel = telefonoWhatsapp(e.destinatarioTelefono);
     return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
-  });
+  }
 
   protected readonly fase = computed<FaseCarga>(() =>
     faseDe({ cargando: !this.envio() && !this.error(), error: !this.envio() && this.error() }),
@@ -599,10 +700,9 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     const e = this.envio()?.estado;
     return e === 'Asignado' || e === 'En Ruta';
   });
-  protected readonly titular = computed(() => {
-    const e = this.envio();
-    return e ? TITULARES[e.estado] : '';
-  });
+  protected titular(e: Envio): string {
+    return TEXTO_ETAPA[e.etapa].titulo;
+  }
   protected readonly eta = computed(() => {
     const m = this.seguimiento()?.etaMinutos;
     return m ? formatoDuracion(m) : null;
@@ -619,20 +719,21 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
   constructor() {
     // Cambios del envío al instante (aceptado, recogido, entregado, pago…) por el canal de eventos
     const sub = this.eventos.notificaciones().subscribe((n) => {
-      if (esDelEnvio(n.idEnvio, this.envio()) && n.tipo !== 'mensaje_chat') void this.refrescar();
+      if (n.tipo !== 'mensaje_chat') this.alCambiar(n.idEnvio);
     });
-    const sub2 = this.eventos.cambiosEnvio().subscribe((id) => {
-      if (esDelEnvio(id, this.envio())) void this.refrescar();
-    });
+    const sub2 = this.eventos.cambiosEnvio().subscribe((id) => this.alCambiar(id));
     inject(DestroyRef).onDestroy(() => {
       sub.unsubscribe();
       sub2.unsubscribe();
     });
   }
 
-  private async refrescar(): Promise<void> {
-    if (this.sondeo?.estaActivo) await this.sondeo.refrescar();
-    else if (this.envio()) this.alResultado(await this.shipments.obtener(this.envio()!.id));
+  /** Un aviso del canal en vivo sobre este envío: se vuelve a consultar. */
+  private alCambiar(idEnvio: number | null): void {
+    const e = this.envio();
+    if (!e || !esDelEnvio(idEnvio, e)) return;
+    if (this.sondeo?.estaActivo) void this.sondeo.refrescar();
+    else void this.shipments.obtener(e.id).then((r) => this.alResultado(r));
   }
 
   ngOnInit(): void {
@@ -666,27 +767,26 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
     if (this.sondeo && !this.sondeo.estaActivo) this.sondeo.iniciar();
   }
 
-  protected alCambiarPago(pago: PagoResumen): void {
-    const e = this.envio();
-    if (e) this.envio.set({ ...e, pago, metodoPago: pago.metodo });
+  protected alCambiarPago(e: Envio, pago: PagoResumen): void {
+    this.envio.set({ ...e, pago, metodoPago: pago.metodo });
   }
 
-  protected async copiarEnlace(): Promise<void> {
+  protected async copiarEnlace(e: Envio): Promise<void> {
     try {
-      await navigator.clipboard.writeText(this.enlaceSeguimiento());
+      await navigator.clipboard.writeText(this.enlaceSeguimiento(e));
       this.copiado.set(true);
       setTimeout(() => this.copiado.set(false), 2500);
     } catch {
-      this.toast.mostrar(this.enlaceSeguimiento());
+      this.toast.mostrar(this.enlaceSeguimiento(e));
     }
   }
 
-  protected async compartirNativo(): Promise<void> {
+  protected async compartirNativo(e: Envio): Promise<void> {
     try {
       await navigator.share({
-        title: `Envío #${this.envio()?.id} · TrackIt Express`,
+        title: `Envío #${e.id} · TrackIt Express`,
         text: 'Sigue tu paquete en tiempo real',
-        url: this.enlaceSeguimiento(),
+        url: this.enlaceSeguimiento(e),
       });
     } catch {
       // El usuario cerró el menú de compartir
@@ -703,7 +803,6 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
   }
 
   protected async guardarEdicion(e: Envio): Promise<void> {
-    if (this.guardando()) return;
     const tipo = this.edTipo().trim();
     if (tipo.length < 1) {
       this.errorEdicion.set('Indica el tipo de carga.');
@@ -716,7 +815,7 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
         tipoCarga: tipo,
         notas: this.edNotas().trim(),
         destinatarioNombre: this.edNombre().trim(),
-        destinatarioTelefono: this.edTelefono().replace(/[\s-]/g, ''),
+        destinatarioTelefono: this.edTelefono().replaceAll(/[\s-]/g, ''),
       });
       this.envio.set({ ...e, ...actualizado, pin: actualizado.pin ?? e.pin });
       this.edicion.set(false);
@@ -734,7 +833,6 @@ export class EnvioDetallePage implements OnInit, OnDestroy {
   }
 
   protected async cancelar(e: Envio): Promise<void> {
-    if (this.cancelando()) return;
     this.cancelando.set(true);
     this.errorCancelar.set('');
     try {

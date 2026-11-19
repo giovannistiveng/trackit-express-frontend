@@ -3,7 +3,9 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import {
   CATEGORIAS_VEHICULO,
   CategoriaVehiculo,
+  Requisito,
   TIPOS_DOCUMENTO,
+  TipoDocumento,
   esPlacaValida,
   normalizarPlaca,
 } from '../../core/domain';
@@ -19,6 +21,20 @@ import { DriverProfileStore } from './state/driver-profile.store';
 
 export const MENSAJE_PLACA_DUPLICADA = 'Esa placa ya está registrada en el sistema.';
 
+/** Requisito sin información del servidor (todavía sin cargar). */
+export function requisitoBasico(tipo: TipoDocumento): Requisito {
+  return {
+    tipo,
+    nombre: tipo,
+    ayuda: 'Foto legible del documento.',
+    obligatorio: true,
+    vence: tipo === 'SOAT' || tipo === 'Licencia',
+    estado: 'falta',
+    verificar: null,
+    documento: null,
+  };
+}
+
 /** CU-003 Registro de vehículo y CU-004 Carga de documentos. */
 @Component({
   selector: 'ti-perfil-conductor',
@@ -28,7 +44,8 @@ export const MENSAJE_PLACA_DUPLICADA = 'Esa placa ya está registrada en el sist
     <div class="contenedor">
       <h1>Mi perfil</h1>
       <p class="mt-2 text-piedra">
-        Registra tu vehículo y sube tus documentos para que te aprueben.
+        Registra tu vehículo y sube tus documentos. Revisamos cada uno contra las fuentes oficiales
+        (RUNT, Policía y Registraduría) antes de aprobarte.
       </p>
 
       @if (!perfil.aprobado()) {
@@ -99,12 +116,34 @@ export const MENSAJE_PLACA_DUPLICADA = 'Esa placa ya está registrada en el sist
       </section>
 
       <section class="mt-10" aria-labelledby="titulo-documentos">
-        <h2 id="titulo-documentos">Documentos</h2>
-        <p class="mt-1 text-sm text-piedra">Imagen JPG o PNG, o PDF, de hasta 5 MB cada uno.</p>
-        @if (perfil.perfil()) {
-          <div class="mt-4 grid gap-4 md:grid-cols-3">
-            @for (t of tipos; track t) {
-              <ti-documento-card [tipo]="t" (subido)="alSubirDocumento()" />
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 id="titulo-documentos">Documentos</h2>
+            <p class="mt-1 text-sm text-piedra">Foto o PDF de hasta 5 MB cada uno.</p>
+          </div>
+          @if (avance(); as a) {
+            <p class="numeros text-sm font-semibold">{{ a.listos }} de {{ a.total }} aprobados</p>
+          }
+        </div>
+        @if (avance(); as a) {
+          <div
+            class="mt-3 h-2 overflow-hidden rounded-full bg-linea"
+            role="progressbar"
+            [attr.aria-valuenow]="a.listos"
+            aria-valuemin="0"
+            [attr.aria-valuemax]="a.total"
+            aria-label="Documentos aprobados"
+          >
+            <div
+              class="h-full rounded-full bg-marca transition-[width]"
+              [style.width.%]="(a.listos / a.total) * 100"
+            ></div>
+          </div>
+        }
+        @if (requisitos().length) {
+          <div class="mt-4 grid gap-4 md:grid-cols-2">
+            @for (r of requisitos(); track r.tipo) {
+              <ti-documento-card [requisito]="r" (subido)="alSubirDocumento()" />
             }
           </div>
         } @else {
@@ -123,7 +162,20 @@ export class PerfilPage {
   private readonly log = inject(LoggerPort);
 
   protected readonly categorias = CATEGORIAS_VEHICULO;
-  protected readonly tipos = TIPOS_DOCUMENTO;
+  /** Requisitos que envía el backend; si es una versión anterior, los tres documentos básicos. */
+  protected readonly requisitos = computed<Requisito[]>(() => {
+    const p = this.perfil.perfil();
+    if (!p) return [];
+    return p.requisitos?.items ?? TIPOS_DOCUMENTO.slice(0, 4).map((tipo) => requisitoBasico(tipo));
+  });
+  protected readonly avance = computed(() => {
+    const obligatorios = this.requisitos().filter((r) => r.obligatorio);
+    if (!obligatorios.length) return null;
+    return {
+      listos: obligatorios.filter((r) => r.estado === 'aprobado').length,
+      total: obligatorios.length,
+    };
+  });
   protected readonly form = this.fb.group({
     placa: [
       '',
@@ -175,8 +227,9 @@ export class PerfilPage {
     }
   }
 
-  /** Al subir un documento, un conductor rechazado vuelve a revisión: se recarga el perfil. */
+  /** Al subir un documento cambia su estado (y un rechazado o suspendido vuelve a revisión). */
   protected alSubirDocumento(): void {
-    if (this.perfil.perfil()?.estadoAprobacion === 'Rechazado') void this.perfil.cargar(true);
+    this.toast.exito('Documento recibido: queda en revisión');
+    void this.perfil.cargar(true);
   }
 }

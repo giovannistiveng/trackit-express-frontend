@@ -28,7 +28,7 @@ async function req(metodo: string, url: string) {
 }
 
 const DESGLOSE = {
-  categoria: 'Motocarro',
+  categoria: 'Furgoneta',
   banderazo: 4000,
   distancia: 4750,
   tiempo: 800,
@@ -47,7 +47,7 @@ describe('mappers de tarifas y zonas', () => {
       tarifa_total: 11600,
       duracion_estimada_min: 10,
       distancia_exacta: true,
-      categoria: 'Motocarro',
+      categoria: 'Furgoneta',
       zona: { id_zona: 4, nombre_zona: 'Silvania' },
       zona_origen: { id_zona: 1, nombre_zona: 'Casco Urbano' },
       desglose: DESGLOSE,
@@ -60,7 +60,7 @@ describe('mappers de tarifas y zonas', () => {
       destino_coords: null,
     });
     expect(c).toMatchObject({
-      categoria: 'Motocarro',
+      categoria: 'Furgoneta',
       zona: { id: 4, nombre: 'Silvania' },
       zonaOrigen: { id: 1, nombre: 'Casco Urbano' },
       desglose: { recargoZona: 2000, minimoAplicado: false, total: 11600 },
@@ -122,7 +122,7 @@ describe('adaptadores de cotización, geocodificación y tarifas', () => {
       origen: 'a',
       destino: 'b',
       idZona: null,
-      categoria: 'Camioneta',
+      categoria: 'Furgoneta',
       origenCoords: FUSA,
       destinoCoords: FUSA,
     });
@@ -130,7 +130,7 @@ describe('adaptadores de cotización, geocodificación y tarifas', () => {
     expect(r.request.body).toEqual({
       origen: 'a',
       destino: 'b',
-      categoria: 'Camioneta',
+      categoria: 'Furgoneta',
       origen_coords: FUSA,
       destino_coords: FUSA,
     });
@@ -226,7 +226,7 @@ describe('adaptadores de cotización, geocodificación y tarifas', () => {
     expect((await u).activa).toBe(false);
     const t = a.tarifasVehiculo();
     (await req('GET', '/publico/tarifas')).flush({
-      tarifas: [{ categoria: 'Camioneta', banderazo: 1, por_km: 2, por_minuto: 3, minimo: 4 }],
+      tarifas: [{ categoria: 'Furgoneta', banderazo: 1, por_km: 2, por_minuto: 3, minimo: 4 }],
     });
     expect((await t)[0].porMinuto).toBe(3);
     const g = a.actualizarTarifaVehiculo({

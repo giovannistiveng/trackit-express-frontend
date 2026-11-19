@@ -24,9 +24,7 @@ export interface Camaras {
 export const CAMARAS = new InjectionToken<Camaras | null>('CAMARAS', {
   providedIn: 'root',
   factory: () =>
-    typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function'
-      ? navigator.mediaDevices
-      : null,
+    typeof navigator.mediaDevices?.getUserMedia === 'function' ? navigator.mediaDevices : null,
 });
 
 export type EstadoCamara = 'iniciando' | 'lista' | 'previa' | 'error';
@@ -34,7 +32,7 @@ export type EstadoCamara = 'iniciando' | 'lista' | 'previa' | 'error';
 /** Mensaje para cada error de getUserMedia. */
 export function mensajeErrorCamara(
   e: unknown,
-  seguro = typeof isSecureContext === 'boolean' ? isSecureContext : true,
+  seguro = globalThis.isSecureContext ?? true,
 ): string {
   const nombre = (e as { name?: string })?.name;
   if (!seguro) return 'La cámara solo funciona en una conexión segura (https o localhost).';
@@ -103,7 +101,9 @@ export function mensajeErrorCamara(
             [class]="
               guia() === 'documento'
                 ? 'aspect-[1.586] w-[88%] max-w-xl'
-                : 'aspect-square w-[70%] max-w-md'
+                : guia() === 'selfie'
+                  ? 'aspect-[3/4] w-[58%] max-w-xs !rounded-[50%]'
+                  : 'aspect-square w-[70%] max-w-md'
             "
           ></div>
         </div>
@@ -179,7 +179,7 @@ export function mensajeErrorCamara(
 })
 export class CamaraComponent implements AfterViewInit, OnDestroy {
   readonly titulo = input('Tomar foto');
-  readonly guia = input<'documento' | 'entrega'>('documento');
+  readonly guia = input<'documento' | 'entrega' | 'selfie'>('documento');
   readonly prefijo = input('foto');
   readonly foto = output<File>();
   readonly cerrar = output<void>();
@@ -191,10 +191,13 @@ export class CamaraComponent implements AfterViewInit, OnDestroy {
   protected readonly previa = signal<string | null>(null);
   protected readonly frontal = signal(false);
   protected readonly variasCamaras = signal(false);
-  protected readonly ayuda = computed(() =>
-    this.guia() === 'documento'
-      ? 'Encuadra el documento completo dentro del recuadro, con buena luz.'
-      : 'Toma el paquete entregado y, si puedes, la puerta o la fachada.',
+  protected readonly ayuda = computed(
+    () =>
+      ({
+        documento: 'Encuadra el documento completo dentro del recuadro, con buena luz.',
+        selfie: 'Pon tu cara en el óvalo y sostén la cédula junto a ella.',
+        entrega: 'Toma la carga completa y, si puedes, la puerta o la fachada.',
+      })[this.guia()],
   );
   private stream: MediaStream | null = null;
   private archivo: File | null = null;
@@ -205,6 +208,8 @@ export class CamaraComponent implements AfterViewInit, OnDestroy {
 
   /** Carga inicial (asíncrona); el hook de Angular no espera promesas. */
   async inicializar(): Promise<void> {
+    // La selfie se toma con la cámara frontal
+    if (this.guia() === 'selfie') this.frontal.set(true);
     await this.abrir();
     if (this.camaras && this.estado() === 'lista') {
       try {

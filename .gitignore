@@ -46,3 +46,8 @@ Thumbs.db
 # SonarQube
 .scannerwork/
 reports/
+
+# Pruebas E2E (Playwright)
+/e2e/resultados/
+/e2e/reporte/
+/playwright/.cache/

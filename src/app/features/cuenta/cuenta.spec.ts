@@ -98,3 +98,58 @@ describe('CuentaPage', () => {
     expect(el.textContent).toContain('El teléfono debe tener entre 7 y 15 dígitos.');
   });
 });
+
+describe('CuentaPage: casos de borde', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('sin fecha de registro, nombre vacío y mientras guarda lo indica (sin repetir)', async () => {
+    const p = puerto();
+    p.perfil.mockImplementation(async () => ({
+      ...PERFIL,
+      fechaRegistro: null as unknown as Date,
+    }));
+    const r = await montarCuenta(p);
+    expect(r.el.textContent).not.toContain('Cliente desde');
+    escribir(q(r.el, '#nombre'), '');
+    botonPorTexto(r.el, /Guardar cambios/).click();
+    await r.estable();
+    expect(r.el.textContent).toContain('Escribe tu nombre (3 a 120 caracteres).');
+    escribir(q(r.el, '#nombre'), 'Clara Gómez');
+    let responder!: (x: PerfilUsuario) => void;
+    p.actualizar.mockImplementation(() => new Promise((ok) => (responder = ok)));
+    botonPorTexto(r.el, /Guardar cambios/).click();
+    r.fixture.detectChanges();
+    expect(r.el.textContent).toContain('Guardando…');
+    await r.c.guardarDatos();
+    expect(p.actualizar).toHaveBeenCalledTimes(1);
+    responder({ ...PERFIL, nombre: 'Clara Gómez', telefono: null });
+    await r.estable();
+    expect(q<HTMLInputElement>(r.el, '#telefono').value).toBe('');
+  });
+
+  it('cambiar la contraseña: mientras actualiza lo indica y otros errores se traducen', async () => {
+    const p = puerto();
+    const r = await montarCuenta(p);
+    escribir(q(r.el, '#actual'), 'Actual123');
+    escribir(q(r.el, '#nueva'), 'Nueva12345');
+    let terminar!: () => void;
+    p.cambiarPassword.mockImplementation(
+      () => new Promise<undefined>((ok) => (terminar = () => ok(undefined))),
+    );
+    botonPorTexto(r.el, /Actualizar contraseña/).click();
+    r.fixture.detectChanges();
+    expect(r.el.textContent).toContain('Actualizando…');
+    await r.c.cambiarClave();
+    expect(p.cambiarPassword).toHaveBeenCalledTimes(1);
+    terminar();
+    await r.estable();
+    escribir(q(r.el, '#actual'), 'Actual123');
+    escribir(q(r.el, '#nueva'), 'Nueva12345');
+    p.cambiarPassword.mockImplementation(rechaza(new ApiError(500, 'Error interno')));
+    botonPorTexto(r.el, /Actualizar contraseña/).click();
+    await r.estable();
+    expect(r.el.querySelector('[role="alert"]')?.textContent).not.toContain(
+      'actual no es correcta',
+    );
+  });
+});

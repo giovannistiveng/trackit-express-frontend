@@ -149,10 +149,10 @@ describe('Adaptadores HTTP', () => {
         destino: 'b',
         tipoCarga: 'c',
         idZona: 1,
-        categoria: 'Motocarro',
+        categoria: 'Furgoneta',
       });
       const req = await esperar(ctrl, 'POST', `${API_BASE}/envios/crear`);
-      expect(req.request.body.categoria).toBe('Motocarro');
+      expect(req.request.body.categoria).toBe('Furgoneta');
       req.flush(API.crear);
     });
 
@@ -229,18 +229,10 @@ describe('Adaptadores HTTP', () => {
       expect(await p2).toBeNull();
     });
 
-    it('debería iniciar la ruta con POST /envios/:id/iniciar-ruta', async () => {
-      const p = TestBed.inject(http.HttpDriverServiceAdapter).iniciarRuta(1);
-      (await esperar(ctrl, 'POST', `${API_BASE}/envios/1/iniciar-ruta`)).flush({
-        envio: apiEnvio({ estado: 'En Ruta' }),
-      });
-      expect((await p).estado).toBe('En Ruta');
-    });
-
     it('debería rechazar ids inválidos sin llamar a la API', async () => {
       const a = TestBed.inject(http.HttpDriverServiceAdapter);
       await expect(a.aceptar(0)).rejects.toMatchObject({ status: 400 });
-      await expect(a.iniciarRuta(-1)).rejects.toMatchObject({ status: 400 });
+      await expect(a.llegadaRecogida(-1)).rejects.toMatchObject({ status: 400 });
     });
   });
 
@@ -388,13 +380,13 @@ describe('Adaptadores HTTP', () => {
       (await esperar(ctrl, 'GET', `${API_BASE}/conductores/me`)).flush({
         id_conductor: 3,
         estado_aprobacion: 'Aprobado',
-        vehiculo: { id: 1, placa: 'ABC123', categoria: 'Camioneta' },
+        vehiculo: { id: 1, placa: 'ABC123', categoria: 'Furgoneta' },
       });
       expect(await p).toEqual({
         idConductor: 3,
         estadoAprobacion: 'Aprobado',
         motivoRechazo: null,
-        vehiculo: { id: 1, placa: 'ABC123', categoria: 'Camioneta' },
+        vehiculo: { id: 1, placa: 'ABC123', categoria: 'Furgoneta' },
       });
     });
 

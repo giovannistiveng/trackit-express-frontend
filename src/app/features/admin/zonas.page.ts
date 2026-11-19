@@ -5,22 +5,28 @@ import {
   computed,
   inject,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
+  CategoriaVehiculo,
   Coordenadas,
   DatosZona,
+  SugerenciaDireccion,
   TarifaVehiculo,
   VIAJES_EJEMPLO,
   Zona,
+  areaKm2,
   precioEstimado,
   tarifaValida,
+  zonaDePunto,
+  zonasSuperpuestas,
 } from '../../core/domain';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
-import { AdminOperationsPort, LoggerPort } from '../../core/ports';
+import { AdminOperationsPort, GeoPort, LoggerPort } from '../../core/ports';
 import { CopPipe } from '../../shared/pipes/cop.pipe';
 import { EstadoCargaComponent, FaseCarga, faseDe } from '../../shared/ui/estado-carga.component';
-import { IconoComponent } from '../../shared/ui/icono.component';
+import { IconoComponent, NombreIcono } from '../../shared/ui/icono.component';
 import { ModalComponent } from '../../shared/ui/modal.component';
 import { SelectorMapaComponent } from '../../shared/ui/selector-mapa.component';
 import { ToastService } from '../../shared/ui/toast.service';
@@ -30,6 +36,13 @@ import { desplazarA } from '../../shared/util/desplazar';
 export const TARIFA_MAXIMA = 200_000;
 export const RADIO_MINIMO_KM = 0.5;
 export const RADIO_MAXIMO_KM = 30;
+/** Atajos de radio: barrio, casco urbano, municipio, región rural. */
+export const RADIOS_RAPIDOS = [1, 3, 5, 10, 20];
+
+const ICONO_VEHICULO: Record<CategoriaVehiculo, NombreIcono> = {
+  'Moto Express': 'bike',
+  Furgoneta: 'truck',
+};
 
 interface Borrador {
   id: number | null;
@@ -85,15 +98,12 @@ const CAMPOS_TARIFA: {
           <h2 id="titulo-tarifas" class="flex items-center gap-2">
             <ti-icono nombre="calculator" class="text-marca" /> Tarifas por vehículo
           </h2>
-          <div class="mt-4 grid gap-4 md:grid-cols-3">
+          <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             @for (t of tarifas(); track t.categoria; let i = $index) {
               <form class="tarjeta flex flex-col p-5" (ngSubmit)="guardarTarifa(i)">
                 <p class="flex items-center gap-2 font-bold">
                   <span class="grid size-9 place-items-center rounded-xl bg-marca-suave text-marca">
-                    <ti-icono
-                      [nombre]="t.categoria === 'Camioneta' ? 'truck' : 'bike'"
-                      class="size-5"
-                    />
+                    <ti-icono [nombre]="iconoVehiculo[t.categoria]" class="size-5" />
                   </span>
                   {{ t.categoria }}
                 </p>
@@ -172,10 +182,25 @@ const CAMPOS_TARIFA: {
               <h2 id="titulo-zonas" class="flex items-center gap-2">
                 <ti-icono nombre="layers" class="text-marca" /> Zonas de cobertura
               </h2>
-              <p class="mt-1 text-sm text-piedra">
-                Cada zona es un círculo en el mapa. Un punto pertenece a la zona más pequeña que lo
-                contiene; fuera de todas, no hay servicio. Se cobra el mayor recargo entre el origen
-                y el destino.
+              <p class="mt-1 max-w-2xl text-sm text-piedra">
+                Cada zona es un círculo. Un punto pertenece a la zona activa más pequeña que lo
+                contiene; fuera de todas no hay servicio. Se cobra el mayor recargo entre origen y
+                destino.
+              </p>
+              <p class="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+                <span class="chip bg-bosque-suave text-bosque">{{
+                  plural(resumen().activas, 'activa', 'activas')
+                }}</span>
+                @if (resumen().apagadas > 0) {
+                  <span class="chip bg-linea text-piedra">{{
+                    plural(resumen().apagadas, 'desactivada', 'desactivadas')
+                  }}</span>
+                }
+                @if (resumen().sinUbicar > 0) {
+                  <span class="chip bg-alerta-suave text-alerta"
+                    >{{ resumen().sinUbicar }} sin ubicar</span
+                  >
+                }
               </p>
             </div>
             <button
@@ -190,23 +215,129 @@ const CAMPOS_TARIFA: {
 
           <div class="mt-4 grid items-start gap-5 lg:grid-cols-[1fr_24rem]">
             <div class="lg:sticky lg:top-24">
+              <form class="relative mb-3 flex gap-2" (ngSubmit)="buscarLugar()" role="search">
+                <label for="zona-buscar" class="sr-only">Buscar un municipio, vereda o lugar</label>
+                <input
+                  id="zona-buscar"
+                  name="buscar"
+                  class="campo"
+                  maxlength="120"
+                  autocomplete="off"
+                  placeholder="Busca un municipio, vereda o lugar"
+                  [ngModel]="textoBusqueda()"
+                  (ngModelChange)="textoBusqueda.set($event)"
+                />
+                <button
+                  type="submit"
+                  class="btn-secundario shrink-0"
+                  [disabled]="buscando() || textoBusqueda().trim().length < 3"
+                  aria-label="Buscar en el mapa"
+                >
+                  <ti-icono
+                    [nombre]="buscando() ? 'loader' : 'search'"
+                    [class]="buscando() ? 'animate-spin' : ''"
+                  />
+                </button>
+                <button
+                  type="button"
+                  class="btn-secundario shrink-0"
+                  (click)="mapa().verTodas()"
+                  title="Ver todas las zonas"
+                  aria-label="Ver todas las zonas"
+                >
+                  <ti-icono nombre="maximize" />
+                </button>
+                @if (resultados().length > 0) {
+                  <ul
+                    class="absolute inset-x-0 top-full z-[500] mt-1 max-h-64 overflow-y-auto rounded-xl border border-linea bg-papel py-1 shadow-[var(--shadow-elevada)]"
+                  >
+                    @for (r of resultados(); track r.detalle) {
+                      <li>
+                        <button
+                          type="button"
+                          class="flex w-full gap-3 px-3 py-2 text-left hover:bg-crema"
+                          (click)="irALugar(r)"
+                        >
+                          <ti-icono nombre="map-pin" class="mt-0.5 size-4 shrink-0 text-marca" />
+                          <span class="min-w-0">
+                            <span class="block truncate font-semibold">{{ r.nombre }}</span>
+                            <span class="block truncate text-xs text-piedra">{{ r.detalle }}</span>
+                          </span>
+                        </button>
+                      </li>
+                    }
+                  </ul>
+                }
+              </form>
+              @if (avisoBusqueda()) {
+                <p class="mb-2 text-sm text-piedra" role="status">{{ avisoBusqueda() }}</p>
+              }
+
               <ti-selector-mapa
+                #selectorMapa
                 [zonas]="zonas()"
                 [idZonaActiva]="borrador()?.id ?? null"
-                [punto]="borrador()?.centro ?? null"
+                [punto]="borrador() ? borrador()!.centro : prueba()"
                 [radioKm]="borrador()?.radioKm ?? null"
-                alto="h-80 sm:h-[30rem]"
+                alto="h-80 sm:h-[32rem]"
                 [etiqueta]="
                   borrador()
                     ? 'Mapa: haz clic para mover el centro de la zona'
-                    : 'Mapa de las zonas de cobertura'
+                    : 'Mapa de cobertura: haz clic para probar un punto'
                 "
-                (elegir)="moverCentro($event)"
+                (elegir)="alElegirEnMapa($event)"
               />
+
               @if (borrador()) {
                 <p class="mt-2 flex items-center gap-2 text-sm font-semibold text-marca">
                   <ti-icono nombre="crosshair" class="size-4" /> Toca el mapa o arrastra el marcador
                   para ubicar el centro de la zona.
+                </p>
+              } @else if (prueba(); as p) {
+                @let zonaPrueba = zonaEn(p);
+                <div
+                  class="mt-3 flex flex-wrap items-center gap-3 rounded-2xl border p-3"
+                  [class]="
+                    zonaPrueba
+                      ? 'border-bosque/30 bg-bosque-suave'
+                      : 'border-alerta/30 bg-alerta-suave'
+                  "
+                  role="status"
+                >
+                  <ti-icono
+                    [nombre]="zonaPrueba ? 'circle-check' : 'circle-x'"
+                    class="size-5 shrink-0"
+                    [class]="zonaPrueba ? 'text-bosque' : 'text-alerta'"
+                  />
+                  <p class="min-w-0 flex-1 text-sm">
+                    @if (zonaPrueba; as z) {
+                      Este punto tiene servicio en <strong>{{ z.nombre }}</strong>
+                      <span class="text-piedra">
+                        ({{
+                          z.tarifaBase > 0 ? 'recargo ' + (z.tarifaBase | cop) : 'sin recargo'
+                        }})</span
+                      >
+                    } @else {
+                      <strong>Sin cobertura.</strong> Un cliente aquí no podría pedir servicio.
+                    }
+                  </p>
+                  @if (!zonaPrueba) {
+                    <button type="button" class="btn-texto" (click)="nuevaZona(p)">
+                      <ti-icono nombre="plus" class="size-4" /> Crear zona aquí
+                    </button>
+                  }
+                  <button
+                    type="button"
+                    class="btn-texto text-piedra"
+                    (click)="prueba.set(null)"
+                    aria-label="Quitar el punto de prueba"
+                  >
+                    <ti-icono nombre="x" class="size-4" />
+                  </button>
+                </div>
+              } @else {
+                <p class="mt-2 text-sm text-piedra">
+                  Toca cualquier punto del mapa para comprobar si tiene cobertura.
                 </p>
               }
             </div>
@@ -215,7 +346,7 @@ const CAMPOS_TARIFA: {
               @if (borrador(); as b) {
                 <form
                   class="tarjeta space-y-4 border-2 border-marca p-5"
-                  (ngSubmit)="guardarZona()"
+                  (ngSubmit)="guardarZona(b)"
                   novalidate
                 >
                   <h3 class="font-bold">{{ b.id ? 'Editar ' + b.nombre : 'Nueva zona' }}</h3>
@@ -226,43 +357,69 @@ const CAMPOS_TARIFA: {
                       name="nombre"
                       class="campo"
                       maxlength="100"
+                      placeholder="Ej.: Vereda La Aguadita"
                       [ngModel]="b.nombre"
                       (ngModelChange)="editar({ nombre: $event })"
                     />
                   </div>
-                  <div class="grid grid-cols-2 gap-3">
-                    <div>
-                      <label for="zona-recargo" class="etiqueta">Recargo</label>
-                      <div class="relative">
-                        <span
-                          class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-piedra"
-                          >$</span
-                        >
-                        <input
-                          id="zona-recargo"
-                          name="recargo"
-                          type="number"
-                          min="0"
-                          step="500"
-                          class="campo numeros pl-7"
-                          [ngModel]="b.tarifaBase"
-                          (ngModelChange)="editar({ tarifaBase: +$event })"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label for="zona-radio" class="etiqueta">Radio: {{ b.radioKm }} km</label>
+                  <div>
+                    <label for="zona-recargo" class="etiqueta">Recargo por servicio</label>
+                    <div class="relative">
+                      <span
+                        class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-piedra"
+                        >$</span
+                      >
                       <input
-                        id="zona-radio"
-                        name="radio"
-                        type="range"
-                        class="mt-3 w-full accent-[var(--color-marca)]"
-                        [min]="radioMin"
-                        [max]="radioMax"
-                        step="0.5"
-                        [ngModel]="b.radioKm"
-                        (ngModelChange)="editar({ radioKm: +$event })"
+                        id="zona-recargo"
+                        name="recargo"
+                        type="number"
+                        min="0"
+                        step="500"
+                        class="campo numeros pl-7"
+                        [ngModel]="b.tarifaBase"
+                        (ngModelChange)="editar({ tarifaBase: +$event })"
                       />
+                    </div>
+                    <p class="ayuda">Úsalo para zonas lejanas o de acceso difícil.</p>
+                  </div>
+                  <div>
+                    <label for="zona-radio" class="etiqueta"
+                      >Radio: <span class="numeros">{{ b.radioKm }} km</span>
+                      <span class="font-normal text-piedra">
+                        (unos {{ area(b.radioKm) }} km²)</span
+                      ></label
+                    >
+                    <input
+                      id="zona-radio"
+                      name="radio"
+                      type="range"
+                      class="mt-2 w-full accent-[var(--color-marca)]"
+                      [min]="radioMin"
+                      [max]="radioMax"
+                      step="0.5"
+                      [ngModel]="b.radioKm"
+                      (ngModelChange)="editar({ radioKm: +$event })"
+                    />
+                    <div
+                      class="mt-2 flex flex-wrap gap-1.5"
+                      role="group"
+                      aria-label="Radios rápidos"
+                    >
+                      @for (r of radiosRapidos; track r) {
+                        <button
+                          type="button"
+                          class="chip border"
+                          [class]="
+                            b.radioKm === r
+                              ? 'border-marca bg-marca text-white'
+                              : 'border-linea bg-papel hover:border-marca'
+                          "
+                          [attr.aria-pressed]="b.radioKm === r"
+                          (click)="editar({ radioKm: r })"
+                        >
+                          {{ r }} km
+                        </button>
+                      }
                     </div>
                   </div>
                   <div>
@@ -274,6 +431,7 @@ const CAMPOS_TARIFA: {
                       name="descripcion"
                       class="campo"
                       maxlength="200"
+                      placeholder="Ej.: carretera destapada después del puente"
                       [ngModel]="b.descripcion"
                       (ngModelChange)="editar({ descripcion: $event })"
                     />
@@ -290,11 +448,17 @@ const CAMPOS_TARIFA: {
                   </label>
                   <p class="text-sm" [class]="b.centro ? 'text-piedra' : 'text-alerta'">
                     @if (b.centro) {
-                      Centro: {{ b.centro.lat.toFixed(5) }}, {{ b.centro.lon.toFixed(5) }}
+                      Centro en {{ b.centro.lat.toFixed(5) }}, {{ b.centro.lon.toFixed(5) }}
                     } @else {
-                      Falta el centro: tócalo en el mapa.
+                      Falta el centro: tócalo en el mapa o busca el lugar.
                     }
                   </p>
+                  @if (superpuestas().length > 0) {
+                    <p class="rounded-xl bg-aviso-suave px-3 py-2 text-sm" role="status">
+                      Se cruza con {{ nombresSuperpuestas() }}. En el cruce manda la zona más
+                      pequeña.
+                    </p>
+                  }
                   @if (errorZona()) {
                     <p
                       class="rounded-xl bg-alerta-suave px-3 py-2 text-sm font-semibold text-alerta"
@@ -324,29 +488,41 @@ const CAMPOS_TARIFA: {
                     class="tarjeta flex items-center gap-3 p-3"
                     [class.opacity-60]="z.activa === false"
                   >
-                    <span
-                      class="grid size-10 shrink-0 place-items-center rounded-xl"
-                      [class]="
-                        z.activa === false ? 'bg-linea text-piedra' : 'bg-bosque-suave text-bosque'
-                      "
+                    <button
+                      type="button"
+                      class="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      (click)="verZona(z)"
+                      [disabled]="!z.centro"
+                      [attr.aria-label]="'Ver ' + z.nombre + ' en el mapa'"
                     >
-                      <ti-icono nombre="circle-dot" class="size-5" />
-                    </span>
-                    <div class="min-w-0 flex-1">
-                      <p class="truncate font-semibold">{{ z.nombre }}</p>
-                      <p class="text-xs text-piedra">
-                        {{ z.tarifaBase > 0 ? 'Recargo ' + (z.tarifaBase | cop) : 'Sin recargo' }}
-                        @if (z.radioKm) {
-                          · {{ z.radioKm }} km
-                        }
-                        @if (!z.centro) {
-                          · <span class="text-alerta">sin ubicar en el mapa</span>
-                        }
-                        @if (z.activa === false) {
-                          · desactivada
-                        }
-                      </p>
-                    </div>
+                      <span
+                        class="grid size-10 shrink-0 place-items-center rounded-xl"
+                        [class]="
+                          z.activa === false
+                            ? 'bg-linea text-piedra'
+                            : 'bg-bosque-suave text-bosque'
+                        "
+                      >
+                        <ti-icono nombre="circle-dot" class="size-5" />
+                      </span>
+                      <span class="min-w-0">
+                        <span class="block truncate font-semibold">{{ z.nombre }}</span>
+                        <span class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-piedra">
+                          <span>{{
+                            z.tarifaBase > 0 ? 'Recargo ' + (z.tarifaBase | cop) : 'Sin recargo'
+                          }}</span>
+                          @if (z.radioKm) {
+                            <span>{{ z.radioKm }} km de radio</span>
+                          }
+                          @if (!z.centro) {
+                            <span class="text-alerta">Sin ubicar en el mapa</span>
+                          }
+                          @if (z.activa === false) {
+                            <span>Desactivada</span>
+                          }
+                        </span>
+                      </span>
+                    </button>
                     <button
                       type="button"
                       class="btn-texto"
@@ -354,7 +530,7 @@ const CAMPOS_TARIFA: {
                       [disabled]="!!borrador()"
                       [attr.aria-label]="'Editar la zona ' + z.nombre"
                     >
-                      <ti-icono nombre="pencil" class="size-4" /> Editar
+                      <ti-icono nombre="pencil" class="size-4" />
                     </button>
                     <button
                       type="button"
@@ -363,11 +539,14 @@ const CAMPOS_TARIFA: {
                       [disabled]="!!borrador()"
                       [attr.aria-label]="'Eliminar la zona ' + z.nombre"
                     >
-                      <ti-icono nombre="trash" class="size-4" /> Eliminar
+                      <ti-icono nombre="trash" class="size-4" />
                     </button>
                   </li>
                 } @empty {
-                  <li class="text-sm text-piedra">Aún no hay zonas. Crea la primera.</li>
+                  <li class="rounded-2xl border border-dashed border-linea p-5 text-sm text-piedra">
+                    Aún no hay zonas, así que nadie puede pedir servicio. Busca el municipio y crea
+                    la primera.
+                  </li>
                 }
               </ul>
             </div>
@@ -416,6 +595,9 @@ export class ZonasPage implements OnInit {
   private readonly mapper = inject(ErrorMessageMapper);
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
+  private readonly geo = inject(GeoPort);
+  // Por referencia de plantilla (#selectorMapa): la consulta por clase deja una función sin ejecutar
+  protected readonly mapa = viewChild.required<SelectorMapaComponent>('selectorMapa');
   protected readonly porBorrar = signal<Zona | null>(null);
   protected readonly borrando = signal(false);
 
@@ -423,6 +605,9 @@ export class ZonasPage implements OnInit {
   protected readonly ejemplos = VIAJES_EJEMPLO;
   protected readonly radioMin = RADIO_MINIMO_KM;
   protected readonly radioMax = RADIO_MAXIMO_KM;
+  protected readonly radiosRapidos = RADIOS_RAPIDOS;
+  protected readonly iconoVehiculo = ICONO_VEHICULO;
+  protected readonly area = areaKm2;
 
   protected readonly zonas = signal<Zona[]>([]);
   protected readonly tarifas = signal<TarifaVehiculo[]>([]);
@@ -433,6 +618,37 @@ export class ZonasPage implements OnInit {
   protected readonly borrador = signal<Borrador | null>(null);
   protected readonly guardandoZona = signal(false);
   protected readonly errorZona = signal('');
+  /** Punto que el administrador toca para comprobar la cobertura. */
+  protected readonly prueba = signal<Coordenadas | null>(null);
+  protected readonly textoBusqueda = signal('');
+  protected readonly resultados = signal<SugerenciaDireccion[]>([]);
+  protected readonly buscando = signal(false);
+  protected readonly avisoBusqueda = signal('');
+
+  /** Zona que cubre el punto de prueba (o null: sin cobertura). */
+  protected zonaEn(p: Coordenadas): Zona | null {
+    return zonaDePunto(this.zonas(), p);
+  }
+
+  protected readonly superpuestas = computed(() => {
+    const b = this.borrador();
+    return b?.centro ? zonasSuperpuestas(this.zonas(), b.centro, b.radioKm, b.id) : [];
+  });
+
+  protected readonly nombresSuperpuestas = computed(() =>
+    this.superpuestas()
+      .map((z) => z.nombre)
+      .join(', '),
+  );
+
+  protected readonly resumen = computed(() => {
+    const zonas = this.zonas();
+    return {
+      activas: zonas.filter((z) => z.activa !== false).length,
+      apagadas: zonas.filter((z) => z.activa === false).length,
+      sinUbicar: zonas.filter((z) => !z.centro).length,
+    };
+  });
 
   protected readonly fase = computed<FaseCarga>(() =>
     faseDe({ cargando: this.cargando(), error: this.error() }),
@@ -460,7 +676,7 @@ export class ZonasPage implements OnInit {
   // ------------------------------------------------------------ Tarifas por vehículo
 
   protected idCampo(t: TarifaVehiculo, clave: string): string {
-    return `tarifa-${t.categoria.replace(/\s+/g, '-').toLowerCase()}-${clave}`;
+    return `tarifa-${t.categoria.replaceAll(/\s+/g, '-').toLowerCase()}-${clave}`;
   }
 
   protected ejemplo(t: TarifaVehiculo, km: number, minutos: number): number {
@@ -534,13 +750,55 @@ export class ZonasPage implements OnInit {
     }
   }
 
-  protected nuevaZona(): void {
+  protected plural(n: number, uno: string, varios: string): string {
+    return `${n} ${n === 1 ? uno : varios}`;
+  }
+
+  // ------------------------------------------------------------ Mapa: búsqueda y prueba
+
+  async buscarLugar(): Promise<void> {
+    const texto = this.textoBusqueda().trim();
+    if (texto.length < 3 || this.buscando()) return;
+    this.buscando.set(true);
+    this.avisoBusqueda.set('');
+    try {
+      const r = await this.geo.buscar(texto);
+      this.resultados.set(r);
+      if (r.length === 0)
+        this.avisoBusqueda.set('No encontramos ese lugar. Prueba con el municipio.');
+    } catch (e) {
+      this.avisoBusqueda.set(this.mapper.traducir(e));
+    } finally {
+      this.buscando.set(false);
+    }
+  }
+
+  protected irALugar(r: SugerenciaDireccion): void {
+    this.resultados.set([]);
+    this.textoBusqueda.set(r.nombre);
+    // Editando: el lugar pasa a ser el centro de la zona. Si no, se prueba su cobertura.
+    if (this.borrador()) this.editar({ centro: r.coords });
+    else this.prueba.set(r.coords);
+    this.mapa().irA(r.coords, 14);
+  }
+
+  protected alElegirEnMapa(p: Coordenadas): void {
+    if (this.borrador()) this.editar({ centro: p });
+    else this.prueba.set(p);
+  }
+
+  protected verZona(z: Zona): void {
+    this.mapa().enfocarZona(z);
+  }
+
+  protected nuevaZona(centro: Coordenadas | null = null): void {
     this.errorZona.set('');
+    this.prueba.set(null);
     this.borrador.set({
       id: null,
       nombre: '',
       tarifaBase: 0,
-      centro: null,
+      centro,
       radioKm: 3,
       descripcion: '',
       activa: true,
@@ -550,6 +808,7 @@ export class ZonasPage implements OnInit {
 
   protected editarZona(z: Zona): void {
     this.errorZona.set('');
+    this.prueba.set(null);
     this.borrador.set({
       id: z.id,
       nombre: z.nombre,
@@ -566,16 +825,13 @@ export class ZonasPage implements OnInit {
   private mostrarEditor(): void {
     setTimeout(() => {
       desplazarA('titulo-zonas', 'start');
-      document.getElementById('zona-nombre')?.focus({ preventScroll: true });
+      document.querySelector<HTMLElement>('#zona-nombre')?.focus({ preventScroll: true });
     }, 50);
   }
 
   protected editar(cambios: Partial<Borrador>): void {
-    this.borrador.update((b) => (b ? { ...b, ...cambios } : b));
-  }
-
-  protected moverCentro(p: Coordenadas): void {
-    if (this.borrador()) this.editar({ centro: p });
+    // Solo se edita con el editor abierto (hay borrador)
+    this.borrador.update((b) => ({ ...(b as Borrador), ...cambios }));
   }
 
   protected cancelarZona(): void {
@@ -583,9 +839,8 @@ export class ZonasPage implements OnInit {
     this.errorZona.set('');
   }
 
-  async guardarZona(): Promise<void> {
-    const b = this.borrador();
-    if (!b || this.guardandoZona()) return;
+  async guardarZona(b: Borrador): Promise<void> {
+    if (this.guardandoZona()) return;
     const nombre = b.nombre.trim();
     if (nombre.length < 2) return this.errorZona.set('Escribe el nombre de la zona.');
     if (!Number.isFinite(b.tarifaBase) || b.tarifaBase < 0 || b.tarifaBase > TARIFA_MAXIMA)

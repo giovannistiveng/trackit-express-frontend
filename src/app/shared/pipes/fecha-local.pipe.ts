@@ -11,7 +11,7 @@ export function formatearFechaLocal(
   if (!valor) return '';
   const d = valor instanceof Date ? valor : new Date(valor);
   if (Number.isNaN(d.getTime())) return '';
-  const fecha = FECHA.format(d).replace(/ de /g, ' ').replace('.', '');
+  const fecha = FECHA.format(d).replaceAll(' de ', ' ').replace('.', '');
   if (formato === 'fecha') return fecha;
   if (formato === 'hora') return HORA.format(d);
   return `${fecha}, ${HORA.format(d)}`;

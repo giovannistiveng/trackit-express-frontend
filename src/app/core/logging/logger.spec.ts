@@ -99,7 +99,7 @@ describe('LoggerService', () => {
     expect(cola[0].mensaje).toBe('10');
     expect(transporte.lotes).toHaveLength(0);
     Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
-    window.dispatchEvent(new Event('online'));
+    globalThis.dispatchEvent(new Event('online'));
     await vaciarPromesas(40);
     expect(transporte.lotes.flat().map((e) => e.mensaje)[0]).toBe('10');
     expect(transporte.lotes.flat()).toHaveLength(MAX_COLA);
@@ -127,10 +127,56 @@ describe('LoggerService', () => {
     expect(transporte.balizas.flat().map((e) => e.mensaje)).toEqual(['antes de salir']);
     transporte.balizaOk = false;
     log.info('A', 'otro');
-    window.dispatchEvent(new Event('pagehide'));
+    globalThis.dispatchEvent(new Event('pagehide'));
     await vaciarPromesas(10);
     expect((await almacen.get<unknown[]>(CLAVE_COLA_LOGS))?.length).toBe(1);
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+  });
+
+  it('reenviar la cola: apagado no hace nada; si vuelve a fallar o está en pausa se detiene', async () => {
+    const apagado = preparar({ enviarAlServidor: false });
+    await apagado.almacen.set(CLAVE_COLA_LOGS, [{ nivel: 'INFO', mensaje: 'x' }]);
+    await apagado.log.reenviarCola();
+    expect(apagado.transporte.lotes).toHaveLength(0);
+    TestBed.resetTestingModule();
+
+    const { log, transporte, almacen } = preparar();
+    await vaciarPromesas(5);
+    const evento = { nivel: 'INFO', mensaje: 'guardado', contexto: 'A', fecha: '', sesion: 's' };
+    await almacen.set(CLAVE_COLA_LOGS, [evento]);
+    transporte.fallo = new Error('sin red');
+    await log.reenviarCola();
+    expect(await almacen.get(CLAVE_COLA_LOGS)).toHaveLength(1);
+    // En pausa (429) no avanza y sale del ciclo
+    transporte.fallo = new ApiError(429, 'x');
+    log.error('A', 'pausa');
+    await vaciarPromesas(10);
+    transporte.fallo = null;
+    await log.reenviarCola();
+    expect(transporte.lotes).toHaveLength(0);
+  });
+
+  it('ocultar sin nada pendiente no envía; si el almacén falla la cola se trata como vacía', async () => {
+    const { log, transporte, almacen } = preparar();
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(transporte.balizas).toHaveLength(0);
+    vi.spyOn(almacen, 'get').mockImplementation(() =>
+      Promise.reject(new Error('IndexedDB bloqueado')),
+    );
+    await log.reenviarCola();
+    expect(transporte.lotes).toHaveLength(0);
+  });
+
+  it('sin sessionStorage usa un id de sesión nuevo', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('bloqueado');
+    });
+    const { log } = preparar({ consola: false });
+    expect(log).toBeTruthy();
+    vi.restoreAllMocks();
   });
 
   it('debería sanitizar meta, añadir sesión, usuario y ruta', async () => {

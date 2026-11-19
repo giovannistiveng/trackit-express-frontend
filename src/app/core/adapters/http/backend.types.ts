@@ -52,6 +52,15 @@ export interface ApiEnvio {
   fecha_recogida?: string | null;
   paradas?: ApiParada[];
   chat_no_leidos?: number;
+  tipo_servicio?: string;
+  detalle_servicio?: ApiDetalleServicio | null;
+  etapa?: string;
+  pide_codigo_recogida?: boolean;
+  codigo_recogida?: string | null;
+  llegada_recogida_en?: string | null;
+  llegada_destino_en?: string | null;
+  bultos_recogidos?: number | null;
+  valor_compra?: number | string | null;
   conductor?: {
     nombre: string;
     vehiculo?: string | null;
@@ -60,13 +69,60 @@ export interface ApiEnvio {
   } | null;
 }
 
+export interface ApiDetalleServicio {
+  bultos?: number;
+  peso_kg?: number;
+  fragil?: boolean;
+  contacto_origen_nombre?: string;
+  contacto_origen_telefono?: string;
+  objetos?: string;
+  pisos_origen?: number;
+  pisos_destino?: number;
+  ascensor_origen?: boolean;
+  ascensor_destino?: boolean;
+  ayudantes?: number;
+  lista?: string;
+  presupuesto?: number;
+  insumo?: string;
+  acceso_destapado?: boolean;
+}
+
+export interface ApiDocumento {
+  id?: number;
+  tipo_documento: string;
+  url_archivo: string;
+  estado?: string;
+  motivo_rechazo?: string | null;
+  fecha_subida?: string | null;
+  fecha_vencimiento?: string | null;
+  dias_para_vencer?: number | null;
+}
+
+export interface ApiRequisitos {
+  completo: boolean;
+  pendientes: string[];
+  items: {
+    tipo: string;
+    nombre: string;
+    ayuda: string;
+    obligatorio: boolean;
+    vence: boolean;
+    estado: string;
+    verificar: { fuente: string; url: string } | null;
+    documento: ApiDocumento | null;
+  }[];
+}
+
 export interface ApiConductor {
   id_conductor: number;
   nombre: string;
   correo: string;
   estado_aprobacion: string;
   motivo_rechazo?: string | null;
-  documentos?: { tipo_documento: string; url_archivo: string }[];
+  documentos?: ApiDocumento[];
+  vehiculo?: { placa: string; categoria: string } | null;
+  requisitos?: ApiRequisitos;
+  consultas?: { fuente: string; url: string }[];
 }
 
 export interface ApiPunto {
@@ -145,6 +201,8 @@ export interface ApiDesglose {
   paradas?: number;
   recargo_paradas?: number;
   ida_y_vuelta?: boolean;
+  extras?: { concepto: string; valor: number }[];
+  recargo_acceso?: number;
   recargo_nocturno: number;
   minimo_aplicado: boolean;
   total: number;
@@ -196,6 +254,8 @@ export interface ApiLiquidacion {
 export interface ApiSeguimientoPublico {
   codigo: number;
   estado: string;
+  etapa?: string;
+  tipo_servicio?: string;
   origen: string;
   destino: string;
   destinatario: string | null;
@@ -229,4 +289,6 @@ export interface ApiCotizacion {
   recargo_nocturno_activo?: boolean;
   origen_coords?: { lat: number; lon: number } | null;
   destino_coords?: { lat: number; lon: number } | null;
+  tipo_servicio?: string;
+  vehiculo_minimo?: string;
 }

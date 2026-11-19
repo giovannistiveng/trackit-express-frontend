@@ -1,7 +1,7 @@
 import { FakeEntornoUbicacion, posicion } from '../../testing/fakes';
 import { ENTORNO_UBICACION } from './ui/campo-direccion.component';
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { FakeGeo, escribir, q } from '../../testing/fakes';
@@ -270,5 +270,177 @@ describe('SelectorMapaComponent', () => {
     fixture.detectChanges();
     c.irA({ lat: 4.3, lon: -74.3 });
     fixture.destroy();
+  });
+
+  it('antes de cargar no hace nada; sin zonas ubicadas vuelve al centro; arrastrar el punto lo emite', async () => {
+    const { c, fixture } = await montar(SelectorMapaComponent, {
+      inputs: {
+        zonas: [{ id: 3, nombre: 'Sin centro', tarifaBase: 0, centro: null }],
+        punto: { lat: 4.3369, lon: -74.3638 },
+      },
+    });
+    c.verTodas();
+    c.enfocarZona({
+      id: 1,
+      nombre: 'Centro',
+      tarifaBase: 0,
+      centro: { lat: 4.3, lon: -74.3 },
+      radioKm: 2,
+    });
+    await vi.waitFor(
+      () => expect(fixture.nativeElement.querySelector('.leaflet-container')).toBeTruthy(),
+      { timeout: 3000 },
+    );
+    await vi.waitFor(() => expect((c as unknown as { mapa: unknown }).mapa).toBeTruthy());
+    c.verTodas();
+    c.enfocarZona({ id: 3, nombre: 'Sin centro', tarifaBase: 0, centro: null });
+    c.enfocarZona({ id: 4, nombre: 'Sin radio', tarifaBase: 0, centro: { lat: 4.3, lon: -74.3 } });
+    fixture.componentRef.setInput('radioKm', 2);
+    fixture.detectChanges();
+    const emitidos: Coordenadas[] = [];
+    c.elegir.subscribe((p) => emitidos.push(p));
+    (c as unknown as { marcador: { fire(e: string): void } }).marcador.fire('dragend');
+    expect(emitidos).toEqual([{ lat: 4.3369, lon: -74.3638 }]);
+    fixture.destroy();
+  });
+});
+
+describe('CampoDireccionComponent: casos de borde', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const instancia = (fixture: ComponentFixture<unknown>) =>
+    fixture.debugElement.query(By.directive(CampoDireccionComponent))
+      .componentInstance as unknown as {
+      usarPuntoMapa(): Promise<void>;
+    };
+
+  it('muestra que busca, se elige con clic, flechas arriba y Escape cierra', async () => {
+    const { el, c, geo, paso, input } = await montarCampo();
+    let responder!: (r: (typeof PARQUE)[]) => void;
+    geo.buscar.mockImplementationOnce(() => new Promise((ok) => (responder = ok)));
+    escribir(input, 'Parque');
+    await paso(ESPERA_BUSQUEDA_MS);
+    expect(el.querySelector('ti-icono.animate-spin')).toBeTruthy();
+    responder([PARQUE, IGLESIA]);
+    await paso();
+    tecla(input, 'ArrowDown');
+    tecla(input, 'ArrowDown');
+    tecla(input, 'ArrowUp');
+    await paso();
+    expect(input.getAttribute('aria-activedescendant')).toMatch(/-0$/);
+    tecla(input, 'Escape');
+    await paso();
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+    tecla(input, 'Escape');
+    tecla(input, 'ArrowDown');
+    await paso();
+    const opcion = q(el, '[role="option"]');
+    opcion.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    opcion.click();
+    await paso();
+    expect(c.coords()).toEqual(PARQUE.coords);
+    geo.resultados = [IGLESIA];
+    escribir(input, 'Catedral');
+    await paso(ESPERA_BUSQUEDA_MS);
+    q(el, '[role="option"]').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+    await paso();
+    expect(c.coords()).not.toBeNull();
+    // Con la dirección ya ubicada, enfocar no reabre la lista
+    input.dispatchEvent(new Event('focus'));
+    await paso();
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('una búsqueda vieja (con éxito o con error) no reemplaza la más reciente', async () => {
+    const { el, geo, paso, input } = await montarCampo();
+    const pendientes: { ok: (r: (typeof PARQUE)[]) => void; mal: (e: unknown) => void }[] = [];
+    geo.buscar.mockImplementation(() => new Promise((ok, mal) => pendientes.push({ ok, mal })));
+    escribir(input, 'Parque');
+    await paso(ESPERA_BUSQUEDA_MS);
+    escribir(input, 'Parque prin');
+    await paso(ESPERA_BUSQUEDA_MS);
+    escribir(input, 'Catedral');
+    await paso(ESPERA_BUSQUEDA_MS);
+    pendientes[0].ok([PARQUE]);
+    pendientes[1].mal(new Error('red'));
+    await paso();
+    pendientes[2].ok([IGLESIA]);
+    await paso();
+    expect(el.textContent).toContain('Catedral');
+    expect(el.textContent).not.toContain('No pudimos buscar ahora');
+  });
+
+  it('mientras ubica lo indica; el mapa se cierra con Cancelar o con la X', async () => {
+    const { el, c, fixture, paso } = await montarCampo();
+    const entorno = TestBed.inject(ENTORNO_UBICACION) as FakeEntornoUbicacion;
+    const geo = TestBed.inject(GeoPort) as FakeGeo;
+    let nombrar!: (r: null) => void;
+    geo.inversa.mockImplementationOnce(() => new Promise((ok) => (nombrar = ok)));
+    entorno.respuestas = [posicion(4.34, -74.36)];
+    botonUbicacion(el).click();
+    await paso();
+    expect(el.textContent).toContain('Ubicando…');
+    nombrar(null);
+    await paso();
+    // Sin nombre para el punto se usan las coordenadas
+    expect(c.control.value).toBe(textoCoordenadas({ lat: 4.34, lon: -74.36 }));
+
+    const abrirMapa = () =>
+      (
+        Array.from(el.querySelectorAll('button')).find((b) =>
+          b.textContent?.includes('Elegir en el mapa'),
+        ) as HTMLButtonElement
+      ).click();
+    // Sin punto elegido no hace nada
+    c.coords.set(null);
+    await paso();
+    abrirMapa();
+    await paso();
+    await instancia(fixture).usarPuntoMapa();
+    expect(el.querySelector('[role="dialog"]')).toBeTruthy();
+    Array.from(el.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+      .find((b) => b.textContent?.includes('Cancelar'))!
+      .click();
+    await paso();
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+    abrirMapa();
+    await paso();
+    q<HTMLButtonElement>(el, '[role="dialog"] button[aria-label="Cerrar"]').click();
+    await paso();
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('con un punto del mapa que no se puede nombrar conserva lo escrito; mientras nombra lo indica', async () => {
+    const { el, c, fixture, geo, paso, input } = await montarCampo();
+    c.zonas = [];
+    fixture.componentRef.changeDetectorRef.markForCheck();
+    escribir(input, 'Finca La Esperanza');
+    await paso(ESPERA_BUSQUEDA_MS);
+    (
+      Array.from(el.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('Elegir en el mapa'),
+      ) as HTMLButtonElement
+    ).click();
+    await paso();
+    expect(q(el, '[role="dialog"]').textContent).not.toContain('círculos verdes');
+    fixture.debugElement
+      .query(By.directive(SelectorMapaComponent))
+      .componentInstance.elegir.emit({ lat: 4.3, lon: -74.3 });
+    await paso();
+    let fallar!: (e: unknown) => void;
+    geo.inversa.mockImplementationOnce(() => new Promise((_ok, mal) => (fallar = mal)));
+    Array.from(el.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+      .find((b) => b.textContent?.includes('Usar este punto'))!
+      .click();
+    await paso();
+    expect(el.querySelector('[role="dialog"] ti-icono.animate-spin')).toBeTruthy();
+    fallar(new Error('red'));
+    await paso();
+    expect(c.control.value).toBe('Finca La Esperanza');
   });
 });

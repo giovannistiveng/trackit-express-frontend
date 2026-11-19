@@ -38,8 +38,10 @@ export const MENU: Record<Rol, Enlace[]> = {
     { ruta: '/admin/auditoria', texto: 'Auditoría', icono: 'clipboard-list', movil: false },
   ],
   '2': [
-    { ruta: '/cliente/nuevo-envio', texto: 'Nuevo envío', icono: 'package' },
-    { ruta: '/cliente/envios', texto: 'Mis envíos', icono: 'list' },
+    { ruta: '/cliente/inicio', texto: 'Inicio', icono: 'home' },
+    { ruta: '/cliente/nuevo-envio', texto: 'Pedir', icono: 'plus' },
+    { ruta: '/cliente/envios', texto: 'Pedidos', icono: 'list' },
+    { ruta: '/cuenta', texto: 'Cuenta', icono: 'user' },
   ],
   '3': [
     { ruta: '/conductor/tablero', texto: 'Servicios', icono: 'map' },
@@ -105,14 +107,14 @@ const NOMBRE_ROL: Record<Rol, string> = { '1': 'Administración', '2': 'Cliente'
               <ti-icono nombre="chevron-down" class="hidden size-4 text-piedra lg:block" />
               <span class="sr-only">Menú de la cuenta</span>
             </button>
-            @if (menuUsuario()) {
+            @if (menuUsuario() && session.usuario(); as u) {
               <div
                 id="menu-usuario"
                 class="tarjeta absolute right-0 top-13 z-40 w-64 overflow-hidden py-2 shadow-[var(--shadow-elevada)] animate-[var(--animate-aparecer)]"
               >
                 <div class="border-b border-linea px-4 pb-3 pt-1">
-                  <p class="truncate font-semibold">{{ session.usuario()?.nombre }}</p>
-                  <p class="truncate text-sm text-piedra">{{ session.usuario()?.correo }}</p>
+                  <p class="truncate font-semibold">{{ u.nombre }}</p>
+                  <p class="truncate text-sm text-piedra">{{ u.correo }}</p>
                 </div>
                 <a
                   routerLink="/cuenta"
@@ -152,7 +154,8 @@ const NOMBRE_ROL: Record<Rol, string> = { '1': 'Administración', '2': 'Cliente'
     </header>
 
     <main id="contenido" class="pb-10 pt-6 sm:pb-14 sm:pt-8" tabindex="-1">
-      @if (session.usuario()?.correoVerificado === false && !avisoCerrado()) {
+      @let usuario = session.usuario();
+      @if (usuario && !usuario.correoVerificado && !avisoCerrado()) {
         <div class="contenedor-ancho mb-6">
           <div
             class="flex flex-wrap items-center gap-3 rounded-2xl border border-placa/60 bg-aviso-suave px-4 py-3 text-sm"
@@ -160,8 +163,8 @@ const NOMBRE_ROL: Record<Rol, string> = { '1': 'Administración', '2': 'Cliente'
           >
             <ti-icono nombre="mail" class="text-placa-oscuro" />
             <p class="min-w-0 flex-1">
-              Confirma tu correo <strong>{{ session.usuario()?.correo }}</strong> con el enlace que
-              te enviamos. Así podrás recuperar tu cuenta si olvidas la contraseña.
+              Confirma tu correo <strong>{{ usuario.correo }}</strong> con el enlace que te
+              enviamos. Así podrás recuperar tu cuenta si olvidas la contraseña.
             </p>
             <button
               type="button"

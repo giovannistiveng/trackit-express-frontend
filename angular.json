@@ -64,6 +64,17 @@
                   "with": "src/environments/environment.development.ts"
                 }
               ]
+            },
+            "e2e": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true,
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.e2e.ts"
+                }
+              ]
             }
           },
           "defaultConfiguration": "production"
@@ -76,6 +87,11 @@
             },
             "development": {
               "buildTarget": "trackit-express-frontend:build:development"
+            },
+            "e2e": {
+              "buildTarget": "trackit-express-frontend:build:e2e",
+              "proxyConfig": "e2e/proxy.conf.json",
+              "port": 4300
             }
           },
           "defaultConfiguration": "development"
@@ -89,14 +105,15 @@
               "src/testing/**",
               "src/main.ts",
               "src/app/app.config.ts",
+              "src/app/core/config/**",
               "src/environments/**"
             ],
             "coverageReporters": ["text-summary", "html", "json-summary", "lcov"],
             "coverageThresholds": {
-              "statements": 80,
-              "lines": 80,
-              "functions": 80,
-              "branches": 75
+              "statements": 100,
+              "branches": 100,
+              "functions": 100,
+              "lines": 100
             }
           }
         },

@@ -1,15 +1,20 @@
 import { Routes } from '@angular/router';
 
 export const CLIENTE_ROUTES: Routes = [
-  { path: '', pathMatch: 'full', redirectTo: 'envios' },
+  { path: '', pathMatch: 'full', redirectTo: 'inicio' },
+  {
+    path: 'inicio',
+    title: 'Inicio · TrackIt Express',
+    loadComponent: () => import('./inicio-cliente.page').then((m) => m.InicioClientePage),
+  },
   {
     path: 'nuevo-envio',
-    title: 'Nuevo envío · TrackIt Express',
+    title: 'Nuevo pedido · TrackIt Express',
     loadComponent: () => import('./nuevo-envio.page').then((m) => m.NuevoEnvioPage),
   },
   {
     path: 'envios',
-    title: 'Mis envíos · TrackIt Express',
+    title: 'Mis pedidos · TrackIt Express',
     loadComponent: () => import('./envios.page').then((m) => m.EnviosPage),
   },
   {

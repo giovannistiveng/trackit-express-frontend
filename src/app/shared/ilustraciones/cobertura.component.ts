@@ -58,10 +58,10 @@ const NODOS: Nodo[] = [
       </title>
       <defs>
         <pattern id="grilla" width="28" height="28" patternUnits="userSpaceOnUse">
-          <path d="M28 0H0V28" fill="none" stroke="#e7dccf" stroke-width="1" />
+          <path d="M28 0H0V28" fill="none" stroke="#d7e1db" stroke-width="1" />
         </pattern>
       </defs>
-      <rect x="6" y="6" width="488" height="448" rx="32" fill="#fffaf5" stroke="#eadfd2" />
+      <rect x="6" y="6" width="488" height="448" rx="32" fill="#f7faf8" stroke="#d9e3dd" />
       <rect x="6" y="6" width="488" height="448" rx="32" fill="url(#grilla)" />
       <path
         d="M40 420 C 120 380, 160 300, 240 300 S 380 220, 470 180"
@@ -86,7 +86,7 @@ const NODOS: Nodo[] = [
           [attr.y1]="nodos[0].y"
           [attr.x2]="n.x"
           [attr.y2]="n.y"
-          stroke="#c2410c"
+          stroke="#0b5d45"
           stroke-width="3"
           stroke-linecap="round"
         />
@@ -94,16 +94,16 @@ const NODOS: Nodo[] = [
       @for (n of nodos; track n.nombre; let primero = $first) {
         <g [attr.transform]="'translate(' + n.x + ' ' + n.y + ')'">
           @if (primero) {
-            <circle class="onda" r="22" fill="#c2410c" />
+            <circle class="onda" r="22" fill="#0b5d45" />
           }
           <circle
             [attr.r]="primero ? 22 : 13"
-            [attr.fill]="primero ? '#c2410c' : '#fff'"
-            stroke="#c2410c"
+            [attr.fill]="primero ? '#0b5d45' : '#fff'"
+            stroke="#0b5d45"
             stroke-width="4"
           />
           @if (primero) {
-            <circle r="7" fill="#f5c518" stroke="#1f1a17" stroke-width="2" />
+            <circle r="7" fill="#f5c518" stroke="#142019" stroke-width="2" />
           }
           <g [attr.transform]="'translate(0 ' + (primero ? 44 : 34) + ')'">
             <rect
@@ -112,7 +112,7 @@ const NODOS: Nodo[] = [
               [attr.width]="n.nombre.length * 8.2 + 20"
               height="26"
               rx="13"
-              fill="#1f1a17"
+              fill="#142019"
             />
             <text
               text-anchor="middle"
@@ -129,12 +129,12 @@ const NODOS: Nodo[] = [
       }
       <g
         transform="translate(446 60)"
-        fill="#5c534d"
+        fill="#56635c"
         font-family="Archivo, sans-serif"
         font-size="12"
         font-weight="700"
       >
-        <path d="M0 -18 L7 4 L0 0 L-7 4Z" fill="#1f1a17" />
+        <path d="M0 -18 L7 4 L0 0 L-7 4Z" fill="#142019" />
         <text y="20" text-anchor="middle">N</text>
       </g>
     </svg>

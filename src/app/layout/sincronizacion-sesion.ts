@@ -17,11 +17,11 @@ export class SincronizacionSesion implements OnDestroy {
   };
 
   iniciar(): void {
-    window.addEventListener('storage', this.alCambiar);
+    globalThis.addEventListener('storage', this.alCambiar);
   }
 
   ngOnDestroy(): void {
-    window.removeEventListener('storage', this.alCambiar);
+    globalThis.removeEventListener('storage', this.alCambiar);
   }
 
   aplicar(): void {

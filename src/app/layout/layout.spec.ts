@@ -1,8 +1,8 @@
-import { AccountPort } from '../core/ports';
+import { AccountPort, PushPort } from '../core/ports';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { ADMIN, CLIENTE, CONDUCTOR } from '../../testing/fixtures';
-import { botonPorTexto, q } from '../../testing/fakes';
+import { botonPorTexto, q, rechaza } from '../../testing/fakes';
 import { configurar, montar } from '../../testing/pantallas';
 import { App } from '../app';
 import { routes } from '../app.routes';
@@ -20,7 +20,7 @@ const cuentaFalsa = () => ({ reenviarVerificacion: vi.fn(async () => undefined) 
 
 describe('ShellComponent', () => {
   it.each([
-    [CLIENTE, ['Nuevo envío', 'Mis envíos'], 'Cliente'],
+    [CLIENTE, ['Inicio', 'Pedir', 'Pedidos', 'Cuenta'], 'Cliente'],
     [CONDUCTOR, ['Servicios', 'Ganancias', 'Mi perfil'], 'Conductor'],
     [
       ADMIN,
@@ -51,6 +51,49 @@ describe('ShellComponent', () => {
     botonPorTexto(el, 'Cerrar sesión').click();
     await vi.waitFor(() => expect(TestBed.inject(SessionService).estaAutenticado()).toBe(false));
     expect(navegar).toHaveBeenCalledWith(['/login']);
+  });
+
+  it('el menú de la cuenta se cierra al elegir, con un clic fuera o con Escape; salir aunque falle el push', async () => {
+    const { el, estable } = await montar(ShellComponent, {
+      usuario: ADMIN,
+      providers: [{ provide: AccountPort, useValue: cuentaFalsa() }],
+    });
+    const abrir = async () => {
+      q<HTMLButtonElement>(el, '[aria-controls="menu-usuario"]').click();
+      await estable();
+    };
+    const cerrado = () => expect(el.querySelector('#menu-usuario')).toBeNull();
+    const elegirEnlace = async (texto: string) => {
+      const a = Array.from(q(el, '#menu-usuario').querySelectorAll('a')).find((x) =>
+        x.textContent?.includes(texto),
+      ) as HTMLAnchorElement;
+      a.addEventListener('click', (e) => e.preventDefault());
+      a.click();
+      await estable();
+    };
+    for (const t of ['Mi cuenta', 'Pagos', 'Sitio web']) {
+      await abrir();
+      await elegirEnlace(t);
+      cerrado();
+    }
+    await abrir();
+    q(el, '#menu-usuario').click();
+    await estable();
+    expect(el.querySelector('#menu-usuario')).toBeTruthy();
+    document.body.click();
+    await estable();
+    cerrado();
+    document.body.click();
+    await abrir();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await estable();
+    cerrado();
+    vi.spyOn(TestBed.inject(PushPort), 'desactivar').mockImplementation(
+      rechaza(new Error('sin red')),
+    );
+    await abrir();
+    botonPorTexto(el, 'Cerrar sesión').click();
+    await vi.waitFor(() => expect(TestBed.inject(SessionService).estaAutenticado()).toBe(false));
   });
 
   it('sin sesión no debería mostrar menú', async () => {
@@ -100,10 +143,10 @@ describe('BannerConexionComponent', () => {
   it('debería aparecer sin conexión y ocultarse al volver', async () => {
     const { el, estable } = await montar(BannerConexionComponent);
     expect(el.textContent).not.toContain('Sin conexión');
-    window.dispatchEvent(new Event('offline'));
+    globalThis.dispatchEvent(new Event('offline'));
     await estable();
     expect(q(el, '[role="status"]').textContent).toContain('Sin conexión');
-    window.dispatchEvent(new Event('online'));
+    globalThis.dispatchEvent(new Event('online'));
     await estable();
     expect(el.textContent).not.toContain('Sin conexión');
     TestBed.inject(ConexionService).ngOnDestroy();

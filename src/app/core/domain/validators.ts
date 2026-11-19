@@ -20,7 +20,7 @@ export const MAX_ARCHIVO_BYTES = 5 * 1024 * 1024;
 
 /** Mayúsculas y sin espacios ni guiones: " abc-123 " → "ABC123". */
 export function normalizarPlaca(valor: string): string {
-  return valor.toUpperCase().replace(/[\s-]+/g, '');
+  return valor.toUpperCase().replaceAll(/[\s-]+/g, '');
 }
 
 /** Placa colombiana: ABC123 (carro) o ABC12D (moto). */
@@ -58,7 +58,7 @@ export function esCorreoValido(valor: string): boolean {
 
 /** Colapsa espacios repetidos y recorta extremos. */
 export function limpiarTexto(valor: string): string {
-  return valor.trim().replace(/\s+/g, ' ');
+  return valor.trim().replaceAll(/\s+/g, ' ');
 }
 
 /** Solo letras (con tildes y ñ) y espacios, máximo 120 caracteres. */

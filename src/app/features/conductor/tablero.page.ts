@@ -9,7 +9,13 @@ import {
   signal,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { Envio, categoriasAtendibles } from '../../core/domain';
+import {
+  CategoriaVehiculo,
+  Envio,
+  SERVICIOS,
+  categoriasAtendibles,
+  resumenDetalle,
+} from '../../core/domain';
 import { ApiError } from '../../core/http/api-error';
 import { ErrorMessageMapper } from '../../core/http/error-message.mapper';
 import { DriverBoardPort, DriverServicePort, EventosPort, LoggerPort } from '../../core/ports';
@@ -54,7 +60,7 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
             </p>
             <p class="mt-1 text-sm text-piedra">
               @if (vehiculo(); as v) {
-                Con tu {{ v }} ves pedidos de {{ atendibles() }} y los que no exigen vehículo.
+                Con tu {{ v }} ves pedidos de {{ atendibles(v) }} y los que no exigen vehículo.
               } @else {
                 Solo ves pedidos sin vehículo definido.
                 <a routerLink="/conductor/perfil" class="btn-texto">Registra tu vehículo</a>
@@ -107,8 +113,15 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
                 >
                   <div class="flex flex-wrap items-start justify-between gap-4 p-4 sm:p-5">
                     <div class="min-w-0 flex-1">
-                      <p class="flex flex-wrap items-center gap-2 text-sm text-piedra">
-                        #{{ e.id }} · {{ e.tipoCarga }}
+                      <p class="flex items-center gap-2 font-bold">
+                        <span
+                          class="grid size-8 place-items-center rounded-lg bg-marca-suave text-marca"
+                          ><ti-icono [nombre]="servicioDe(e).icono" class="size-5"
+                        /></span>
+                        {{ servicioDe(e).nombre }}
+                        <span class="text-sm font-normal text-piedra">#{{ e.id }}</span>
+                      </p>
+                      <p class="mt-2 flex flex-wrap items-center gap-2 text-sm text-piedra">
                         @if (e.categoria) {
                           <span class="insignia bg-bosque-suave text-bosque"
                             ><ti-icono nombre="bike" class="size-3.5" /> {{ e.categoria }}</span
@@ -160,6 +173,16 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
                           >{{ e.destino }}
                         </li>
                       </ol>
+                      @if (resumen(e); as r) {
+                        <p class="mt-3 line-clamp-2 text-sm">{{ r }}</p>
+                      }
+                      @if (lineas(e).length) {
+                        <ul class="mt-2 flex flex-wrap gap-1.5">
+                          @for (l of lineas(e); track l) {
+                            <li class="insignia bg-niebla">{{ l }}</li>
+                          }
+                        </ul>
+                      }
                       @if (e.notas) {
                         <p class="mt-3 flex gap-2 text-sm text-piedra">
                           <ti-icono nombre="message" class="mt-0.5 size-4 text-marca" />
@@ -215,6 +238,21 @@ export const MENSAJE_TOMADO = 'Este servicio ya fue tomado por otro conductor';
           >. Ganas <strong>{{ e.gananciaConductor ?? e.tarifa | cop }}</strong
           >.
         </p>
+        @if (resumen(e); as r) {
+          <p class="mt-3 rounded-xl bg-crema p-3 text-sm">
+            <strong>{{ servicioDe(e).nombre }}:</strong> {{ r }}
+          </p>
+        }
+        @if (servicioDe(e).conCompra) {
+          <p class="mt-3 text-sm text-piedra">
+            Pagas la compra y la cobras en efectivo al entregar, con la factura.
+          </p>
+        }
+        @if (e.pideCodigoRecogida) {
+          <p class="mt-3 text-sm text-piedra">
+            Al recoger te pedirán un código: así sabes que llevas el pedido correcto.
+          </p>
+        }
         @if (e.notas) {
           <p class="mt-3 rounded-xl bg-crema p-3 text-sm">
             <strong>Indicaciones:</strong> {{ e.notas }}
@@ -246,6 +284,20 @@ export class TableroPage implements OnInit, OnDestroy {
   private readonly toast = inject(ToastService);
   private readonly log = inject(LoggerPort);
 
+  protected servicioDe(e: Envio) {
+    return SERVICIOS[e.tipoServicio];
+  }
+
+  /** Lo que escribió el cliente: lista, objetos, insumo o qué envía. */
+  protected resumen(e: Envio): string {
+    const d = e.detalle;
+    return d?.lista ?? d?.objetos ?? d?.insumo ?? '';
+  }
+
+  protected lineas(e: Envio): string[] {
+    return resumenDetalle(e.tipoServicio, e.detalle);
+  }
+
   protected readonly envios = signal<Envio[]>([]);
   protected readonly cargando = signal(false);
   private readonly cargado = signal(false);
@@ -257,12 +309,11 @@ export class TableroPage implements OnInit, OnDestroy {
 
   protected readonly habilitado = computed(() => this.perfil.aprobado());
   protected readonly vehiculo = computed(() => this.perfil.perfil()?.vehiculo?.categoria ?? null);
-  protected readonly atendibles = computed(() => {
-    const lista = categoriasAtendibles(this.vehiculo());
-    return lista.length > 1
-      ? `${lista.slice(0, -1).join(', ')} y ${lista.at(-1)}`
-      : (lista[0] ?? '');
-  });
+  /** Categorías que puede llevar con su vehículo (siempre incluye la suya). */
+  protected atendibles(v: CategoriaVehiculo): string {
+    const lista = categoriasAtendibles(v);
+    return lista.length > 1 ? `${lista.slice(0, -1).join(', ')} y ${lista.at(-1)}` : v;
+  }
   protected readonly fase = computed<FaseCarga>(() =>
     faseDe({
       cargando: !this.cargado(),

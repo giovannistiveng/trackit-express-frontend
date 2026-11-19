@@ -12,6 +12,14 @@ const DESCRIPCION: Record<EstadoEnvio, string> = {
 };
 
 /** Recorrido del envío como una ruta vertical: paradas cumplidas, la actual y las que faltan. */
+/** Una parada de la línea de tiempo. */
+interface ParadaLinea {
+  estado: EstadoEnvio;
+  fecha: Date | null;
+  cumplida: boolean;
+  actual: boolean;
+}
+
 @Component({
   selector: 'ti-linea-tiempo',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -80,7 +88,7 @@ export class LineaTiempoComponent {
   readonly estadoActual = input.required<EstadoEnvio>();
   protected readonly descripcion = DESCRIPCION;
 
-  protected readonly paradas = computed(() => {
+  protected readonly paradas = computed<ParadaLinea[]>(() => {
     const historial = this.historial();
     const actual = this.estadoActual();
     const fechaDe = (estado: EstadoEnvio) =>
@@ -90,13 +98,13 @@ export class LineaTiempoComponent {
       const alcanzadas = RECORRIDO_ENVIO.filter((e) => e === 'Pendiente' || fechaDe(e));
       return [
         ...alcanzadas.map((estado) => ({
-          estado: estado as EstadoEnvio,
+          estado,
           fecha: fechaDe(estado),
           cumplida: true,
           actual: false,
         })),
         {
-          estado: 'Cancelado' as EstadoEnvio,
+          estado: 'Cancelado',
           fecha: fechaDe('Cancelado'),
           cumplida: true,
           actual: true,
@@ -107,7 +115,7 @@ export class LineaTiempoComponent {
     return RECORRIDO_ENVIO.map((estado) => {
       const fecha = fechaDe(estado);
       const cumplida = !!fecha || RECORRIDO_ENVIO.indexOf(estado) <= indiceActual;
-      return { estado: estado as EstadoEnvio, fecha, cumplida, actual: estado === actual };
+      return { estado, fecha, cumplida, actual: estado === actual };
     });
   });
 }

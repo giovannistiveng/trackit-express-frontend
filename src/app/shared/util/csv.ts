@@ -2,7 +2,7 @@
 export function aCsv(encabezados: string[], filas: (string | number)[][]): string {
   const celda = (v: string | number) => {
     const t = String(v);
-    return /[",\n;]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    return /[",\n;]/.test(t) ? `"${t.replaceAll('"', '""')}"` : t;
   };
   return '﻿' + [encabezados, ...filas].map((f) => f.map(celda).join(',')).join('\r\n');
 }

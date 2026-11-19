@@ -33,14 +33,14 @@ export interface EntornoUbicacion {
 }
 
 export function entornoNavegador(): EntornoUbicacion {
-  const nav = typeof navigator === 'undefined' ? null : navigator;
   return {
-    geolocation: nav && 'geolocation' in nav ? nav.geolocation : null,
-    seguro: typeof isSecureContext === 'undefined' ? true : isSecureContext,
-    esWindows: !!nav && /windows/i.test(nav.userAgent),
+    geolocation: 'geolocation' in navigator ? navigator.geolocation : null,
+    // Sin la propiedad (navegadores viejos) se asume seguro: el navegador decide al pedir permiso
+    seguro: globalThis.isSecureContext ?? true,
+    esWindows: /windows/i.test(navigator.userAgent),
     permiso: async () => {
       try {
-        const r = await nav?.permissions?.query({ name: 'geolocation' as PermissionName });
+        const r = await navigator.permissions?.query({ name: 'geolocation' });
         return r?.state ?? null;
       } catch {
         return null;

@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, ErrorHandler, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { FakeLogger, provideFakesBase, q } from '../../testing/fakes';
+import { FakeLogger, botonPorTexto, provideFakesBase, q, rechaza } from '../../testing/fakes';
 import { montar } from '../../testing/pantallas';
 import { LoggerPort } from '../core/ports';
 import {
@@ -33,6 +33,35 @@ describe('utilidades de imagen', () => {
     const grande = new File(['x'], 'g.jpg', { type: 'image/jpeg' });
     Object.defineProperty(grande, 'size', { value: 8_000_000 });
     expect(await comprimirImagen(grande)).toBe(grande); // jsdom no tiene createImageBitmap
+  });
+
+  it('comprime con createImageBitmap: usa el JPEG si pesa menos y el original si no o si falla', async () => {
+    const grande = new File(['x'], 'g.png', { type: 'image/png' });
+    Object.defineProperty(grande, 'size', { value: 8_000_000 });
+    const close = vi.fn();
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(async () => ({ width: 4000, height: 3000, close })),
+    );
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue({ drawImage: vi.fn() } as never);
+    const toBlob = vi
+      .spyOn(HTMLCanvasElement.prototype, 'toBlob')
+      .mockImplementation((cb) => cb(new Blob(['jpeg'])));
+    const comprimida = await comprimirImagen(grande);
+    expect(comprimida.name).toBe('g.jpg');
+    expect(close).toHaveBeenCalled();
+    toBlob.mockImplementation((cb) => cb(null));
+    expect(await comprimirImagen(grande)).toBe(grande);
+    // Si el JPEG pesa más que el original, se queda el original
+    toBlob.mockImplementation((cb) => cb(new Blob(['un jpeg más grande'])));
+    const liviana = new File(['x'], 'l.png', { type: 'image/png' });
+    expect(await comprimirImagen(liviana, 0)).toBe(liviana);
+    getContext.mockReturnValue(null);
+    expect(await comprimirImagen(grande)).toBe(grande);
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 });
 
@@ -92,10 +121,8 @@ describe('directivas de animación', () => {
         disconnect = vi.fn();
       },
     );
-    vi.stubGlobal(
-      'requestAnimationFrame',
-      (f: FrameRequestCallback) =>
-        setTimeout(() => f(performance.now() + 2000), 0) as unknown as number,
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) =>
+      setTimeout(() => f(performance.now() + 2000), 0),
     );
     @Component({
       changeDetection: ChangeDetectionStrategy.OnPush,
@@ -137,7 +164,7 @@ describe('GlobalErrorHandler', () => {
     h.handleError('texto suelto', 0);
     expect(log.de('ERROR')).toHaveLength(3);
     for (let i = 0; i < 60; i++) h.handleError(new Error('e' + i), 0);
-    expect(log.de('ERROR').length).toBe(63);
+    expect(log.de('ERROR')).toHaveLength(63);
   });
 });
 
@@ -227,6 +254,84 @@ describe('CamaraComponent', () => {
     await new Promise((r) => setTimeout(r, 0));
     await r2.estable();
     expect(r2.el.textContent).toContain('No encontramos una cámara');
+  });
+
+  it('con los botones: tomar, repetir, cambiar de cámara y usar; selfie con la cámara frontal', async () => {
+    const { camaras } = camarasFalsas();
+    const r = await montar(CamaraComponent, {
+      providers: [{ provide: CAMARAS, useValue: camaras }],
+      inputs: { guia: 'selfie' },
+    });
+    await new Promise((ok) => setTimeout(ok, 0));
+    await r.estable();
+    expect(q(r.el, 'video').className).toContain('-scale-x-100');
+    expect(r.el.querySelector(String.raw`.\!rounded-\[50\%\]`)).toBeTruthy();
+    const fotos: File[] = [];
+    r.c.foto.subscribe((f) => fotos.push(f));
+    q<HTMLButtonElement>(r.el, '[aria-label="Tomar foto"]').click();
+    await new Promise((ok) => setTimeout(ok, 0));
+    await r.estable();
+    botonPorTexto(r.el, /Repetir/).click();
+    await r.estable();
+    q<HTMLButtonElement>(r.el, '[aria-label="Cambiar de cámara"]').click();
+    await new Promise((ok) => setTimeout(ok, 0));
+    await r.estable();
+    q<HTMLButtonElement>(r.el, '[aria-label="Tomar foto"]').click();
+    await new Promise((ok) => setTimeout(ok, 0));
+    await r.estable();
+    botonPorTexto(r.el, /Usar foto/).click();
+    expect(fotos).toHaveLength(1);
+    const cerrar = vi.fn();
+    r.c.cerrar.subscribe(cerrar);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(cerrar).toHaveBeenCalled();
+    r.fixture.destroy();
+  });
+
+  it('casos de borde: guía de entrega, foto fallida, repetir sin cámara, usar sin foto y sin lista de cámaras', async () => {
+    const { camaras } = camarasFalsas();
+    camaras.enumerateDevices.mockImplementation(rechaza(new Error('sin permiso')));
+    const r = await montar(CamaraComponent, {
+      providers: [{ provide: CAMARAS, useValue: camaras }],
+      inputs: { guia: 'entrega' },
+    });
+    await new Promise((ok) => setTimeout(ok, 0));
+    await r.estable();
+    expect(r.el.querySelector('[aria-label="Cambiar de cámara"]')).toBeNull();
+    expect(r.el.querySelector('.aspect-square')).toBeTruthy();
+    const fotos: File[] = [];
+    r.c.foto.subscribe((f) => fotos.push(f));
+    r.c.usar();
+    expect(fotos).toHaveLength(0);
+    // Elegir una foto sin archivo no emite nada
+    const sinArchivo = { target: { files: [] } } as unknown as Event;
+    (r.c as unknown as { alElegir(e: Event): void }).alElegir(sinArchivo);
+    expect(fotos).toHaveLength(0);
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => null) as never;
+    await r.c.capturar();
+    await r.estable();
+    expect(q(r.el, '[role="alert"]').textContent).toContain('No se pudo tomar la foto');
+    // Sin cámara abierta, repetir la vuelve a abrir
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({ drawImage: vi.fn() })) as never;
+    await r.c.capturar();
+    r.c.repetir();
+    await new Promise((ok) => setTimeout(ok, 0));
+    expect(camaras.getUserMedia).toHaveBeenCalledTimes(2);
+    r.fixture.destroy();
+  });
+
+  it('la cámara del navegador solo se usa si existe getUserMedia; https por defecto', () => {
+    TestBed.resetTestingModule();
+    expect(TestBed.inject(CAMARAS)).toBeNull();
+    TestBed.resetTestingModule();
+    const mediaDevices = { getUserMedia: vi.fn(), enumerateDevices: vi.fn() };
+    vi.stubGlobal('navigator', { ...navigator, mediaDevices });
+    expect(TestBed.inject(CAMARAS)).toBe(mediaDevices);
+    vi.stubGlobal('isSecureContext', false);
+    expect(mensajeErrorCamara({ name: 'NotFoundError' })).toContain('conexión segura');
+    vi.stubGlobal('isSecureContext', undefined);
+    expect(mensajeErrorCamara({ name: 'NotFoundError' })).toContain('No encontramos');
+    vi.unstubAllGlobals();
   });
 
   it('traduce cada error de getUserMedia', () => {
