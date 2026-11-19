@@ -104,7 +104,7 @@ jobs:
 
       # Se construye para comprobar que el Dockerfile funciona; no se publica en ningún registro
       - name: Construir la imagen
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
