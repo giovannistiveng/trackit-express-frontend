@@ -212,6 +212,9 @@ El flujo `.github/workflows/e2e.yml` corre las pruebas de Playwright con Postgre
 (rama `main` para `main`, `desarrollo` para lo demás); el reporte queda como artefacto. Si el backend es privado,
 crea el secreto `BACKEND_REPO_TOKEN` con un token de solo lectura.
 
+El flujo `.github/workflows/deploy.yml` publica la imagen `trackit-web` en `ghcr.io` y actualiza el servidor de
+AWS cuando el CI de `main` pasa (guía completa en `trackit-express-backend/deploy/aws/README.md`).
+
 Dependabot (`.github/dependabot.yml`) abre cada lunes un PR agrupado hacia `desarrollo` con las actualizaciones.
 
 ## Despliegue
