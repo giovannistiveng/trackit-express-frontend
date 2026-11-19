@@ -166,6 +166,21 @@ Nunca se registran contraseñas, PIN, tokens ni cuerpos de peticiones.
    npm run sonar -- -Dsonar.host.url=http://localhost:9000 -Dsonar.token=TU_TOKEN
    ```
 
+## Integración continua (GitHub Actions)
+
+El flujo `.github/workflows/ci.yml` corre en cada push y pull request a `main`, `desarrollo` y `pre-produccion`:
+
+- **Formato y lint:** `prettier --check` y `npm run lint` (ESLint + SonarJS + reglas Sonar way + arquitectura).
+- **Pruebas:** `npm run test:coverage`; falla si la cobertura baja del 100 %.
+- **Build:** `npm run build` (producción). Los reportes (`lcov.info`, `reports/eslint.json`) quedan como artefacto.
+- **Imagen Docker:** construye el `Dockerfile` (no se publica en ningún registro).
+- **SonarQube (opcional):** si el repositorio tiene la variable `SONAR_HOST_URL` y el secreto `SONAR_TOKEN`
+  (Settings → Secrets and variables → Actions), analiza el código y espera el quality gate. El servidor debe ser
+  accesible desde internet (p. ej. SonarQube Cloud, con la variable `SONAR_ORGANIZATION`); un SonarQube en
+  `localhost` se sigue analizando a mano como se explica arriba.
+
+Dependabot (`.github/dependabot.yml`) abre cada lunes un PR agrupado hacia `desarrollo` con las actualizaciones.
+
 ## Despliegue
 
 - **Docker** (recomendado): el `Dockerfile` compila Angular en producción y lo sirve con Nginx, que además hace de
